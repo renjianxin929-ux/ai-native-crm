@@ -34,3 +34,41 @@ export type CollectedLeadSyncStatus = 'UNSYNCED' | 'SYNCED' | 'FAILED' | 'IGNORE
 export type LeadSyncAction = 'CREATE_CUSTOMER' | 'ENRICH_CUSTOMER' | 'SKIP_DUPLICATE' | 'FAILED';
 
 export type LeadSyncStatus = 'SUCCESS' | 'FAILED' | 'SKIPPED';
+
+export interface LeadImportBatch {
+  id: string;
+  batch_name: string;
+  batch_type: LeadBatchType;
+  source_label: string | null;
+  total_rows: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LeadImportRow {
+  id: string;
+  batch_id: string;
+  row_index: number;
+  raw_data_json: string;
+  company_name: string | null;
+  city: string | null;
+  industry: string | null;
+  website: string | null;
+  contact_name: string | null;
+  mobile: string | null;
+  tel: string | null;
+  email: string | null;
+  score: number | null;
+  grade: string | null;
+  tanji_search_keyword: string | null;
+  matching_reason: string | null;
+  priority_contact_role: string | null;
+  source_evidence: string | null;
+  decision: LeadImportDecision;
+  decision_status: LeadDecisionStatus;
+  created_customer_id: string | null;
+  created_work_item_id: string | null;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+}
