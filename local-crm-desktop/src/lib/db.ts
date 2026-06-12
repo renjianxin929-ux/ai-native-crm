@@ -1,4 +1,5 @@
 import type { Customer, FollowUpRecord, VisitRecord, Task, AIDraft, AIDraftInput } from './types';
+import { ensureLeadWorkbenchSchema } from './leadWorkbench/db';
 import { v4 as uuidv4 } from 'uuid';
 
 // 数据库抽象层 - 包装 @tauri-apps/plugin-sql
@@ -20,6 +21,7 @@ async function getDb(): Promise<DatabaseLike> {
     dbInstance = await Database.load('sqlite:personal-crm.db');
     await ensureBaseSchema(dbInstance);
     await ensureCustomerSchema(dbInstance);
+    await ensureLeadWorkbenchSchema(dbInstance);
     return dbInstance;
   } catch (e: unknown) {
     const errMsg = e instanceof Error ? e.message : String(e);
