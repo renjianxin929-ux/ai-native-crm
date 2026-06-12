@@ -1,6 +1,6 @@
 import type { DatabaseLike } from '../db';
 import { LEAD_WORKBENCH_INDEX_SQL, LEAD_WORKBENCH_TABLE_SQL } from './schema';
-import type { LeadImportBatch, LeadImportRow } from './types';
+import type { LeadDecisionStatus, LeadImportBatch, LeadImportRow, LeadWorkItem } from './types';
 
 export async function ensureLeadWorkbenchSchema(db: DatabaseLike): Promise<void> {
   for (const sql of LEAD_WORKBENCH_TABLE_SQL) {
@@ -87,6 +87,103 @@ export async function listLeadImportRowsByBatchId(
 ): Promise<LeadImportRow[]> {
   return db.select<LeadImportRow>(
     'SELECT * FROM lead_import_rows WHERE batch_id = ? ORDER BY row_index ASC',
+    [batchId],
+  );
+}
+
+export async function getLeadImportRowById(
+  db: DatabaseLike,
+  id: string,
+): Promise<LeadImportRow | null> {
+  const rows = await db.select<LeadImportRow>(
+    'SELECT * FROM lead_import_rows WHERE id = ?',
+    [id],
+  );
+  return rows[0] || null;
+}
+
+export async function updateLeadImportRowDecisionStatus(
+  db: DatabaseLike,
+  id: string,
+  decisionStatus: LeadDecisionStatus,
+  options: { createdWorkItemId?: string | null; errorMessage?: string | null } = {},
+): Promise<void> {
+  const now = new Date().toISOString();
+
+  if ('createdWorkItemId' in options) {
+    await db.execute(
+      `UPDATE lead_import_rows
+       SET decision_status = ?, created_work_item_id = ?, error_message = ?, updated_at = ?
+       WHERE id = ?`,
+      [decisionStatus, options.createdWorkItemId ?? null, options.errorMessage ?? null, now, id],
+    );
+    return;
+  }
+
+  await db.execute(
+    `UPDATE lead_import_rows
+     SET decision_status = ?, error_message = ?, updated_at = ?
+     WHERE id = ?`,
+    [decisionStatus, options.errorMessage ?? null, now, id],
+  );
+}
+
+export async function insertLeadWorkItem(db: DatabaseLike, item: LeadWorkItem): Promise<void> {
+  await db.execute(
+    `INSERT INTO lead_work_items (
+      id, import_row_id, customer_id, work_type, company_name, city, industry, priority,
+      lookup_goal, tanji_search_keyword, status, note, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      item.id,
+      item.import_row_id,
+      item.customer_id,
+      item.work_type,
+      item.company_name,
+      item.city,
+      item.industry,
+      item.priority,
+      item.lookup_goal,
+      item.tanji_search_keyword,
+      item.status,
+      item.note,
+      item.created_at,
+      item.updated_at,
+    ],
+  );
+}
+
+export async function getLeadWorkItemById(
+  db: DatabaseLike,
+  id: string,
+): Promise<LeadWorkItem | null> {
+  const rows = await db.select<LeadWorkItem>(
+    'SELECT * FROM lead_work_items WHERE id = ?',
+    [id],
+  );
+  return rows[0] || null;
+}
+
+export async function listLeadWorkItemsByImportRowId(
+  db: DatabaseLike,
+  importRowId: string,
+): Promise<LeadWorkItem[]> {
+  return db.select<LeadWorkItem>(
+    'SELECT * FROM lead_work_items WHERE import_row_id = ? ORDER BY created_at ASC',
+    [importRowId],
+  );
+}
+
+export async function listLeadWorkItemsByBatchId(
+  db: DatabaseLike,
+  batchId: string,
+): Promise<LeadWorkItem[]> {
+  return db.select<LeadWorkItem>(
+    `SELECT wi.*
+     FROM lead_work_items wi
+     INNER JOIN lead_import_rows ir ON wi.import_row_id = ir.id
+     WHERE ir.batch_id = ?
+     ORDER BY wi.created_at ASC`,
     [batchId],
   );
 }

@@ -72,3 +72,20 @@ export interface LeadImportRow {
   created_at: string;
   updated_at: string;
 }
+
+export interface LeadWorkItem {
+  id: string;
+  import_row_id: string | null;
+  customer_id: string | null;
+  work_type: LeadWorkType;
+  company_name: string | null;
+  city: string | null;
+  industry: string | null;
+  priority: number;
+  lookup_goal: LeadLookupGoal;
+  tanji_search_keyword: string | null;
+  status: LeadWorkStatus;
+  note: string | null;
+  created_at: string;
+  updated_at: string;
+}
