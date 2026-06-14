@@ -114,6 +114,23 @@ export async function updateLeadImportRowDecisionStatus(
 ): Promise<void> {
   const now = new Date().toISOString();
 
+  if ('createdCustomerId' in options && 'createdWorkItemId' in options) {
+    await db.execute(
+      `UPDATE lead_import_rows
+       SET decision_status = ?, created_customer_id = ?, created_work_item_id = ?, error_message = ?, updated_at = ?
+       WHERE id = ?`,
+      [
+        decisionStatus,
+        options.createdCustomerId ?? null,
+        options.createdWorkItemId ?? null,
+        options.errorMessage ?? null,
+        now,
+        id,
+      ],
+    );
+    return;
+  }
+
   if ('createdCustomerId' in options) {
     await db.execute(
       `UPDATE lead_import_rows

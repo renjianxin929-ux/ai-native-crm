@@ -38,12 +38,12 @@ export async function executeLeadImportRowDecision(
     throw new Error(`Lead import row ${importRowId} is not executable from status ${row.decision_status}`);
   }
 
-  if (row.decision === 'CRM_WITH_LOOKUP') {
-    throw new Error(`Unsupported lead import decision: ${row.decision}`);
-  }
-
   if (row.decision === 'DIRECT_TO_CRM') {
     return executeDirectToCrm(db, row);
+  }
+
+  if (row.decision === 'CRM_WITH_LOOKUP') {
+    return executeCrmWithLookup(db, row);
   }
 
   if (row.decision === 'LOOKUP_FIRST') {
@@ -108,6 +108,57 @@ async function executeDirectToCrm(
     await db.execute('COMMIT');
 
     return { status: 'DONE', importRowId: row.id };
+  } catch (error) {
+    await db.execute('ROLLBACK');
+    throw error;
+  }
+}
+
+async function executeCrmWithLookup(
+  db: DatabaseLike,
+  row: LeadImportRow,
+): Promise<LeadDecisionExecutionResult> {
+  if (row.created_customer_id || row.created_work_item_id) {
+    return {
+      status: 'ALREADY_DONE',
+      importRowId: row.id,
+      customerId: row.created_customer_id,
+      workItemId: row.created_work_item_id,
+    };
+  }
+
+  await db.execute('BEGIN');
+  try {
+    await updateLeadImportRowDecisionStatus(db, row.id, 'EXECUTING');
+
+    const customerInput = buildCustomerInputFromImportRow(row);
+    const duplicatePhoneCustomer = await findCustomerByPhoneNumber(db, customerInput.phone_number);
+    if (duplicatePhoneCustomer) {
+      const errorMessage = `Duplicate customer phone_number: ${customerInput.phone_number}`;
+      await updateLeadImportRowDecisionStatus(db, row.id, 'FAILED', { errorMessage });
+      await db.execute('COMMIT');
+      return { status: 'FAILED', importRowId: row.id, errorMessage };
+    }
+
+    const duplicateNameCustomers = await findCustomersByName(db, customerInput.name);
+    if (duplicateNameCustomers.length > 0) {
+      const errorMessage = `Duplicate customer name: ${customerInput.name}`;
+      await updateLeadImportRowDecisionStatus(db, row.id, 'FAILED', { errorMessage });
+      await db.execute('COMMIT');
+      return { status: 'FAILED', importRowId: row.id, errorMessage };
+    }
+
+    const customerId = await insertCustomerWithDb(db, customerInput);
+    const workItem = createCrmWithLookupWorkItem(row, customerId);
+    await insertLeadWorkItem(db, workItem);
+    await updateLeadImportRowDecisionStatus(db, row.id, 'DONE', {
+      createdCustomerId: customerId,
+      createdWorkItemId: workItem.id,
+      errorMessage: null,
+    });
+    await db.execute('COMMIT');
+
+    return { status: 'DONE', importRowId: row.id, workItemId: workItem.id };
   } catch (error) {
     await db.execute('ROLLBACK');
     throw error;
@@ -180,6 +231,26 @@ function createLookupFirstWorkItem(row: LeadImportRow): LeadWorkItem {
     tanji_search_keyword: row.tanji_search_keyword || row.company_name,
     status: 'TODO',
     note: null,
+    created_at: now,
+    updated_at: now,
+  };
+}
+
+function createCrmWithLookupWorkItem(row: LeadImportRow, customerId: string): LeadWorkItem {
+  const now = new Date().toISOString();
+  return {
+    id: uuidv4(),
+    import_row_id: row.id,
+    customer_id: customerId,
+    work_type: 'CRM_CUSTOMER_ENRICHMENT',
+    company_name: row.company_name,
+    city: row.city,
+    industry: row.industry,
+    priority: getLookupPriority(row),
+    lookup_goal: 'FIND_PHONE',
+    tanji_search_keyword: row.tanji_search_keyword || row.company_name,
+    status: 'TODO',
+    note: 'CRM_WITH_LOOKUP auto task',
     created_at: now,
     updated_at: now,
   };
