@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertCircle, CheckCircle2, Eye, List, Save } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Eye, List, Play, Save } from 'lucide-react';
 
-import { getDb } from '../lib/db';
+import { getDb, type DatabaseLike } from '../lib/db';
 import {
   listLeadImportBatches,
   listLeadImportRowsByBatchId,
 } from '../lib/leadWorkbench/db';
+import { executeLeadImportBatchDecisions, type LeadDecisionExecutionResult } from '../lib/leadWorkbench/decision';
 import {
   importLeadRowsToBatch,
   normalizeLeadImportRows,
@@ -44,11 +45,22 @@ type SavedBatchSummary = {
   decisionCounts: Record<string, number>;
 };
 
+type LeadImportExecutionSummary = {
+  doneCount: number;
+  failedCount: number;
+  createdCustomerCount: number;
+  createdWorkItemCount: number;
+};
+
+type LeadImportExecutionResult =
+  | { status: 'CANCELLED' }
+  | { status: 'EXECUTED'; rows: LeadImportRow[]; summary: LeadImportExecutionSummary };
+
 const BATCH_TYPES: LeadBatchType[] = ['AI_DAILY', 'MANUAL', 'EXPO', 'WECHAT', 'OTHER'];
 const DECISIONS: LeadImportDecision[] = ['DIRECT_TO_CRM', 'CRM_WITH_LOOKUP', 'LOOKUP_FIRST', 'RESERVE', 'IGNORE'];
 const DECISION_STATUSES: LeadDecisionStatus[] = ['PENDING', 'EXECUTING', 'DONE', 'FAILED'];
 
-export const LEAD_IMPORT_CENTER_ACTION_LABELS = ['解析预览', '保存为导入批次'];
+export const LEAD_IMPORT_CENTER_ACTION_LABELS = ['解析预览', '保存为导入批次', '执行分流'];
 
 export function buildLeadImportPreview(jsonText: string): LeadImportPreviewResult {
   let parsed: unknown;
@@ -110,6 +122,74 @@ export function buildLeadImportBatchStats(rows: Array<Pick<LeadImportRow, 'decis
   };
 }
 
+export function getLeadImportBatchExecutionState(rows: Pick<LeadImportRow, 'decision_status'>[]) {
+  const executableRows = rows.filter(row => row.decision_status === 'PENDING' || row.decision_status === 'FAILED').length;
+  return {
+    canExecute: executableRows > 0,
+    label: executableRows > 0 ? '执行分流' : '已完成/不可重复执行',
+    executableRows,
+  };
+}
+
+export function buildLeadImportExecutionConfirmation(
+  batch: LeadImportBatch,
+  rows: Array<Pick<LeadImportRow, 'decision' | 'decision_status'>>,
+) {
+  const stats = buildLeadImportBatchStats(rows);
+  const lines = [
+    '确认执行导入分流？',
+    `batch_name: ${batch.batch_name}`,
+    `total_rows: ${batch.total_rows}`,
+    ...DECISIONS.map(decision => `${decision}: ${stats.decisionCounts[decision]}`),
+    '',
+    '执行后可能创建 CRM 客户和获客任务。',
+  ];
+  return { message: lines.join('\n') };
+}
+
+export function buildLeadImportExecutionSummary(
+  beforeRows: Pick<LeadImportRow, 'id' | 'created_customer_id' | 'created_work_item_id'>[],
+  afterRows: Pick<LeadImportRow, 'id' | 'decision_status' | 'created_customer_id' | 'created_work_item_id'>[],
+): LeadImportExecutionSummary {
+  const beforeById = new Map(beforeRows.map(row => [row.id, row]));
+  return {
+    doneCount: afterRows.filter(row => row.decision_status === 'DONE').length,
+    failedCount: afterRows.filter(row => row.decision_status === 'FAILED').length,
+    createdCustomerCount: afterRows.filter(row => {
+      const before = beforeById.get(row.id);
+      return Boolean(row.created_customer_id) && row.created_customer_id !== before?.created_customer_id;
+    }).length,
+    createdWorkItemCount: afterRows.filter(row => {
+      const before = beforeById.get(row.id);
+      return Boolean(row.created_work_item_id) && row.created_work_item_id !== before?.created_work_item_id;
+    }).length,
+  };
+}
+
+export async function executeLeadImportBatchFromCenter(input: {
+  db: DatabaseLike;
+  batch: LeadImportBatch;
+  rows: LeadImportRow[];
+  confirm: (message: string) => boolean;
+  execute?: (db: DatabaseLike, batchId: string) => Promise<LeadDecisionExecutionResult[]>;
+  loadRows?: (db: DatabaseLike, batchId: string) => Promise<LeadImportRow[]>;
+}): Promise<LeadImportExecutionResult> {
+  const confirmation = buildLeadImportExecutionConfirmation(input.batch, input.rows);
+  if (!input.confirm(confirmation.message)) {
+    return { status: 'CANCELLED' };
+  }
+
+  const execute = input.execute ?? executeLeadImportBatchDecisions;
+  const loadRows = input.loadRows ?? listLeadImportRowsByBatchId;
+  await execute(input.db, input.batch.id);
+  const refreshedRows = await loadRows(input.db, input.batch.id);
+  return {
+    status: 'EXECUTED',
+    rows: refreshedRows,
+    summary: buildLeadImportExecutionSummary(input.rows, refreshedRows),
+  };
+}
+
 export default function LeadImportCenterPage() {
   const [batchName, setBatchName] = useState('');
   const [batchType, setBatchType] = useState<LeadBatchType>('AI_DAILY');
@@ -123,11 +203,15 @@ export default function LeadImportCenterPage() {
   const [selectedRows, setSelectedRows] = useState<LeadImportRow[]>([]);
   const [batchListError, setBatchListError] = useState<string | null>(null);
   const [isLoadingBatches, setIsLoadingBatches] = useState(false);
+  const [isExecuting, setIsExecuting] = useState(false);
+  const [executionError, setExecutionError] = useState<string | null>(null);
+  const [executionSummary, setExecutionSummary] = useState<LeadImportExecutionSummary | null>(null);
 
   const hasPreviewErrors = preview?.rows.some(row => row.error) ?? false;
   const decisionCounts = useMemo(() => countDecisions(preview?.rows ?? []), [preview]);
   const selectedBatch = batches.find(batch => batch.id === selectedBatchId) ?? null;
   const selectedBatchStats = useMemo(() => buildLeadImportBatchStats(selectedRows), [selectedRows]);
+  const executionState = useMemo(() => getLeadImportBatchExecutionState(selectedRows), [selectedRows]);
 
   const loadBatches = useCallback(async () => {
     setIsLoadingBatches(true);
@@ -145,6 +229,8 @@ export default function LeadImportCenterPage() {
   const handleSelectBatch = useCallback(async (batchId: string) => {
     setSelectedBatchId(batchId);
     setBatchListError(null);
+    setExecutionError(null);
+    setExecutionSummary(null);
     try {
       const db = await getDb();
       setSelectedRows(await listLeadImportRowsByBatchId(db, batchId));
@@ -200,6 +286,32 @@ export default function LeadImportCenterPage() {
       setSaveError(error instanceof Error ? error.message : String(error));
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleExecuteBatch = async () => {
+    if (!selectedBatch || !executionState.canExecute) return;
+
+    setIsExecuting(true);
+    setExecutionError(null);
+    setExecutionSummary(null);
+
+    try {
+      const db = await getDb();
+      const result = await executeLeadImportBatchFromCenter({
+        db,
+        batch: selectedBatch,
+        rows: selectedRows,
+        confirm: message => window.confirm(message),
+      });
+      if (result.status === 'EXECUTED') {
+        setSelectedRows(result.rows);
+        setExecutionSummary(result.summary);
+      }
+    } catch (error) {
+      setExecutionError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsExecuting(false);
     }
   };
 
@@ -363,7 +475,20 @@ export default function LeadImportCenterPage() {
           </section>
 
           <section className="card">
-            <div className="section-title">批次明细</div>
+            <div className="lead-section-header">
+              <div className="section-title">批次明细</div>
+              {selectedBatch && (
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  onClick={() => { void handleExecuteBatch(); }}
+                  disabled={!executionState.canExecute || isExecuting}
+                >
+                  <Play size={14} />
+                  {isExecuting ? '执行中' : executionState.label}
+                </button>
+              )}
+            </div>
             {!selectedBatch && (
               <div className="empty-state">选择一个批次查看明细</div>
             )}
@@ -377,6 +502,20 @@ export default function LeadImportCenterPage() {
                 </div>
                 <StatsStrip title="decision 统计" counts={selectedBatchStats.decisionCounts} />
                 <StatsStrip title="decision_status 统计" counts={selectedBatchStats.statusCounts} />
+                {executionError && (
+                  <div className="lead-alert lead-alert-danger">
+                    <AlertCircle size={16} />
+                    <span>{executionError}</span>
+                  </div>
+                )}
+                {executionSummary && (
+                  <div className="lead-execution-summary">
+                    <span className="badge badge-success">DONE: {executionSummary.doneCount}</span>
+                    <span className="badge badge-danger">FAILED: {executionSummary.failedCount}</span>
+                    <span className="badge badge-info">created customers: {executionSummary.createdCustomerCount}</span>
+                    <span className="badge badge-info">created work items: {executionSummary.createdWorkItemCount}</span>
+                  </div>
+                )}
                 <BatchRowsTable rows={selectedRows} />
               </>
             )}
