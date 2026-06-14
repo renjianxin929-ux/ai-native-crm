@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Routes, Route, NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, Users, MessageSquare, MapPin,
-  Settings, Upload, Brain
+  Settings, Upload, Brain, ListChecks
 } from 'lucide-react';
 import TodayView from './pages/TodayView';
 import CustomerList from './pages/CustomerList';
@@ -11,6 +11,7 @@ import FollowUpRecords from './pages/FollowUpRecords';
 import VisitRecords from './pages/VisitRecords';
 import SettingsPage from './pages/SettingsPage';
 import DataImportPage from './pages/DataImportPage';
+import LeadImportCenterPage from './pages/LeadImportCenterPage';
 import AISettingsPage from './pages/AISettingsPage';
 import AIAssistantPage from './pages/AIAssistantPage';
 import type { Customer, Task } from './lib/types';
@@ -55,6 +56,7 @@ export default function App() {
     { to: '/visits', icon: MapPin, label: '面访记录' },
     { to: '/assistant', icon: Brain, label: 'AI助手' },
     { to: '/import', icon: Upload, label: '数据导入' },
+    { to: '/lead-import-center', icon: ListChecks, label: '导入分流' },
     { to: '/settings', icon: Settings, label: '设置' },
   ];
 
@@ -97,6 +99,7 @@ export default function App() {
           <Route path="/visits" element={<VisitRecords />} />
           <Route path="/assistant" element={<AIAssistantPage />} />
           <Route path="/import" element={<DataImportPage customers={customers} onRefresh={refreshAll} />} />
+          <Route path="/lead-import-center" element={<LeadImportCenterPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/settings/ai" element={<AISettingsPage />} />
         </Routes>
