@@ -1,6 +1,6 @@
 import type { DatabaseLike } from '../db';
 import { LEAD_WORKBENCH_INDEX_SQL, LEAD_WORKBENCH_TABLE_SQL } from './schema';
-import type { LeadDecisionStatus, LeadImportBatch, LeadImportRow, LeadWorkItem } from './types';
+import type { LeadDecisionStatus, LeadImportBatch, LeadImportRow, LeadWorkItem, LeadWorkStatus } from './types';
 
 export async function ensureLeadWorkbenchSchema(db: DatabaseLike): Promise<void> {
   for (const sql of LEAD_WORKBENCH_TABLE_SQL) {
@@ -203,6 +203,43 @@ export async function getLeadWorkItemById(
     [id],
   );
   return rows[0] || null;
+}
+
+export async function listLeadWorkItems(db: DatabaseLike): Promise<LeadWorkItem[]> {
+  return db.select<LeadWorkItem>(
+    'SELECT * FROM lead_work_items ORDER BY created_at DESC, priority DESC',
+  );
+}
+
+export async function listLeadWorkItemsByStatus(
+  db: DatabaseLike,
+  status: LeadWorkStatus,
+): Promise<LeadWorkItem[]> {
+  return db.select<LeadWorkItem>(
+    'SELECT * FROM lead_work_items WHERE status = ? ORDER BY priority DESC, created_at ASC',
+    [status],
+  );
+}
+
+export async function getLeadWorkItemStatusCounts(
+  db: DatabaseLike,
+): Promise<Record<LeadWorkStatus, number>> {
+  const rows = await db.select<{ status: LeadWorkStatus; count: number }>(
+    'SELECT status, COUNT(*) as count FROM lead_work_items GROUP BY status',
+  );
+  const counts: Record<LeadWorkStatus, number> = {
+    TODO: 0,
+    SEARCHING: 0,
+    STAGED: 0,
+    COLLECTED: 0,
+    NO_PHONE: 0,
+    SKIPPED: 0,
+    DONE: 0,
+  };
+  for (const row of rows) {
+    counts[row.status] = Number(row.count);
+  }
+  return counts;
 }
 
 export async function listLeadWorkItemsByImportRowId(

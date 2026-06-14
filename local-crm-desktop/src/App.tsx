@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Routes, Route, NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, Users, MessageSquare, MapPin,
-  Settings, Upload, Brain, ListChecks
+  Settings, Upload, Brain, ListChecks, BriefcaseBusiness
 } from 'lucide-react';
 import TodayView from './pages/TodayView';
 import CustomerList from './pages/CustomerList';
@@ -12,6 +12,7 @@ import VisitRecords from './pages/VisitRecords';
 import SettingsPage from './pages/SettingsPage';
 import DataImportPage from './pages/DataImportPage';
 import LeadImportCenterPage from './pages/LeadImportCenterPage';
+import LeadWorkbenchPage from './pages/LeadWorkbenchPage';
 import AISettingsPage from './pages/AISettingsPage';
 import AIAssistantPage from './pages/AIAssistantPage';
 import type { Customer, Task } from './lib/types';
@@ -57,6 +58,7 @@ export default function App() {
     { to: '/assistant', icon: Brain, label: 'AI助手' },
     { to: '/import', icon: Upload, label: '数据导入' },
     { to: '/lead-import-center', icon: ListChecks, label: '导入分流' },
+    { to: '/lead-workbench', icon: BriefcaseBusiness, label: '获客作业台' },
     { to: '/settings', icon: Settings, label: '设置' },
   ];
 
@@ -100,6 +102,7 @@ export default function App() {
           <Route path="/assistant" element={<AIAssistantPage />} />
           <Route path="/import" element={<DataImportPage customers={customers} onRefresh={refreshAll} />} />
           <Route path="/lead-import-center" element={<LeadImportCenterPage />} />
+          <Route path="/lead-workbench" element={<LeadWorkbenchPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/settings/ai" element={<AISettingsPage />} />
         </Routes>
