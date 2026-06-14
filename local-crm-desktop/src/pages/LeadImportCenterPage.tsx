@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertCircle, CheckCircle2, Eye, List, Play, Save } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Eye, FileJson, List, Play, Save } from 'lucide-react';
 
 import { getDb, type DatabaseLike } from '../lib/db';
 import {
@@ -45,11 +45,17 @@ type SavedBatchSummary = {
   decisionCounts: Record<string, number>;
 };
 
+type LeadImportExecutionFailure = {
+  company_name: string | null;
+  error_message: string;
+};
+
 type LeadImportExecutionSummary = {
   doneCount: number;
   failedCount: number;
   createdCustomerCount: number;
   createdWorkItemCount: number;
+  failures: LeadImportExecutionFailure[];
 };
 
 type LeadImportExecutionResult =
@@ -59,19 +65,74 @@ type LeadImportExecutionResult =
 const BATCH_TYPES: LeadBatchType[] = ['AI_DAILY', 'MANUAL', 'EXPO', 'WECHAT', 'OTHER'];
 const DECISIONS: LeadImportDecision[] = ['DIRECT_TO_CRM', 'CRM_WITH_LOOKUP', 'LOOKUP_FIRST', 'RESERVE', 'IGNORE'];
 const DECISION_STATUSES: LeadDecisionStatus[] = ['PENDING', 'EXECUTING', 'DONE', 'FAILED'];
+const SUPPORTED_FIELDS = [
+  'company_name',
+  'city',
+  'industry',
+  'website',
+  'contact_name',
+  'mobile',
+  'tel',
+  'email',
+  'score',
+  'grade',
+  'tanji_search_keyword',
+  'matching_reason',
+  'priority_contact_role',
+  'source_evidence',
+];
 
-export const LEAD_IMPORT_CENTER_ACTION_LABELS = ['解析预览', '保存为导入批次', '执行分流'];
+export const LEAD_IMPORT_SAMPLE_JSON = JSON.stringify([
+  {
+    company_name: '佛山有电话样例',
+    city: '佛山',
+    industry: '装备制造',
+    mobile: '13800138000',
+    score: 62,
+    grade: 'A',
+    matching_reason: '有手机号，默认 DIRECT_TO_CRM',
+  },
+  {
+    company_name: '广州高分待查样例',
+    city: '广州',
+    industry: '照明工程',
+    score: 86,
+    grade: 'S',
+    tanji_search_keyword: '广州高分待查样例',
+    matching_reason: '高分无电话，默认 CRM_WITH_LOOKUP',
+  },
+  {
+    company_name: '中山优先查询样例',
+    city: '中山',
+    industry: '五金',
+    score: 75,
+    grade: 'B',
+    matching_reason: '70-79 分无电话，默认 LOOKUP_FIRST',
+  },
+], null, 2);
+
+export const LEAD_IMPORT_CENTER_ACTION_LABELS = [
+  '填入示例 JSON',
+  '解析预览',
+  '保存为导入批次',
+  '执行分流，会创建 CRM 客户/获客任务',
+];
 
 export function buildLeadImportPreview(jsonText: string): LeadImportPreviewResult {
   let parsed: unknown;
   try {
     parsed = JSON.parse(jsonText);
-  } catch {
-    return { rows: [], inputRows: [], error: 'JSON 解析失败，请粘贴合法的 JSON 数组。' };
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    return { rows: [], inputRows: [], error: `JSON 解析失败。具体原因：${reason}` };
   }
 
   if (!Array.isArray(parsed)) {
-    return { rows: [], inputRows: [], error: 'JSON 内容必须是数组。' };
+    return { rows: [], inputRows: [], error: '必须是 JSON 数组。' };
+  }
+
+  if (parsed.length === 0) {
+    return { rows: [], inputRows: [], error: '至少需要一条数据。' };
   }
 
   const inputRows = parsed.map(row => (isRecord(row) ? row as LeadImportInputRow : {}));
@@ -101,7 +162,7 @@ export function buildLeadImportPreview(jsonText: string): LeadImportPreviewResul
         score: numberOrNull(inputRow.score),
         grade: stringOrNull(inputRow.grade),
         decision: null,
-        error: error instanceof Error ? error.message : String(error),
+        error: `第 ${index + 1} 行：${formatRowError(error)}`,
       };
     }
   });
@@ -122,11 +183,29 @@ export function buildLeadImportBatchStats(rows: Array<Pick<LeadImportRow, 'decis
   };
 }
 
+export function buildLeadImportSaveConfirmation(input: {
+  batchName: string;
+  batchType: LeadBatchType;
+  rows: PreviewRow[];
+}) {
+  const decisionCounts = countDecisions(input.rows);
+  const lines = [
+    '确认保存导入批次？',
+    `batch_name: ${input.batchName}`,
+    `batch_type: ${input.batchType}`,
+    `总行数: ${input.rows.length}`,
+    ...DECISIONS.map(decision => `${decision}: ${decisionCounts[decision] ?? 0}`),
+    '',
+    '保存只进入 lead_import_batches / lead_import_rows，不会创建 CRM 客户。',
+  ];
+  return { message: lines.join('\n') };
+}
+
 export function getLeadImportBatchExecutionState(rows: Pick<LeadImportRow, 'decision_status'>[]) {
   const executableRows = rows.filter(row => row.decision_status === 'PENDING' || row.decision_status === 'FAILED').length;
   return {
     canExecute: executableRows > 0,
-    label: executableRows > 0 ? '执行分流' : '已完成/不可重复执行',
+    label: executableRows > 0 ? LEAD_IMPORT_CENTER_ACTION_LABELS[3] : '已完成/不可重复执行',
     executableRows,
   };
 }
@@ -149,7 +228,7 @@ export function buildLeadImportExecutionConfirmation(
 
 export function buildLeadImportExecutionSummary(
   beforeRows: Pick<LeadImportRow, 'id' | 'created_customer_id' | 'created_work_item_id'>[],
-  afterRows: Pick<LeadImportRow, 'id' | 'decision_status' | 'created_customer_id' | 'created_work_item_id'>[],
+  afterRows: Pick<LeadImportRow, 'id' | 'company_name' | 'decision_status' | 'created_customer_id' | 'created_work_item_id' | 'error_message'>[],
 ): LeadImportExecutionSummary {
   const beforeById = new Map(beforeRows.map(row => [row.id, row]));
   return {
@@ -163,6 +242,13 @@ export function buildLeadImportExecutionSummary(
       const before = beforeById.get(row.id);
       return Boolean(row.created_work_item_id) && row.created_work_item_id !== before?.created_work_item_id;
     }).length,
+    failures: afterRows
+      .filter(row => row.decision_status === 'FAILED')
+      .slice(0, 10)
+      .map(row => ({
+        company_name: row.company_name,
+        error_message: row.error_message || '未知错误',
+      })),
   };
 }
 
@@ -244,6 +330,13 @@ export default function LeadImportCenterPage() {
     void loadBatches();
   }, [loadBatches]);
 
+  const handleFillSample = () => {
+    setJsonText(LEAD_IMPORT_SAMPLE_JSON);
+    setPreview(null);
+    setSaveError(null);
+    setSavedSummary(null);
+  };
+
   const handleParsePreview = () => {
     setSaveError(null);
     setSavedSummary(null);
@@ -258,6 +351,15 @@ export default function LeadImportCenterPage() {
     }
     if (!batchName.trim()) {
       setSaveError('请输入 batch_name。');
+      return;
+    }
+
+    const confirmation = buildLeadImportSaveConfirmation({
+      batchName: batchName.trim(),
+      batchType,
+      rows: preview.rows,
+    });
+    if (!window.confirm(confirmation.message)) {
       return;
     }
 
@@ -350,6 +452,15 @@ export default function LeadImportCenterPage() {
               </div>
             </div>
 
+            <div className="lead-input-help">
+              <div className="lead-input-help-title">JSON 字段支持</div>
+              <div className="lead-field-list">
+                {SUPPORTED_FIELDS.map(field => (
+                  <span key={field} className="badge badge-info">{field}</span>
+                ))}
+              </div>
+            </div>
+
             <div className="form-group">
               <label htmlFor="lead-json-input">JSON 数组</label>
               <textarea
@@ -357,17 +468,18 @@ export default function LeadImportCenterPage() {
                 className="lead-json-input"
                 value={jsonText}
                 onChange={event => setJsonText(event.target.value)}
-                placeholder={`[
-  {"company_name":"佛山样板客户","mobile":"13800138000","score":88,"grade":"S"},
-  {"company_name":"广州待查公司","score":82,"city":"广州"}
-]`}
+                placeholder={LEAD_IMPORT_SAMPLE_JSON}
               />
             </div>
 
             <div className="btn-group">
+              <button type="button" className="btn" onClick={handleFillSample}>
+                <FileJson size={16} />
+                {LEAD_IMPORT_CENTER_ACTION_LABELS[0]}
+              </button>
               <button type="button" className="btn btn-primary" onClick={handleParsePreview}>
                 <Eye size={16} />
-                {LEAD_IMPORT_CENTER_ACTION_LABELS[0]}
+                {LEAD_IMPORT_CENTER_ACTION_LABELS[1]}
               </button>
               <button
                 type="button"
@@ -376,7 +488,7 @@ export default function LeadImportCenterPage() {
                 disabled={!preview || Boolean(preview.error) || hasPreviewErrors || isSaving}
               >
                 <Save size={16} />
-                {isSaving ? '保存中' : LEAD_IMPORT_CENTER_ACTION_LABELS[1]}
+                {isSaving ? '保存中' : LEAD_IMPORT_CENTER_ACTION_LABELS[2]}
               </button>
             </div>
           </section>
@@ -396,14 +508,14 @@ export default function LeadImportCenterPage() {
               <div className="lead-save-summary">
                 <div className="lead-alert lead-alert-success">
                   <CheckCircle2 size={16} />
-                  <span>保存成功</span>
+                  <span>保存成功，尚未执行分流。</span>
                 </div>
                 <div className="detail-item">
                   <div className="label">batch id</div>
                   <div className="value">{savedSummary.batchId}</div>
                 </div>
                 <div className="detail-item">
-                  <div className="label">总行数</div>
+                  <div className="label">total rows</div>
                   <div className="value">{savedSummary.totalRows}</div>
                 </div>
                 <DecisionCountList counts={savedSummary.decisionCounts} />
@@ -426,9 +538,9 @@ export default function LeadImportCenterPage() {
                 <div className="count">{preview.rows.length}</div>
                 <div className="label">预览行数</div>
               </div>
-              {Object.entries(decisionCounts).map(([decision, count]) => (
+              {DECISIONS.map(decision => (
                 <div className="summary-card" key={decision}>
-                  <div className="count">{count}</div>
+                  <div className="count">{decisionCounts[decision] ?? 0}</div>
                   <div className="label">{decision}</div>
                 </div>
               ))}
@@ -453,7 +565,7 @@ export default function LeadImportCenterPage() {
               </div>
             )}
             {batches.length === 0 && !batchListError && (
-              <div className="empty-state">暂无已保存批次</div>
+              <div className="empty-state">暂无导入批次，请先粘贴 JSON 名单并保存</div>
             )}
             {batches.length > 0 && (
               <div className="lead-batch-list">
@@ -490,7 +602,7 @@ export default function LeadImportCenterPage() {
               )}
             </div>
             {!selectedBatch && (
-              <div className="empty-state">选择一个批次查看明细</div>
+              <div className="empty-state">请选择一个批次查看明细</div>
             )}
             {selectedBatch && (
               <>
@@ -514,6 +626,17 @@ export default function LeadImportCenterPage() {
                     <span className="badge badge-danger">FAILED: {executionSummary.failedCount}</span>
                     <span className="badge badge-info">created customers: {executionSummary.createdCustomerCount}</span>
                     <span className="badge badge-info">created work items: {executionSummary.createdWorkItemCount}</span>
+                  </div>
+                )}
+                {executionSummary && executionSummary.failures.length > 0 && (
+                  <div className="lead-failure-list">
+                    <div className="lead-input-help-title">失败明细（前 10 条）</div>
+                    {executionSummary.failures.map((failure, index) => (
+                      <div className="lead-failure-item" key={`${failure.company_name ?? 'unknown'}-${index}`}>
+                        <span>{failure.company_name || '-'}</span>
+                        <span>{failure.error_message}</span>
+                      </div>
+                    ))}
                   </div>
                 )}
                 <BatchRowsTable rows={selectedRows} />
@@ -616,8 +739,8 @@ function BatchRowsTable({ rows }: { rows: LeadImportRow[] }) {
 function DecisionCountList({ counts }: { counts: Record<string, number> }) {
   return (
     <div className="lead-decision-counts">
-      {Object.entries(counts).map(([decision, count]) => (
-        <span key={decision} className="badge badge-info">{decision}: {count}</span>
+      {DECISIONS.map(decision => (
+        <span key={decision} className="badge badge-info">{decision}: {counts[decision] ?? 0}</span>
       ))}
     </div>
   );
@@ -656,6 +779,14 @@ function numberOrNull(value: unknown): number | null {
   if (value === null || value === undefined || value === '') return null;
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
+}
+
+function formatRowError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  if (message.includes('company_name')) {
+    return 'company_name 不能为空。';
+  }
+  return message;
 }
 
 function formatDateTime(value: string): string {

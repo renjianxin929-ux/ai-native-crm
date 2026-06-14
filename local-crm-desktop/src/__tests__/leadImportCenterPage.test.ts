@@ -1,4 +1,6 @@
 import Database from 'better-sqlite3';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { ensureBaseSchema, type DatabaseLike } from '../lib/db';
@@ -14,9 +16,11 @@ import {
   buildLeadImportExecutionConfirmation,
   buildLeadImportExecutionSummary,
   buildLeadImportPreview,
+  buildLeadImportSaveConfirmation,
   executeLeadImportBatchFromCenter,
   getLeadImportBatchExecutionState,
   LEAD_IMPORT_CENTER_ACTION_LABELS,
+  LEAD_IMPORT_SAMPLE_JSON,
 } from '../pages/LeadImportCenterPage';
 
 function createSqliteDb(): DatabaseLike & { close(): void } {
@@ -44,6 +48,18 @@ async function createReadyDb() {
 }
 
 describe('lead import center preview', () => {
+  it('sample JSON covers direct, crm-with-lookup, and lookup-first rows', () => {
+    const preview = buildLeadImportPreview(LEAD_IMPORT_SAMPLE_JSON);
+
+    expect(preview.error).toBeNull();
+    expect(preview.rows).toHaveLength(3);
+    expect(preview.rows.map(row => row.decision)).toEqual([
+      'DIRECT_TO_CRM',
+      'CRM_WITH_LOOKUP',
+      'LOOKUP_FIRST',
+    ]);
+  });
+
   it('parses JSON array and uses lead importer defaults for decisions', () => {
     const preview = buildLeadImportPreview(JSON.stringify([
       { company_name: 'Phone Co', mobile: '13800138000', score: 10 },
@@ -62,24 +78,40 @@ describe('lead import center preview', () => {
     expect(preview.inputRows).toHaveLength(4);
   });
 
-  it('marks blank company names as preview row errors', () => {
+  it('returns a concrete parse error for invalid JSON', () => {
+    const preview = buildLeadImportPreview('[not-json');
+
+    expect(preview.rows).toHaveLength(0);
+    expect(preview.inputRows).toHaveLength(0);
+    expect(preview.error).toContain('JSON 解析失败');
+    expect(preview.error).toContain('具体原因');
+  });
+
+  it('returns a clear error for non-array JSON', () => {
+    const preview = buildLeadImportPreview(JSON.stringify({ company_name: 'Object Co' }));
+
+    expect(preview.rows).toHaveLength(0);
+    expect(preview.error).toBe('必须是 JSON 数组。');
+  });
+
+  it('returns a clear error for empty arrays', () => {
+    const preview = buildLeadImportPreview('[]');
+
+    expect(preview.rows).toHaveLength(0);
+    expect(preview.error).toBe('至少需要一条数据。');
+  });
+
+  it('marks blank company names with row numbers', () => {
     const preview = buildLeadImportPreview(JSON.stringify([
       { company_name: '', mobile: '13800138000', score: 90 },
       { company_name: 'Valid Co', score: 80 },
     ]));
 
     expect(preview.error).toBeNull();
-    expect(preview.rows[0].error).toContain('company_name is required');
+    expect(preview.rows[0].error).toContain('第 1 行');
+    expect(preview.rows[0].error).toContain('company_name');
     expect(preview.rows[0].decision).toBeNull();
     expect(preview.rows[1].decision).toBe('CRM_WITH_LOOKUP');
-  });
-
-  it('returns a clear error for invalid JSON', () => {
-    const preview = buildLeadImportPreview('[not-json');
-
-    expect(preview.rows).toHaveLength(0);
-    expect(preview.inputRows).toHaveLength(0);
-    expect(preview.error).toContain('JSON');
   });
 
   it('lists saved batches and reads selected batch rows without side effects', async () => {
@@ -144,8 +176,30 @@ describe('lead import center preview', () => {
     });
   });
 
+  it('builds save confirmation before persisting a batch', () => {
+    const preview = buildLeadImportPreview(LEAD_IMPORT_SAMPLE_JSON);
+    const confirmation = buildLeadImportSaveConfirmation({
+      batchName: 'Daily batch',
+      batchType: 'AI_DAILY',
+      rows: preview.rows,
+    });
+
+    expect(confirmation.message).toContain('Daily batch');
+    expect(confirmation.message).toContain('AI_DAILY');
+    expect(confirmation.message).toContain('总行数: 3');
+    expect(confirmation.message).toContain('DIRECT_TO_CRM: 1');
+    expect(confirmation.message).toContain('CRM_WITH_LOOKUP: 1');
+    expect(confirmation.message).toContain('LOOKUP_FIRST: 1');
+    expect(confirmation.message).toContain('保存只进入 lead_import_batches / lead_import_rows，不会创建 CRM 客户');
+  });
+
   it('exposes only the allowed import center action labels', () => {
-    expect(LEAD_IMPORT_CENTER_ACTION_LABELS).toEqual(['解析预览', '保存为导入批次', '执行分流']);
+    expect(LEAD_IMPORT_CENTER_ACTION_LABELS).toEqual([
+      '填入示例 JSON',
+      '解析预览',
+      '保存为导入批次',
+      '执行分流，会创建 CRM 客户/获客任务',
+    ]);
     expect(LEAD_IMPORT_CENTER_ACTION_LABELS).not.toContain('导入 CRM');
     expect(LEAD_IMPORT_CENTER_ACTION_LABELS).not.toContain('创建作业任务');
   });
@@ -158,7 +212,7 @@ describe('lead import center preview', () => {
 
     expect(getLeadImportBatchExecutionState(rows)).toEqual({
       canExecute: true,
-      label: '执行分流',
+      label: '执行分流，会创建 CRM 客户/获客任务',
       executableRows: 2,
     });
   });
@@ -278,23 +332,24 @@ describe('lead import center preview', () => {
         failedCount: 0,
         createdCustomerCount: 1,
         createdWorkItemCount: 1,
+        failures: [],
       });
     } finally {
       db.close();
     }
   });
 
-  it('summarizes execution DONE / FAILED and created records from refreshed rows', () => {
+  it('summarizes execution failures with company_name and error_message', () => {
     const beforeRows = [
       createLeadRow({ id: 'row-1', decision_status: 'PENDING' }),
       createLeadRow({ id: 'row-2', decision_status: 'FAILED' }),
       createLeadRow({ id: 'row-3', decision_status: 'DONE', created_customer_id: 'existing-customer' }),
     ];
     const afterRows = [
-      createLeadRow({ id: 'row-1', decision_status: 'DONE', created_customer_id: 'new-customer' }),
-      createLeadRow({ id: 'row-2', decision_status: 'FAILED' }),
-      createLeadRow({ id: 'row-3', decision_status: 'DONE', created_customer_id: 'existing-customer' }),
-      createLeadRow({ id: 'row-4', decision_status: 'DONE', created_work_item_id: 'new-work-item' }),
+      createLeadRow({ id: 'row-1', company_name: 'New Done Co', decision_status: 'DONE', created_customer_id: 'new-customer' }),
+      createLeadRow({ id: 'row-2', company_name: 'Failed Co', decision_status: 'FAILED', error_message: 'Duplicate customer name' }),
+      createLeadRow({ id: 'row-3', company_name: 'Existing Co', decision_status: 'DONE', created_customer_id: 'existing-customer' }),
+      createLeadRow({ id: 'row-4', company_name: 'Work Item Co', decision_status: 'DONE', created_work_item_id: 'new-work-item' }),
     ];
 
     expect(buildLeadImportExecutionSummary(beforeRows, afterRows)).toEqual({
@@ -302,7 +357,33 @@ describe('lead import center preview', () => {
       failedCount: 1,
       createdCustomerCount: 1,
       createdWorkItemCount: 1,
+      failures: [{ company_name: 'Failed Co', error_message: 'Duplicate customer name' }],
     });
+  });
+
+  it('limits failure summaries to the first 10 failed rows', () => {
+    const failedRows = Array.from({ length: 12 }, (_, index) => createLeadRow({
+      id: `failed-${index}`,
+      company_name: `Failed ${index}`,
+      decision_status: 'FAILED',
+      error_message: `error-${index}`,
+    }));
+
+    const summary = buildLeadImportExecutionSummary([], failedRows);
+
+    expect(summary.failedCount).toBe(12);
+    expect(summary.failures).toHaveLength(10);
+    expect(summary.failures[0]).toEqual({ company_name: 'Failed 0', error_message: 'error-0' });
+    expect(summary.failures[9]).toEqual({ company_name: 'Failed 9', error_message: 'error-9' });
+  });
+
+  it('does not directly call forbidden customer, work item, or collected lead logic', () => {
+    const pageSource = readFileSync(resolve(__dirname, '../pages/LeadImportCenterPage.tsx'), 'utf8');
+
+    expect(pageSource).not.toContain('insertCustomerWithDb');
+    expect(pageSource).not.toContain('insertLeadWorkItem');
+    expect(pageSource).not.toContain('collected_leads');
+    expect(pageSource).not.toContain('navigator.clipboard');
   });
 });
 
