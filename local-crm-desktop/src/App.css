@@ -647,6 +647,119 @@ tr.clickable {
   gap: 8px;
 }
 
+.lead-batch-browser {
+  display: grid;
+  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.lead-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.lead-section-header .section-title {
+  margin-bottom: 0;
+}
+
+.lead-batch-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 520px;
+  overflow: auto;
+}
+
+.lead-batch-list-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 6px 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.lead-batch-list-item:hover,
+.lead-batch-list-item.active {
+  border-color: var(--primary);
+  background: var(--primary-light);
+}
+
+.lead-batch-list-item span:last-child {
+  grid-column: 1 / -1;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.lead-batch-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  color: var(--text-heading);
+}
+
+.lead-selected-batch-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-bottom: 12px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.lead-selected-batch-meta span:first-child {
+  color: var(--text-heading);
+  font-weight: 600;
+}
+
+.lead-stats-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.lead-stats-title {
+  min-width: 128px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-heading);
+}
+
+.lead-batch-rows-table {
+  max-height: 560px;
+  overflow: auto;
+}
+
+.lead-batch-rows-table table {
+  min-width: 1320px;
+}
+
+.lead-batch-rows-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+@media (max-width: 1100px) {
+  .lead-batch-browser {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* AI Tabs */
 .ai-tabs {
   display: flex;

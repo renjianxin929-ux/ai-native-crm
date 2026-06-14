@@ -1,13 +1,23 @@
-import { useMemo, useState } from 'react';
-import { AlertCircle, CheckCircle2, Eye, Save } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { AlertCircle, CheckCircle2, Eye, List, Save } from 'lucide-react';
 
 import { getDb } from '../lib/db';
+import {
+  listLeadImportBatches,
+  listLeadImportRowsByBatchId,
+} from '../lib/leadWorkbench/db';
 import {
   importLeadRowsToBatch,
   normalizeLeadImportRows,
   type LeadImportInputRow,
 } from '../lib/leadWorkbench/importer';
-import type { LeadBatchType, LeadImportDecision } from '../lib/leadWorkbench/types';
+import type {
+  LeadBatchType,
+  LeadDecisionStatus,
+  LeadImportBatch,
+  LeadImportDecision,
+  LeadImportRow,
+} from '../lib/leadWorkbench/types';
 
 type PreviewRow = {
   rowIndex: number;
@@ -35,6 +45,10 @@ type SavedBatchSummary = {
 };
 
 const BATCH_TYPES: LeadBatchType[] = ['AI_DAILY', 'MANUAL', 'EXPO', 'WECHAT', 'OTHER'];
+const DECISIONS: LeadImportDecision[] = ['DIRECT_TO_CRM', 'CRM_WITH_LOOKUP', 'LOOKUP_FIRST', 'RESERVE', 'IGNORE'];
+const DECISION_STATUSES: LeadDecisionStatus[] = ['PENDING', 'EXECUTING', 'DONE', 'FAILED'];
+
+export const LEAD_IMPORT_CENTER_ACTION_LABELS = ['解析预览', '保存为导入批次'];
 
 export function buildLeadImportPreview(jsonText: string): LeadImportPreviewResult {
   let parsed: unknown;
@@ -83,6 +97,19 @@ export function buildLeadImportPreview(jsonText: string): LeadImportPreviewResul
   return { rows, inputRows, error: null };
 }
 
+export function buildLeadImportBatchStats(rows: Array<Pick<LeadImportRow, 'decision' | 'decision_status'>>) {
+  return {
+    decisionCounts: DECISIONS.reduce<Record<LeadImportDecision, number>>((counts, decision) => {
+      counts[decision] = rows.filter(row => row.decision === decision).length;
+      return counts;
+    }, {} as Record<LeadImportDecision, number>),
+    statusCounts: DECISION_STATUSES.reduce<Record<LeadDecisionStatus, number>>((counts, status) => {
+      counts[status] = rows.filter(row => row.decision_status === status).length;
+      return counts;
+    }, {} as Record<LeadDecisionStatus, number>),
+  };
+}
+
 export default function LeadImportCenterPage() {
   const [batchName, setBatchName] = useState('');
   const [batchType, setBatchType] = useState<LeadBatchType>('AI_DAILY');
@@ -91,9 +118,45 @@ export default function LeadImportCenterPage() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedSummary, setSavedSummary] = useState<SavedBatchSummary | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [batches, setBatches] = useState<LeadImportBatch[]>([]);
+  const [selectedBatchId, setSelectedBatchId] = useState<string | null>(null);
+  const [selectedRows, setSelectedRows] = useState<LeadImportRow[]>([]);
+  const [batchListError, setBatchListError] = useState<string | null>(null);
+  const [isLoadingBatches, setIsLoadingBatches] = useState(false);
 
   const hasPreviewErrors = preview?.rows.some(row => row.error) ?? false;
   const decisionCounts = useMemo(() => countDecisions(preview?.rows ?? []), [preview]);
+  const selectedBatch = batches.find(batch => batch.id === selectedBatchId) ?? null;
+  const selectedBatchStats = useMemo(() => buildLeadImportBatchStats(selectedRows), [selectedRows]);
+
+  const loadBatches = useCallback(async () => {
+    setIsLoadingBatches(true);
+    setBatchListError(null);
+    try {
+      const db = await getDb();
+      setBatches(await listLeadImportBatches(db));
+    } catch (error) {
+      setBatchListError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsLoadingBatches(false);
+    }
+  }, []);
+
+  const handleSelectBatch = useCallback(async (batchId: string) => {
+    setSelectedBatchId(batchId);
+    setBatchListError(null);
+    try {
+      const db = await getDb();
+      setSelectedRows(await listLeadImportRowsByBatchId(db, batchId));
+    } catch (error) {
+      setSelectedRows([]);
+      setBatchListError(error instanceof Error ? error.message : String(error));
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadBatches();
+  }, [loadBatches]);
 
   const handleParsePreview = () => {
     setSaveError(null);
@@ -131,6 +194,8 @@ export default function LeadImportCenterPage() {
           return counts;
         }, {}),
       });
+      await loadBatches();
+      await handleSelectBatch(imported.batch.id);
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -190,7 +255,7 @@ export default function LeadImportCenterPage() {
             <div className="btn-group">
               <button type="button" className="btn btn-primary" onClick={handleParsePreview}>
                 <Eye size={16} />
-                解析预览
+                {LEAD_IMPORT_CENTER_ACTION_LABELS[0]}
               </button>
               <button
                 type="button"
@@ -199,7 +264,7 @@ export default function LeadImportCenterPage() {
                 disabled={!preview || Boolean(preview.error) || hasPreviewErrors || isSaving}
               >
                 <Save size={16} />
-                {isSaving ? '保存中' : '保存为导入批次'}
+                {isSaving ? '保存中' : LEAD_IMPORT_CENTER_ACTION_LABELS[1]}
               </button>
             </div>
           </section>
@@ -259,6 +324,64 @@ export default function LeadImportCenterPage() {
             <ImportPreviewTable rows={preview.rows} />
           </>
         )}
+
+        <div className="lead-batch-browser">
+          <section className="card">
+            <div className="lead-section-header">
+              <div className="section-title">已保存批次</div>
+              <button type="button" className="btn btn-sm" onClick={() => { void loadBatches(); }} disabled={isLoadingBatches}>
+                <List size={14} />
+                {isLoadingBatches ? '加载中' : '刷新'}
+              </button>
+            </div>
+            {batchListError && (
+              <div className="lead-alert lead-alert-danger">
+                <AlertCircle size={16} />
+                <span>{batchListError}</span>
+              </div>
+            )}
+            {batches.length === 0 && !batchListError && (
+              <div className="empty-state">暂无已保存批次</div>
+            )}
+            {batches.length > 0 && (
+              <div className="lead-batch-list">
+                {batches.map(batch => (
+                  <button
+                    type="button"
+                    key={batch.id}
+                    className={`lead-batch-list-item ${batch.id === selectedBatchId ? 'active' : ''}`}
+                    onClick={() => { void handleSelectBatch(batch.id); }}
+                  >
+                    <span className="lead-batch-name">{batch.batch_name}</span>
+                    <span>{batch.batch_type}</span>
+                    <span>{batch.total_rows} 行</span>
+                    <span>{formatDateTime(batch.created_at)}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="card">
+            <div className="section-title">批次明细</div>
+            {!selectedBatch && (
+              <div className="empty-state">选择一个批次查看明细</div>
+            )}
+            {selectedBatch && (
+              <>
+                <div className="lead-selected-batch-meta">
+                  <span>{selectedBatch.batch_name}</span>
+                  <span>{selectedBatch.batch_type}</span>
+                  <span>{selectedBatch.total_rows} 行</span>
+                  <span>{formatDateTime(selectedBatch.created_at)}</span>
+                </div>
+                <StatsStrip title="decision 统计" counts={selectedBatchStats.decisionCounts} />
+                <StatsStrip title="decision_status 统计" counts={selectedBatchStats.statusCounts} />
+                <BatchRowsTable rows={selectedRows} />
+              </>
+            )}
+          </section>
+        </div>
       </div>
     </>
   );
@@ -308,11 +431,65 @@ function ImportPreviewTable({ rows }: { rows: PreviewRow[] }) {
   );
 }
 
+function BatchRowsTable({ rows }: { rows: LeadImportRow[] }) {
+  return (
+    <div className="table-container lead-batch-rows-table">
+      <table>
+        <thead>
+          <tr>
+            <th>row_index</th>
+            <th>company_name</th>
+            <th>city</th>
+            <th>industry</th>
+            <th>score</th>
+            <th>grade</th>
+            <th>decision</th>
+            <th>decision_status</th>
+            <th>created_customer_id</th>
+            <th>created_work_item_id</th>
+            <th>error_message</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(row => (
+            <tr key={row.id}>
+              <td>{row.row_index}</td>
+              <td>
+                <div className="import-preview-name">{row.company_name}</div>
+              </td>
+              <td>{row.city || '-'}</td>
+              <td>{row.industry || '-'}</td>
+              <td>{row.score ?? '-'}</td>
+              <td>{row.grade || '-'}</td>
+              <td><span className="badge badge-info">{row.decision}</span></td>
+              <td><span className="badge badge-warning">{row.decision_status}</span></td>
+              <td>{row.created_customer_id || '-'}</td>
+              <td>{row.created_work_item_id || '-'}</td>
+              <td>{row.error_message || '-'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function DecisionCountList({ counts }: { counts: Record<string, number> }) {
   return (
     <div className="lead-decision-counts">
       {Object.entries(counts).map(([decision, count]) => (
         <span key={decision} className="badge badge-info">{decision}: {count}</span>
+      ))}
+    </div>
+  );
+}
+
+function StatsStrip({ title, counts }: { title: string; counts: Record<string, number> }) {
+  return (
+    <div className="lead-stats-strip">
+      <span className="lead-stats-title">{title}</span>
+      {Object.entries(counts).map(([key, count]) => (
+        <span key={key} className="badge badge-info">{key}: {count}</span>
       ))}
     </div>
   );
@@ -340,4 +517,10 @@ function numberOrNull(value: unknown): number | null {
   if (value === null || value === undefined || value === '') return null;
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
+}
+
+function formatDateTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString('zh-CN');
 }

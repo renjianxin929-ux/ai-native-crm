@@ -81,6 +81,16 @@ export async function getLeadImportBatchById(
   return rows[0] || null;
 }
 
+export async function listLeadImportBatches(
+  db: DatabaseLike,
+  limit = 50,
+): Promise<LeadImportBatch[]> {
+  return db.select<LeadImportBatch>(
+    'SELECT * FROM lead_import_batches ORDER BY created_at DESC, rowid DESC LIMIT ?',
+    [limit],
+  );
+}
+
 export async function listLeadImportRowsByBatchId(
   db: DatabaseLike,
   batchId: string,
