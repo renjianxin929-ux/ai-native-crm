@@ -106,9 +106,23 @@ export async function updateLeadImportRowDecisionStatus(
   db: DatabaseLike,
   id: string,
   decisionStatus: LeadDecisionStatus,
-  options: { createdWorkItemId?: string | null; errorMessage?: string | null } = {},
+  options: {
+    createdWorkItemId?: string | null;
+    createdCustomerId?: string | null;
+    errorMessage?: string | null;
+  } = {},
 ): Promise<void> {
   const now = new Date().toISOString();
+
+  if ('createdCustomerId' in options) {
+    await db.execute(
+      `UPDATE lead_import_rows
+       SET decision_status = ?, created_customer_id = ?, error_message = ?, updated_at = ?
+       WHERE id = ?`,
+      [decisionStatus, options.createdCustomerId ?? null, options.errorMessage ?? null, now, id],
+    );
+    return;
+  }
 
   if ('createdWorkItemId' in options) {
     await db.execute(

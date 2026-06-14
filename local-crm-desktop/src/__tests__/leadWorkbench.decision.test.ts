@@ -7,6 +7,7 @@ import {
   getLeadImportRowById,
   listLeadWorkItemsByImportRowId,
 } from '../lib/leadWorkbench/db';
+import { buildCustomerInputFromImportRow, insertCustomerWithDb } from '../lib/leadWorkbench/customerAdapter';
 import { executeLeadImportBatchDecisions, executeLeadImportRowDecision } from '../lib/leadWorkbench/decision';
 import { importLeadRowsToBatch } from '../lib/leadWorkbench/importer';
 
@@ -115,22 +116,168 @@ describe('lead workbench decision executor', () => {
     }
   });
 
-  it('DIRECT_TO_CRM and CRM_WITH_LOOKUP are unsupported and do not create customers or work items', async () => {
+  it('DIRECT_TO_CRM creates one customer, marks the row done, and creates no work items', async () => {
+    const db = await createReadyDb();
+    try {
+      const imported = await importLeadRowsToBatch(
+        db,
+        { batch_name: 'Direct batch', batch_type: 'AI_DAILY', source_label: null },
+        [{ company_name: 'Direct Co', mobile: '13800138000', score: 10, grade: 'S' }],
+      );
+
+      const result = await executeLeadImportRowDecision(db, imported.rows[0].id);
+      const row = await getLeadImportRowById(db, imported.rows[0].id);
+      const customers = await db.select<{ id: string; name: string; customer_grade: string }>(
+        'SELECT id, name, customer_grade FROM customers',
+      );
+
+      expect(result.status).toBe('DONE');
+      expect(row?.decision_status).toBe('DONE');
+      expect(row?.created_customer_id).toBeTruthy();
+      expect(customers).toEqual([{ id: row?.created_customer_id, name: 'Direct Co', customer_grade: 'B' }]);
+      expect(customers[0].customer_grade).not.toBe('A');
+      expect(await db.select('SELECT * FROM lead_work_items')).toHaveLength(0);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('DIRECT_TO_CRM repeated execution does not create a second customer', async () => {
+    const db = await createReadyDb();
+    try {
+      const imported = await importLeadRowsToBatch(
+        db,
+        { batch_name: 'Direct idempotent batch', batch_type: 'MANUAL', source_label: null },
+        [{ company_name: 'Direct Repeat Co', mobile: '13800138001', score: 10 }],
+      );
+
+      await executeLeadImportRowDecision(db, imported.rows[0].id);
+      const rowAfterFirstRun = await getLeadImportRowById(db, imported.rows[0].id);
+      const second = await executeLeadImportRowDecision(db, imported.rows[0].id);
+      const rowAfterSecondRun = await getLeadImportRowById(db, imported.rows[0].id);
+      const customers = await db.select('SELECT * FROM customers');
+
+      expect(second.status).toBe('ALREADY_DONE');
+      expect(customers).toHaveLength(1);
+      expect(rowAfterFirstRun?.created_customer_id).toBeTruthy();
+      expect(rowAfterSecondRun?.created_customer_id).toBe(rowAfterFirstRun?.created_customer_id);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('DIRECT_TO_CRM maps lead grades conservatively when creating customers', async () => {
+    const db = await createReadyDb();
+    try {
+      const imported = await importLeadRowsToBatch(
+        db,
+        { batch_name: 'Direct grade batch', batch_type: 'MANUAL', source_label: null },
+        [
+          { company_name: 'Direct Grade S Co', mobile: '13800138011', score: 10, grade: 'S' },
+          { company_name: 'Direct Grade A Co', mobile: '13800138012', score: 10, grade: 'A' },
+          { company_name: 'Direct Grade B Co', mobile: '13800138013', score: 10, grade: 'B' },
+          { company_name: 'Direct Empty Grade Co', mobile: '13800138014', score: 10 },
+        ],
+      );
+
+      for (const row of imported.rows) {
+        await executeLeadImportRowDecision(db, row.id);
+      }
+
+      const customers = await db.select<{ name: string; customer_grade: string }>(
+        'SELECT name, customer_grade FROM customers ORDER BY name ASC',
+      );
+      expect(customers).toEqual([
+        { name: 'Direct Empty Grade Co', customer_grade: 'C' },
+        { name: 'Direct Grade A Co', customer_grade: 'C' },
+        { name: 'Direct Grade B Co', customer_grade: 'C' },
+        { name: 'Direct Grade S Co', customer_grade: 'B' },
+      ]);
+      expect(customers.some(customer => customer.customer_grade === 'A')).toBe(false);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('DIRECT_TO_CRM fails on duplicate phone or duplicate company name without creating a customer', async () => {
+    const db = await createReadyDb();
+    try {
+      const existingPhoneRow = (await importLeadRowsToBatch(
+        db,
+        { batch_name: 'Existing phone seed', batch_type: 'MANUAL', source_label: null },
+        [{ company_name: 'Existing Phone Co', mobile: '13800138002', score: 10 }],
+      )).rows[0];
+      await insertCustomerWithDb(db, buildCustomerInputFromImportRow(existingPhoneRow));
+
+      const duplicateRows = (await importLeadRowsToBatch(
+        db,
+        { batch_name: 'Duplicate direct batch', batch_type: 'MANUAL', source_label: null },
+        [
+          { company_name: 'New Phone Duplicate Co', mobile: '13800138002', score: 10 },
+          { company_name: 'Existing Phone Co', mobile: '13800138003', score: 10 },
+        ],
+      )).rows;
+
+      const phoneResult = await executeLeadImportRowDecision(db, duplicateRows[0].id);
+      const nameResult = await executeLeadImportRowDecision(db, duplicateRows[1].id);
+      const phoneRow = await getLeadImportRowById(db, duplicateRows[0].id);
+      const nameRow = await getLeadImportRowById(db, duplicateRows[1].id);
+
+      expect(phoneResult.status).toBe('FAILED');
+      expect(nameResult.status).toBe('FAILED');
+      expect(phoneRow?.decision_status).toBe('FAILED');
+      expect(phoneRow?.error_message).toContain('Duplicate customer phone_number');
+      expect(nameRow?.decision_status).toBe('FAILED');
+      expect(nameRow?.error_message).toContain('Duplicate customer name');
+      expect(await db.select('SELECT * FROM customers')).toHaveLength(1);
+      expect(await db.select('SELECT * FROM lead_work_items')).toHaveLength(0);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('DIRECT_TO_CRM rolls back when customer creation succeeds but row update fails', async () => {
+    const db = await createReadyDb();
+    const originalExecute = db.execute.bind(db);
+
+    try {
+      const imported = await importLeadRowsToBatch(
+        db,
+        { batch_name: 'Direct rollback batch', batch_type: 'MANUAL', source_label: null },
+        [{ company_name: 'Direct Rollback Co', mobile: '13800138004', score: 10 }],
+      );
+
+      db.execute = async (sql: string, bindings: unknown[] = []) => {
+        if (sql.includes('created_customer_id = ?')) {
+          throw new Error('simulated customer row update failure');
+        }
+        return originalExecute(sql, bindings);
+      };
+
+      await expect(executeLeadImportRowDecision(db, imported.rows[0].id)).rejects.toThrow(
+        'simulated customer row update failure',
+      );
+
+      const row = await getLeadImportRowById(db, imported.rows[0].id);
+      expect(row?.decision_status).toBe('PENDING');
+      expect(row?.created_customer_id).toBeNull();
+      expect(await db.select('SELECT * FROM customers')).toHaveLength(0);
+      expect(await db.select('SELECT * FROM lead_work_items')).toHaveLength(0);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('CRM_WITH_LOOKUP is still unsupported and does not create customers or work items', async () => {
     const db = await createReadyDb();
     try {
       const imported = await importLeadRowsToBatch(
         db,
         { batch_name: 'Unsupported batch', batch_type: 'AI_DAILY', source_label: null },
-        [
-          { company_name: 'Direct Co', mobile: '13800138000', score: 10 },
-          { company_name: 'Crm Lookup Co', score: 80 },
-        ],
+        [{ company_name: 'Crm Lookup Co', score: 80 }],
       );
 
       await expect(executeLeadImportRowDecision(db, imported.rows[0].id)).rejects.toThrow(
-        'Unsupported lead import decision: DIRECT_TO_CRM',
-      );
-      await expect(executeLeadImportRowDecision(db, imported.rows[1].id)).rejects.toThrow(
         'Unsupported lead import decision: CRM_WITH_LOOKUP',
       );
 

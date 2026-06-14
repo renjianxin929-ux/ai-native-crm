@@ -2,6 +2,12 @@ import { v4 as uuidv4 } from 'uuid';
 
 import type { DatabaseLike } from '../db';
 import {
+  buildCustomerInputFromImportRow,
+  findCustomerByPhoneNumber,
+  findCustomersByName,
+  insertCustomerWithDb,
+} from './customerAdapter';
+import {
   getLeadImportRowById,
   insertLeadWorkItem,
   listLeadImportRowsByBatchId,
@@ -12,7 +18,8 @@ import type { LeadImportRow, LeadWorkItem } from './types';
 
 export type LeadDecisionExecutionResult =
   | { status: 'DONE'; importRowId: string; workItemId?: string }
-  | { status: 'ALREADY_DONE'; importRowId: string; workItemId?: string | null };
+  | { status: 'FAILED'; importRowId: string; errorMessage: string }
+  | { status: 'ALREADY_DONE'; importRowId: string; workItemId?: string | null; customerId?: string | null };
 
 export async function executeLeadImportRowDecision(
   db: DatabaseLike,
@@ -31,8 +38,12 @@ export async function executeLeadImportRowDecision(
     throw new Error(`Lead import row ${importRowId} is not executable from status ${row.decision_status}`);
   }
 
-  if (row.decision === 'DIRECT_TO_CRM' || row.decision === 'CRM_WITH_LOOKUP') {
+  if (row.decision === 'CRM_WITH_LOOKUP') {
     throw new Error(`Unsupported lead import decision: ${row.decision}`);
+  }
+
+  if (row.decision === 'DIRECT_TO_CRM') {
+    return executeDirectToCrm(db, row);
   }
 
   if (row.decision === 'LOOKUP_FIRST') {
@@ -58,6 +69,49 @@ export async function executeLeadImportBatchDecisions(
   }
 
   return results;
+}
+
+async function executeDirectToCrm(
+  db: DatabaseLike,
+  row: LeadImportRow,
+): Promise<LeadDecisionExecutionResult> {
+  if (row.created_customer_id) {
+    return { status: 'ALREADY_DONE', importRowId: row.id, customerId: row.created_customer_id };
+  }
+
+  await db.execute('BEGIN');
+  try {
+    await updateLeadImportRowDecisionStatus(db, row.id, 'EXECUTING');
+
+    const customerInput = buildCustomerInputFromImportRow(row);
+    const duplicatePhoneCustomer = await findCustomerByPhoneNumber(db, customerInput.phone_number);
+    if (duplicatePhoneCustomer) {
+      const errorMessage = `Duplicate customer phone_number: ${customerInput.phone_number}`;
+      await updateLeadImportRowDecisionStatus(db, row.id, 'FAILED', { errorMessage });
+      await db.execute('COMMIT');
+      return { status: 'FAILED', importRowId: row.id, errorMessage };
+    }
+
+    const duplicateNameCustomers = await findCustomersByName(db, customerInput.name);
+    if (duplicateNameCustomers.length > 0) {
+      const errorMessage = `Duplicate customer name: ${customerInput.name}`;
+      await updateLeadImportRowDecisionStatus(db, row.id, 'FAILED', { errorMessage });
+      await db.execute('COMMIT');
+      return { status: 'FAILED', importRowId: row.id, errorMessage };
+    }
+
+    const customerId = await insertCustomerWithDb(db, customerInput);
+    await updateLeadImportRowDecisionStatus(db, row.id, 'DONE', {
+      createdCustomerId: customerId,
+      errorMessage: null,
+    });
+    await db.execute('COMMIT');
+
+    return { status: 'DONE', importRowId: row.id };
+  } catch (error) {
+    await db.execute('ROLLBACK');
+    throw error;
+  }
 }
 
 async function executeLookupFirst(
