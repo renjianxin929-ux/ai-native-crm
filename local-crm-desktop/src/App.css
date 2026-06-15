@@ -980,6 +980,49 @@ tr.clickable {
   line-height: 1.45;
 }
 
+.lead-workbench-capture-history {
+  margin-bottom: 14px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.lead-workbench-history-empty {
+  padding: 18px 12px;
+}
+
+.lead-workbench-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lead-workbench-history-item {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.lead-workbench-history-item summary {
+  display: grid;
+  grid-template-columns: minmax(150px, auto) auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  cursor: pointer;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.lead-workbench-history-summary {
+  margin: 10px 0;
+  color: var(--text-heading);
+  font-size: 13px;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
 .lead-workbench-detail-grid {
   display: grid;
   grid-template-columns: 1fr;

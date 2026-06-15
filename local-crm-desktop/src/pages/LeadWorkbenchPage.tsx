@@ -2,7 +2,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertCircle, Clipboard, PhoneOff, RefreshCw, Search, SkipForward } from 'lucide-react';
 
 import { getDb } from '../lib/db';
-import { insertLeadCaptureEvent } from '../lib/leadWorkbench/captureEvents';
+import {
+  insertLeadCaptureEvent,
+  listLeadCaptureEventsByWorkItemId,
+  type LeadCaptureEvent,
+} from '../lib/leadWorkbench/captureEvents';
 import {
   getLeadWorkItemStatusCounts,
   listLeadWorkItemsByStatus,
@@ -85,12 +89,41 @@ export function getLeadWorkbenchDetailEmptyMessage(): string {
   return '请选择左侧任务查看详情。';
 }
 
+export function getLeadCaptureHistoryEmptyMessage(): string {
+  return '暂无捕获记录。';
+}
+
 export function getLeadCaptureSaveSuccessMessage(): string {
   return '捕获记录已保存';
 }
 
 export function getLeadCaptureSaveErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+export function isLeadCaptureHistoryVisible(item: LeadWorkItem | null): boolean {
+  return Boolean(item);
+}
+
+export function getLeadCaptureRawTextSummary(rawText: string): string {
+  return rawText.length > 120 ? `${rawText.slice(0, 120)}...` : rawText;
+}
+
+export function getLeadCaptureParsedSummary(parsedJson: string): string {
+  try {
+    const parsed = JSON.parse(parsedJson) as Record<string, unknown>;
+    const values = [
+      ...stringArrayFromUnknown(parsed.mobiles),
+      ...stringArrayFromUnknown(parsed.tels),
+      ...stringArrayFromUnknown(parsed.urls),
+      ...stringArrayFromUnknown(parsed.emails),
+      ...stringArrayFromUnknown(parsed.possibleContact),
+      ...stringArrayFromUnknown(parsed.possibleContacts),
+    ];
+    return values.length > 0 ? values.join(' / ') : '-';
+  } catch {
+    return '-';
+  }
 }
 
 export function isLeadPastePreviewVisible(item: LeadWorkItem | null): boolean {
@@ -257,6 +290,10 @@ function getTotalStatusCount(counts: Record<LeadWorkStatus, number>): number {
   return LEAD_WORKBENCH_STATUS_FILTERS.reduce((total, status) => total + counts[status], 0);
 }
 
+function stringArrayFromUnknown(value: unknown): string[] {
+  return Array.isArray(value) ? value.map(item => String(item)).filter(Boolean) : [];
+}
+
 export default function LeadWorkbenchPage() {
   const [statusFilter, setStatusFilter] = useState<LeadWorkStatus>('TODO');
   const [items, setItems] = useState<LeadWorkItem[]>([]);
@@ -268,6 +305,7 @@ export default function LeadWorkbenchPage() {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [pastePreviewState, setPastePreviewState] = useState<LeadPastePreviewState>(getEmptyLeadPastePreviewState);
+  const [captureEvents, setCaptureEvents] = useState<LeadCaptureEvent[]>([]);
 
   const selectedItem = useMemo(
     () => items.find(item => item.id === selectedItemId) || null,
@@ -309,6 +347,24 @@ export default function LeadWorkbenchPage() {
   useEffect(() => {
     setPastePreviewState(getEmptyLeadPastePreviewState());
   }, [selectedItemId]);
+
+  const loadCaptureEvents = useCallback(async (workItemId: string) => {
+    const db = await getDb();
+    const events = await listLeadCaptureEventsByWorkItemId(db, workItemId);
+    setCaptureEvents(events);
+  }, []);
+
+  useEffect(() => {
+    if (!selectedItemId) {
+      setCaptureEvents([]);
+      return;
+    }
+
+    setCaptureEvents([]);
+    void loadCaptureEvents(selectedItemId).catch(err => {
+      setError(getLeadCaptureSaveErrorMessage(err));
+    });
+  }, [loadCaptureEvents, selectedItemId]);
 
   const handleRefreshTasks = useCallback(async () => {
     setMessage(null);
@@ -379,13 +435,14 @@ export default function LeadWorkbenchPage() {
         confidence_json: {},
         action: 'PARSED',
       });
+      await loadCaptureEvents(selectedItem.id);
       setMessage(getLeadCaptureSaveSuccessMessage());
     } catch (err) {
       setError(getLeadCaptureSaveErrorMessage(err));
     } finally {
       setIsSavingCapture(false);
     }
-  }, [pastePreviewState.result, pastePreviewState.text, selectedItem]);
+  }, [loadCaptureEvents, pastePreviewState.result, pastePreviewState.text, selectedItem]);
 
   const statusActions = selectedItem ? getLeadWorkItemStatusActions(selectedItem.status) : [];
   const searchKeyword = selectedItem ? getSuggestedTanjiSearchKeyword(selectedItem) : '';
@@ -596,6 +653,32 @@ export default function LeadWorkbenchPage() {
                         <PreviewList label="possibleContact / 可能联系人" values={pastePreviewState.result.possibleContact} />
                         <PreviewText label="note / 备注文本" value={pastePreviewState.result.note} />
                         <PreviewText label="raw_text 原文" value={pastePreviewState.result.raw_text} />
+                      </div>
+                    )}
+                  </section>
+                )}
+
+                {isLeadCaptureHistoryVisible(selectedItem) && (
+                  <section className="lead-workbench-capture-history">
+                    <div className="section-title">历史捕获记录</div>
+                    {captureEvents.length === 0 ? (
+                      <div className="empty-state lead-workbench-history-empty">{getLeadCaptureHistoryEmptyMessage()}</div>
+                    ) : (
+                      <div className="lead-workbench-history-list">
+                        {captureEvents.map(event => (
+                          <details className="lead-workbench-history-item" key={event.id}>
+                            <summary>
+                              <span>{event.created_at}</span>
+                              <span className="badge badge-info">{event.action}</span>
+                              <span>{getLeadCaptureRawTextSummary(event.raw_text)}</span>
+                            </summary>
+                            <div className="lead-workbench-history-summary">
+                              {getLeadCaptureParsedSummary(event.parsed_json)}
+                            </div>
+                            <PreviewText label="完整 raw_text" value={event.raw_text} />
+                            <PreviewText label="完整 parsed_json" value={event.parsed_json} />
+                          </details>
+                        ))}
                       </div>
                     )}
                   </section>

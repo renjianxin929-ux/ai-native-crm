@@ -14,10 +14,14 @@ import {
 } from '../lib/leadWorkbench/db';
 import { updateLeadWorkItemStatus } from '../lib/leadWorkbench/workItemActions';
 import type { LeadWorkItem, LeadWorkStatus } from '../lib/leadWorkbench/types';
+import type { LeadCaptureEvent } from '../lib/leadWorkbench/captureEvents';
 import {
   buildLeadPastePreviewResult,
   copyLeadSearchKeyword,
   filterLeadWorkItemsByStatus,
+  getLeadCaptureHistoryEmptyMessage,
+  getLeadCaptureParsedSummary,
+  getLeadCaptureRawTextSummary,
   getLeadCaptureSaveErrorMessage,
   getLeadCaptureSaveConfirmationMessage,
   getLeadCaptureSaveSuccessMessage,
@@ -30,6 +34,7 @@ import {
   getNoStructuredLeadPastePreviewMessage,
   getStatusActionConfirmationMessage,
   getSuggestedTanjiSearchKeyword,
+  isLeadCaptureHistoryVisible,
   isLeadWorkItemTerminalStatus,
   isLeadPastePreviewVisible,
   LEAD_WORKBENCH_ACTION_LABELS,
@@ -357,6 +362,48 @@ describe('lead workbench page operations', () => {
     expect(getLeadCaptureSaveErrorMessage('save failed')).toBe('save failed');
   });
 
+  it('shows capture history only for a selected task and has an empty state', () => {
+    expect(isLeadCaptureHistoryVisible(null)).toBe(false);
+    expect(isLeadCaptureHistoryVisible(createWorkItem())).toBe(true);
+    expect(getLeadCaptureHistoryEmptyMessage()).toBe('暂无捕获记录。');
+  });
+
+  it('summarizes capture raw text to the first 120 characters', () => {
+    const rawText = 'a'.repeat(121);
+
+    expect(getLeadCaptureRawTextSummary(rawText)).toBe(`${'a'.repeat(120)}...`);
+    expect(getLeadCaptureRawTextSummary('short raw')).toBe('short raw');
+  });
+
+  it('summarizes parsed capture JSON candidates for display', () => {
+    const summary = getLeadCaptureParsedSummary(JSON.stringify({
+      mobiles: ['13800138000'],
+      tels: ['0757-88889999'],
+      urls: ['https://example.com'],
+      emails: ['sales@example.com'],
+      possibleContact: ['张总'],
+    }));
+
+    expect(summary).toContain('13800138000');
+    expect(summary).toContain('0757-88889999');
+    expect(summary).toContain('https://example.com');
+    expect(summary).toContain('sales@example.com');
+    expect(summary).toContain('张总');
+  });
+
+  it('keeps full capture raw text and parsed JSON available for expanded display', () => {
+    const event = createCaptureEvent({
+      raw_text: '完整原文 '.repeat(30),
+      parsed_json: JSON.stringify({ mobiles: ['13800138000'], possibleContact: ['张总'] }),
+    });
+
+    expect(event.raw_text.length).toBeGreaterThan(120);
+    expect(JSON.parse(event.parsed_json)).toEqual({
+      mobiles: ['13800138000'],
+      possibleContact: ['张总'],
+    });
+  });
+
   it('updates status and refreshes list, counts, and detail data through the shared action', async () => {
     const db = await createReadyDb();
     try {
@@ -402,6 +449,9 @@ describe('lead workbench page operations', () => {
     expect(pageSource).toContain('解析预览');
     expect(pageSource).toContain('清空粘贴内容');
     expect(pageSource).toContain('保存捕获记录');
+    expect(pageSource).toContain('历史捕获记录');
+    expect(pageSource).toContain('暂无捕获记录。');
+    expect(pageSource).toContain('listLeadCaptureEventsByWorkItemId');
     expect(pageSource).toContain('捕获记录已保存');
     expect(pageSource).toContain('insertLeadCaptureEvent');
     expect(pageSource).toContain('parseLeadContactText');
@@ -410,6 +460,8 @@ describe('lead workbench page operations', () => {
     expect(pageSource).not.toContain('生成线索');
     expect(pageSource).not.toContain('保存 collected_lead');
     expect(pageSource).not.toContain('同步 CRM');
+    expect(pageSource).not.toContain('编辑捕获记录');
+    expect(pageSource).not.toContain('删除捕获记录');
     expect(pageSource).not.toContain('insertCustomerWithDb');
     expect(pageSource).not.toContain('createCustomer');
     expect(pageSource).not.toContain('insertLeadWorkItem');
@@ -432,6 +484,19 @@ describe('lead workbench page operations', () => {
     expect(pageSource).not.toContain('../lib/importer');
   });
 });
+
+function createCaptureEvent(overrides: Partial<LeadCaptureEvent> = {}): LeadCaptureEvent {
+  return {
+    id: 'capture-1',
+    work_item_id: 'work-1',
+    raw_text: 'raw text',
+    parsed_json: '{}',
+    confidence_json: '{}',
+    action: 'PARSED',
+    created_at: '2026-06-14T00:00:00.000Z',
+    ...overrides,
+  };
+}
 
 function createWorkItem(overrides: Partial<LeadWorkItem> = {}): LeadWorkItem {
   return {

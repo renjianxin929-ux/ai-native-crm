@@ -118,7 +118,92 @@ describe('lead workbench capture events', () => {
       db.close();
     }
   });
+
+  it('lists capture events by work_item_id ordered by created_at descending with default limit 5', async () => {
+    const db = await createReadyDb();
+    try {
+      await insertLeadWorkItem(db, createWorkItem({ id: 'work-a' }));
+      await insertLeadWorkItem(db, createWorkItem({ id: 'work-b' }));
+      for (let index = 1; index <= 6; index += 1) {
+        await seedCaptureEvent(db, {
+          id: `a-${index}`,
+          work_item_id: 'work-a',
+          raw_text: `work a raw ${index}`,
+          created_at: `2026-06-14T00:0${index}:00.000Z`,
+        });
+      }
+      await seedCaptureEvent(db, {
+        id: 'b-1',
+        work_item_id: 'work-b',
+        raw_text: 'work b raw',
+        created_at: '2026-06-14T00:09:00.000Z',
+      });
+
+      const events = await listLeadCaptureEventsByWorkItemId(db, 'work-a');
+
+      expect(events.map(event => event.id)).toEqual(['a-6', 'a-5', 'a-4', 'a-3', 'a-2']);
+      expect(events.every(event => event.work_item_id === 'work-a')).toBe(true);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('honors an explicit capture event limit without writing other lead domains', async () => {
+    const db = await createReadyDb();
+    try {
+      const original = createWorkItem({ id: 'limited-work' });
+      await insertLeadWorkItem(db, original);
+      await seedCaptureEvent(db, {
+        id: 'limited-1',
+        work_item_id: 'limited-work',
+        raw_text: 'older',
+        created_at: '2026-06-14T00:01:00.000Z',
+      });
+      await seedCaptureEvent(db, {
+        id: 'limited-2',
+        work_item_id: 'limited-work',
+        raw_text: 'newer',
+        created_at: '2026-06-14T00:02:00.000Z',
+      });
+
+      const events = await listLeadCaptureEventsByWorkItemId(db, 'limited-work', 1);
+      const workItems = await db.select<LeadWorkItem>('SELECT * FROM lead_work_items');
+
+      expect(events.map(event => event.id)).toEqual(['limited-2']);
+      expect(await db.select('SELECT * FROM collected_leads')).toHaveLength(0);
+      expect(await db.select('SELECT * FROM customers')).toHaveLength(0);
+      expect(workItems).toHaveLength(1);
+      expect(workItems[0]).toMatchObject(original);
+    } finally {
+      db.close();
+    }
+  });
 });
+
+async function seedCaptureEvent(
+  db: DatabaseLike,
+  input: {
+    id: string;
+    work_item_id: string;
+    raw_text: string;
+    created_at: string;
+  },
+): Promise<void> {
+  await db.execute(
+    `INSERT INTO lead_capture_events (
+      id, work_item_id, raw_text, parsed_json, confidence_json, action, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [
+      input.id,
+      input.work_item_id,
+      input.raw_text,
+      JSON.stringify({ mobiles: ['13800138000'], possibleContact: ['张总'] }),
+      '{}',
+      'PARSED',
+      input.created_at,
+    ],
+  );
+}
 
 function createWorkItem(overrides: Partial<LeadWorkItem> = {}): LeadWorkItem {
   return {

@@ -68,7 +68,7 @@ export async function insertLeadCaptureEvent(
 export async function listLeadCaptureEventsByWorkItemId(
   db: DatabaseLike,
   workItemId: string,
-  limit = 50,
+  limit = 5,
 ): Promise<LeadCaptureEvent[]> {
   return db.select<LeadCaptureEvent>(
     'SELECT * FROM lead_capture_events WHERE work_item_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?',
