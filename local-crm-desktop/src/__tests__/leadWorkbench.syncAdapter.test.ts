@@ -13,7 +13,7 @@ import {
   buildCustomerInputFromCollectedLead,
 } from '../lib/leadWorkbench/customerAdapter';
 import { ensureLeadWorkbenchSchema } from '../lib/leadWorkbench/db';
-import { insertLeadSyncLog } from '../lib/leadWorkbench/syncAdapter';
+import { insertLeadSyncLog, syncCollectedLeadCreateCustomer } from '../lib/leadWorkbench/syncAdapter';
 import type { Customer } from '../lib/types';
 
 function createSqliteDb(): DatabaseLike & { close(): void } {
@@ -313,14 +313,438 @@ describe('lead workbench sync adapter foundations', () => {
     expect(result.message).toContain('No empty customer fields');
   });
 
-  it('Phase 4C-1 sync adapter does not implement full sync, create customers, or import UI pages', () => {
+  it('Phase 4C-2 sync adapter stays out of legacy db, ENRICH, decision execution, and UI pages', () => {
     const syncSource = readFileSync(new URL('../lib/leadWorkbench/syncAdapter.ts', import.meta.url), 'utf8');
 
-    expect(syncSource).not.toContain('insertCustomerWithDb');
+    expect(syncSource).toContain('insertCustomerWithDb');
+    expect(syncSource).not.toContain('getDb(');
+    expect(syncSource).not.toContain('createCustomer(');
+    expect(syncSource).not.toContain('updateCustomer');
+    expect(syncSource).not.toContain('buildCustomerEnrichmentPatchFromCollectedLead');
     expect(syncSource).not.toContain('updateCustomer');
     expect(syncSource).not.toContain('DataImportPage');
     expect(syncSource).not.toContain('LeadImportCenterPage');
     expect(syncSource).not.toContain('executeLeadImportRowDecision');
+  });
+});
+
+describe('lead workbench collected lead CREATE_CUSTOMER sync', () => {
+  it('syncs an UNSYNCED collected lead into one new customer and writes SYNCED state and success log', async () => {
+    const db = await createReadyDb();
+    try {
+      await insertStoredDraft(db, {
+        id: 'draft-sync-1',
+        company_name: 'Sync Co',
+        contact_name: 'Sync Contact',
+        mobile: '13800138000',
+        tel: '0757-88889999',
+        website: 'https://sync.example',
+        email: 'sales@sync.example',
+        note: 'confirmed lead',
+      });
+
+      const result = await syncCollectedLeadCreateCustomer(db, 'draft-sync-1');
+      const customers = await db.select<Customer>('SELECT * FROM customers');
+      const draft = await getCollectedLeadById(db, 'draft-sync-1');
+      const logs = await db.select('SELECT * FROM lead_sync_logs');
+
+      expect(result.status).toBe('SUCCESS');
+      expect(result.collectedLeadId).toBe('draft-sync-1');
+      expect(result.targetCustomerId).toBe(customers[0].id);
+      expect(customers).toHaveLength(1);
+      expect(customers[0]).toMatchObject({
+        name: 'Sync Co',
+        phone_number: '13800138000',
+        contact_person: 'Sync Contact',
+        website: 'https://sync.example',
+        email: 'sales@sync.example',
+        customer_grade: 'C',
+        stage: 'NEW_LEAD',
+      });
+      expect(draft).toMatchObject({
+        sync_status: 'SYNCED',
+        created_customer_id: customers[0].id,
+        updated_customer_id: null,
+      });
+      expect(logs).toHaveLength(1);
+      expect(logs[0]).toMatchObject({
+        collected_lead_id: 'draft-sync-1',
+        action: 'CREATE_CUSTOMER',
+        status: 'SUCCESS',
+        target_customer_id: customers[0].id,
+      });
+      expect(String((logs[0] as { message: string }).message)).toContain('Created customer from collected lead');
+      expect(await db.select('SELECT * FROM lead_work_items')).toHaveLength(0);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('normal sync does not modify existing customers', async () => {
+    const db = await createReadyDb();
+    try {
+      await insertExistingCustomer(db, {
+        id: 'existing-customer',
+        name: 'Existing Co',
+        phone_number: '13900139000',
+      });
+      const beforeExisting = await db.select<Customer>('SELECT * FROM customers WHERE id = ?', ['existing-customer']);
+      await insertStoredDraft(db, {
+        id: 'draft-new-customer',
+        company_name: 'Brand New Co',
+        mobile: '13800138000',
+      });
+
+      const result = await syncCollectedLeadCreateCustomer(db, 'draft-new-customer');
+      const afterExisting = await db.select<Customer>('SELECT * FROM customers WHERE id = ?', ['existing-customer']);
+      const customers = await db.select<Customer>('SELECT * FROM customers ORDER BY name ASC');
+
+      expect(result.status).toBe('SUCCESS');
+      expect(afterExisting).toEqual(beforeExisting);
+      expect(customers).toHaveLength(2);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('rejects CREATE_CUSTOMER when collected_lead.customer_id is already set', async () => {
+    const db = await createReadyDb();
+    try {
+      await insertExistingCustomer(db, {
+        id: 'existing-customer',
+        name: 'Existing Co',
+        phone_number: '13900139000',
+      });
+      await insertStoredDraft(db, {
+        id: 'draft-enrich-mode',
+        customer_id: 'existing-customer',
+        company_name: 'Needs Enrich Co',
+      });
+
+      const result = await syncCollectedLeadCreateCustomer(db, 'draft-enrich-mode');
+
+      expect(result.status).toBe('INVALID_MODE');
+      expect(await db.select('SELECT * FROM customers')).toHaveLength(1);
+      expect(await db.select('SELECT * FROM lead_sync_logs')).toHaveLength(0);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('returns ALREADY_SYNCED for SYNCED leads without creating another customer', async () => {
+    const db = await createReadyDb();
+    try {
+      await insertExistingCustomer(db, {
+        id: 'already-created',
+        name: 'Already Co',
+        phone_number: '13800138000',
+      });
+      await insertStoredDraft(db, {
+        id: 'draft-already-synced',
+        company_name: 'Already Co',
+        mobile: '13800138000',
+        sync_status: 'SYNCED',
+        created_customer_id: 'already-created',
+      });
+
+      const result = await syncCollectedLeadCreateCustomer(db, 'draft-already-synced');
+
+      expect(result).toMatchObject({
+        collectedLeadId: 'draft-already-synced',
+        targetCustomerId: 'already-created',
+        status: 'ALREADY_SYNCED',
+      });
+      expect(await db.select('SELECT * FROM customers')).toHaveLength(1);
+      expect(await db.select('SELECT * FROM lead_sync_logs')).toHaveLength(0);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('allows FAILED leads to retry and sync successfully', async () => {
+    const db = await createReadyDb();
+    try {
+      await insertStoredDraft(db, {
+        id: 'draft-retry',
+        company_name: 'Retry Co',
+        mobile: '13800138000',
+        sync_status: 'FAILED',
+      });
+
+      const result = await syncCollectedLeadCreateCustomer(db, 'draft-retry');
+      const draft = await getCollectedLeadById(db, 'draft-retry');
+
+      expect(result.status).toBe('SUCCESS');
+      expect(draft?.sync_status).toBe('SYNCED');
+      expect(await db.select('SELECT * FROM customers')).toHaveLength(1);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('rejects IGNORED leads without creating customers', async () => {
+    const db = await createReadyDb();
+    try {
+      await insertStoredDraft(db, {
+        id: 'draft-ignored',
+        company_name: 'Ignored Co',
+        sync_status: 'IGNORED',
+      });
+
+      const result = await syncCollectedLeadCreateCustomer(db, 'draft-ignored');
+
+      expect(result.status).toBe('INVALID_STATUS');
+      expect(await db.select('SELECT * FROM customers')).toHaveLength(0);
+      expect(await db.select('SELECT * FROM lead_sync_logs')).toHaveLength(0);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('blocks duplicate phone creation and commits FAILED status with a skipped log', async () => {
+    const db = await createReadyDb();
+    try {
+      await insertExistingCustomer(db, {
+        id: 'duplicate-phone-customer',
+        name: 'Phone Owner Co',
+        phone_number: '13800138000',
+      });
+      await insertStoredDraft(db, {
+        id: 'draft-duplicate-phone',
+        company_name: 'Duplicate Phone Co',
+        mobile: '13800138000',
+      });
+
+      const result = await syncCollectedLeadCreateCustomer(db, 'draft-duplicate-phone');
+      const draft = await getCollectedLeadById(db, 'draft-duplicate-phone');
+      const logs = await db.select<{ action: string; status: string; target_customer_id: string; message: string }>(
+        'SELECT action, status, target_customer_id, message FROM lead_sync_logs',
+      );
+
+      expect(result).toMatchObject({
+        status: 'DUPLICATE_PHONE',
+        targetCustomerId: 'duplicate-phone-customer',
+      });
+      expect(draft?.sync_status).toBe('FAILED');
+      expect(logs).toEqual([{
+        action: 'SKIP_DUPLICATE',
+        status: 'SKIPPED',
+        target_customer_id: 'duplicate-phone-customer',
+        message: 'Duplicate customer phone_number: 13800138000',
+      }]);
+      expect(await db.select('SELECT * FROM customers')).toHaveLength(1);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('blocks duplicate company name creation after phone check and commits FAILED status with a skipped log', async () => {
+    const db = await createReadyDb();
+    try {
+      await insertExistingCustomer(db, {
+        id: 'duplicate-name-customer',
+        name: 'Duplicate Name Co',
+        phone_number: '13900139000',
+      });
+      await insertStoredDraft(db, {
+        id: 'draft-duplicate-name',
+        company_name: 'Duplicate Name Co',
+        mobile: '13800138000',
+      });
+
+      const result = await syncCollectedLeadCreateCustomer(db, 'draft-duplicate-name');
+      const draft = await getCollectedLeadById(db, 'draft-duplicate-name');
+      const logs = await db.select<{ action: string; status: string; target_customer_id: string; message: string }>(
+        'SELECT action, status, target_customer_id, message FROM lead_sync_logs',
+      );
+
+      expect(result).toMatchObject({
+        status: 'DUPLICATE_NAME',
+        targetCustomerId: 'duplicate-name-customer',
+      });
+      expect(draft?.sync_status).toBe('FAILED');
+      expect(logs).toEqual([{
+        action: 'SKIP_DUPLICATE',
+        status: 'SKIPPED',
+        target_customer_id: 'duplicate-name-customer',
+        message: 'Duplicate customer name: Duplicate Name Co',
+      }]);
+      expect(await db.select('SELECT * FROM customers')).toHaveLength(1);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('uses mobile before tel and falls back to tel when mobile is absent', async () => {
+    const db = await createReadyDb();
+    try {
+      await insertStoredDraft(db, {
+        id: 'draft-mobile-first',
+        company_name: 'Mobile First Co',
+        mobile: '13800138000',
+        tel: '0757-88889999',
+      });
+      await insertStoredDraft(db, {
+        id: 'draft-tel-fallback',
+        company_name: 'Tel Fallback Co',
+        mobile: null,
+        tel: '0757-77778888',
+      });
+
+      await syncCollectedLeadCreateCustomer(db, 'draft-mobile-first');
+      await syncCollectedLeadCreateCustomer(db, 'draft-tel-fallback');
+      const customers = await db.select<{ name: string; phone_number: string }>(
+        'SELECT name, phone_number FROM customers ORDER BY name ASC',
+      );
+
+      expect(customers).toEqual([
+        { name: 'Mobile First Co', phone_number: '13800138000' },
+        { name: 'Tel Fallback Co', phone_number: '0757-77778888' },
+      ]);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('creates a customer without phone when other useful fields exist and still checks duplicate company name', async () => {
+    const db = await createReadyDb();
+    try {
+      await insertStoredDraft(db, {
+        id: 'draft-no-phone',
+        company_name: 'No Phone Co',
+        mobile: null,
+        tel: null,
+        website: 'https://no-phone.example',
+        email: 'sales@no-phone.example',
+        contact_name: 'No Phone Contact',
+        note: 'has useful fields',
+      });
+
+      const result = await syncCollectedLeadCreateCustomer(db, 'draft-no-phone');
+      const customers = await db.select<Customer>('SELECT * FROM customers');
+
+      expect(result.status).toBe('SUCCESS');
+      expect(customers).toHaveLength(1);
+      expect(customers[0]).toMatchObject({
+        name: 'No Phone Co',
+        phone_number: null,
+        website: 'https://no-phone.example',
+        email: 'sales@no-phone.example',
+        contact_person: 'No Phone Contact',
+      });
+    } finally {
+      db.close();
+    }
+  });
+
+  it('blocks duplicate company name even when the collected lead has no phone', async () => {
+    const db = await createReadyDb();
+    try {
+      await insertExistingCustomer(db, {
+        id: 'duplicate-no-phone-name',
+        name: 'No Phone Duplicate Co',
+        phone_number: null,
+      });
+      await insertStoredDraft(db, {
+        id: 'draft-no-phone-duplicate',
+        company_name: 'No Phone Duplicate Co',
+        mobile: null,
+        tel: null,
+        website: 'https://duplicate.example',
+      });
+
+      const result = await syncCollectedLeadCreateCustomer(db, 'draft-no-phone-duplicate');
+
+      expect(result.status).toBe('DUPLICATE_NAME');
+      expect(await db.select('SELECT * FROM customers')).toHaveLength(1);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('rejects leads with no useful collected fields', async () => {
+    const db = await createReadyDb();
+    try {
+      await insertStoredDraft(db, {
+        id: 'draft-empty-fields',
+        company_name: 'Empty Fields Co',
+        mobile: null,
+        tel: null,
+        website: null,
+        email: null,
+        contact_name: null,
+        note: null,
+        raw_text: 'raw evidence alone is not enough',
+      });
+
+      const result = await syncCollectedLeadCreateCustomer(db, 'draft-empty-fields');
+
+      expect(result.status).toBe('FAILED');
+      expect(result.message).toContain('At least one collected lead field is required');
+      expect(await db.select('SELECT * FROM customers')).toHaveLength(0);
+      expect(await db.select('SELECT * FROM lead_sync_logs')).toHaveLength(0);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('rolls back if customer creation succeeds but collected_lead writeback fails', async () => {
+    const db = await createReadyDb();
+    try {
+      await insertStoredDraft(db, {
+        id: 'draft-rollback-writeback',
+        company_name: 'Rollback Writeback Co',
+        mobile: '13800138000',
+      });
+      const throwingDb = createThrowingDb(db, sql => sql.includes('UPDATE collected_leads'));
+
+      await expect(syncCollectedLeadCreateCustomer(throwingDb, 'draft-rollback-writeback')).rejects.toThrow('simulated db failure');
+      const draft = await getCollectedLeadById(db, 'draft-rollback-writeback');
+
+      expect(await db.select('SELECT * FROM customers')).toHaveLength(0);
+      expect(await db.select('SELECT * FROM lead_sync_logs')).toHaveLength(0);
+      expect(draft?.sync_status).toBe('UNSYNCED');
+      expect(draft?.created_customer_id).toBeNull();
+    } finally {
+      db.close();
+    }
+  });
+
+  it('rolls back if collected_lead writeback succeeds but sync log insert fails', async () => {
+    const db = await createReadyDb();
+    try {
+      await insertStoredDraft(db, {
+        id: 'draft-rollback-log',
+        company_name: 'Rollback Log Co',
+        mobile: '13800138000',
+      });
+      const throwingDb = createThrowingDb(db, sql => sql.includes('INSERT INTO lead_sync_logs'));
+
+      await expect(syncCollectedLeadCreateCustomer(throwingDb, 'draft-rollback-log')).rejects.toThrow('simulated db failure');
+      const draft = await getCollectedLeadById(db, 'draft-rollback-log');
+
+      expect(await db.select('SELECT * FROM customers')).toHaveLength(0);
+      expect(await db.select('SELECT * FROM lead_sync_logs')).toHaveLength(0);
+      expect(draft?.sync_status).toBe('UNSYNCED');
+      expect(draft?.created_customer_id).toBeNull();
+    } finally {
+      db.close();
+    }
+  });
+
+  it('rejects blank and missing collected lead ids without writes', async () => {
+    const db = await createReadyDb();
+    try {
+      const blank = await syncCollectedLeadCreateCustomer(db, '   ');
+      const missing = await syncCollectedLeadCreateCustomer(db, 'missing-draft');
+
+      expect(blank.status).toBe('FAILED');
+      expect(missing.status).toBe('FAILED');
+      expect(await db.select('SELECT * FROM customers')).toHaveLength(0);
+      expect(await db.select('SELECT * FROM lead_sync_logs')).toHaveLength(0);
+    } finally {
+      db.close();
+    }
   });
 });
 
@@ -392,6 +816,41 @@ function makeCustomer(overrides: Partial<Customer> = {}): Customer {
     created_at: '2026-06-14T00:00:00.000Z',
     updated_at: '2026-06-14T00:00:00.000Z',
     ...overrides,
+  };
+}
+
+async function insertExistingCustomer(
+  db: DatabaseLike,
+  input: { id: string; name: string; phone_number: string | null },
+) {
+  await db.execute(
+    `INSERT INTO customers (
+      id, name, phone_number, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?)`,
+    [
+      input.id,
+      input.name,
+      input.phone_number,
+      '2026-06-14T00:00:00.000Z',
+      '2026-06-14T00:00:00.000Z',
+    ],
+  );
+}
+
+function createThrowingDb(
+  db: DatabaseLike,
+  shouldThrow: (sql: string) => boolean,
+): DatabaseLike {
+  return {
+    async execute(sql: string, bindings: unknown[] = []) {
+      if (shouldThrow(sql)) {
+        throw new Error('simulated db failure');
+      }
+      return db.execute(sql, bindings);
+    },
+    async select<T>(sql: string, bindings: unknown[] = []) {
+      return db.select<T>(sql, bindings);
+    },
   };
 }
 
