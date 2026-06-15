@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertCircle, Clipboard, PhoneOff, RefreshCw, Search, SkipForward } from 'lucide-react';
 
 import { getDb } from '../lib/db';
+import { insertLeadCaptureEvent } from '../lib/leadWorkbench/captureEvents';
 import {
   getLeadWorkItemStatusCounts,
   listLeadWorkItemsByStatus,
@@ -84,6 +85,14 @@ export function getLeadWorkbenchDetailEmptyMessage(): string {
   return '请选择左侧任务查看详情。';
 }
 
+export function getLeadCaptureSaveSuccessMessage(): string {
+  return '捕获记录已保存';
+}
+
+export function getLeadCaptureSaveErrorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
 export function isLeadPastePreviewVisible(item: LeadWorkItem | null): boolean {
   return Boolean(item);
 }
@@ -112,6 +121,28 @@ export function buildLeadPastePreviewResult(rawText: string): LeadPastePreviewRe
       || parsed.urls.length > 0
       || parsed.emails.length > 0,
   };
+}
+
+export function shouldEnableLeadCaptureSave(
+  item: LeadWorkItem | null,
+  rawText: string,
+  previewResult: LeadPastePreviewResult | null,
+): boolean {
+  return Boolean(item && rawText.trim() && previewResult);
+}
+
+export function getLeadCaptureSaveConfirmationMessage(
+  item: Pick<LeadWorkItem, 'company_name'>,
+): string {
+  const companyName = item.company_name?.trim() || '未命名公司';
+  return `确认将「${companyName}」的当前粘贴内容保存为捕获记录吗？`;
+}
+
+export function shouldRunLeadCaptureSave(
+  item: Pick<LeadWorkItem, 'company_name'>,
+  confirm: ConfirmFn,
+): boolean {
+  return confirm(getLeadCaptureSaveConfirmationMessage(item));
 }
 
 export function getSuggestedTanjiSearchKeyword(
@@ -233,6 +264,7 @@ export default function LeadWorkbenchPage() {
   const [counts, setCounts] = useState<Record<LeadWorkStatus, number>>(emptyStatusCounts);
   const [isLoading, setIsLoading] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [isSavingCapture, setIsSavingCapture] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [pastePreviewState, setPastePreviewState] = useState<LeadPastePreviewState>(getEmptyLeadPastePreviewState);
@@ -329,10 +361,37 @@ export default function LeadWorkbenchPage() {
     setPastePreviewState(getEmptyLeadPastePreviewState());
   }, []);
 
+  const handleSaveLeadCaptureEvent = useCallback(async () => {
+    if (!selectedItem || !pastePreviewState.result) return;
+    if (!shouldRunLeadCaptureSave(selectedItem, messageToConfirm => window.confirm(messageToConfirm))) {
+      return;
+    }
+
+    setIsSavingCapture(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const db = await getDb();
+      await insertLeadCaptureEvent(db, {
+        work_item_id: selectedItem.id,
+        raw_text: pastePreviewState.text,
+        parsed_json: pastePreviewState.result,
+        confidence_json: {},
+        action: 'PARSED',
+      });
+      setMessage(getLeadCaptureSaveSuccessMessage());
+    } catch (err) {
+      setError(getLeadCaptureSaveErrorMessage(err));
+    } finally {
+      setIsSavingCapture(false);
+    }
+  }, [pastePreviewState.result, pastePreviewState.text, selectedItem]);
+
   const statusActions = selectedItem ? getLeadWorkItemStatusActions(selectedItem.status) : [];
   const searchKeyword = selectedItem ? getSuggestedTanjiSearchKeyword(selectedItem) : '';
   const searchKeywordFallback = Boolean(selectedItem && !hasConfiguredTanjiSearchKeyword(selectedItem));
   const terminalMessage = selectedItem ? getLeadWorkItemTerminalMessage(selectedItem.status) : null;
+  const canSaveLeadCapture = shouldEnableLeadCaptureSave(selectedItem, pastePreviewState.text, pastePreviewState.result);
 
   return (
     <>
@@ -512,6 +571,14 @@ export default function LeadWorkbenchPage() {
                         disabled={!pastePreviewState.text.trim()}
                       >
                         解析预览
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        onClick={() => { void handleSaveLeadCaptureEvent(); }}
+                        disabled={!canSaveLeadCapture || isSavingCapture}
+                      >
+                        {isSavingCapture ? '保存中' : '保存捕获记录'}
                       </button>
                     </div>
 

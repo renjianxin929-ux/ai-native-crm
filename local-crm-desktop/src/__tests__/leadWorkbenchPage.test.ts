@@ -18,6 +18,9 @@ import {
   buildLeadPastePreviewResult,
   copyLeadSearchKeyword,
   filterLeadWorkItemsByStatus,
+  getLeadCaptureSaveErrorMessage,
+  getLeadCaptureSaveConfirmationMessage,
+  getLeadCaptureSaveSuccessMessage,
   getEmptyLeadPastePreviewState,
   getLeadWorkbenchDetailEmptyMessage,
   getLeadWorkbenchListEmptyMessage,
@@ -31,6 +34,8 @@ import {
   isLeadPastePreviewVisible,
   LEAD_WORKBENCH_ACTION_LABELS,
   LEAD_WORKBENCH_STATUS_FILTERS,
+  shouldEnableLeadCaptureSave,
+  shouldRunLeadCaptureSave,
   shouldRunLeadWorkItemStatusUpdate,
   sortLeadWorkItemsForDisplay,
 } from '../pages/LeadWorkbenchPage';
@@ -309,6 +314,49 @@ describe('lead workbench page operations', () => {
     expect(getEmptyLeadPastePreviewState()).toEqual({ text: '', result: null });
   });
 
+  it('enables save capture only after a selected task has raw text and parsed preview', () => {
+    const item = createWorkItem({ id: 'capture-1' });
+    const result = buildLeadPastePreviewResult('手机 13800138000');
+
+    expect(shouldEnableLeadCaptureSave(null, '手机 13800138000', result)).toBe(false);
+    expect(shouldEnableLeadCaptureSave(item, '', result)).toBe(false);
+    expect(shouldEnableLeadCaptureSave(item, '手机 13800138000', null)).toBe(false);
+    expect(shouldEnableLeadCaptureSave(item, '手机 13800138000', result)).toBe(true);
+  });
+
+  it('requires confirmation before saving capture and includes company name', () => {
+    const item = createWorkItem({ company_name: 'Capture Co' });
+    const confirm = vi.fn().mockReturnValue(false);
+
+    expect(getLeadCaptureSaveConfirmationMessage(item)).toContain('Capture Co');
+    expect(shouldRunLeadCaptureSave(item, confirm)).toBe(false);
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('Capture Co'));
+  });
+
+  it('runs capture save only after confirmation', () => {
+    const item = createWorkItem({ company_name: 'Capture Co' });
+    const confirm = vi.fn().mockReturnValue(true);
+
+    expect(shouldRunLeadCaptureSave(item, confirm)).toBe(true);
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('Capture Co'));
+  });
+
+  it('shows capture save success without clearing preview state', () => {
+    const state = {
+      text: '手机 13800138000',
+      result: buildLeadPastePreviewResult('手机 13800138000'),
+    };
+
+    expect(getLeadCaptureSaveSuccessMessage()).toBe('捕获记录已保存');
+    expect(state.text).toBe('手机 13800138000');
+    expect(state.result?.mobiles).toEqual(['13800138000']);
+  });
+
+  it('shows a readable capture save error', () => {
+    expect(getLeadCaptureSaveErrorMessage(new Error('database unavailable'))).toBe('database unavailable');
+    expect(getLeadCaptureSaveErrorMessage('save failed')).toBe('save failed');
+  });
+
   it('updates status and refreshes list, counts, and detail data through the shared action', async () => {
     const db = await createReadyDb();
     try {
@@ -353,9 +401,13 @@ describe('lead workbench page operations', () => {
     expect(pageSource).toContain('粘贴解析预览');
     expect(pageSource).toContain('解析预览');
     expect(pageSource).toContain('清空粘贴内容');
+    expect(pageSource).toContain('保存捕获记录');
+    expect(pageSource).toContain('捕获记录已保存');
+    expect(pageSource).toContain('insertLeadCaptureEvent');
     expect(pageSource).toContain('parseLeadContactText');
     expect(pageSource).toContain('disabled={isLoading || isUpdating}');
     expect(pageSource).not.toContain('保存线索');
+    expect(pageSource).not.toContain('生成线索');
     expect(pageSource).not.toContain('保存 collected_lead');
     expect(pageSource).not.toContain('同步 CRM');
     expect(pageSource).not.toContain('insertCustomerWithDb');
