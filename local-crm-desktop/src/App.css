@@ -956,6 +956,44 @@ tr.clickable {
   gap: 10px;
 }
 
+.lead-workbench-draft-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.lead-workbench-draft-form .lead-workbench-search-hint {
+  grid-column: 1 / -1;
+}
+
+.lead-workbench-draft-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.lead-workbench-draft-field input,
+.lead-workbench-draft-field textarea {
+  width: 100%;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.lead-workbench-draft-field textarea {
+  resize: vertical;
+}
+
 .lead-workbench-preview-row {
   display: grid;
   grid-template-columns: 132px minmax(0, 1fr);

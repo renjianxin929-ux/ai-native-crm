@@ -7,6 +7,7 @@ import {
   listLeadCaptureEventsByWorkItemId,
   type LeadCaptureEvent,
 } from '../lib/leadWorkbench/captureEvents';
+import { insertCollectedLeadDraft } from '../lib/leadWorkbench/collectedLeads';
 import {
   getLeadWorkItemStatusCounts,
   listLeadWorkItemsByStatus,
@@ -61,6 +62,22 @@ export type LeadPastePreviewState = {
   result: LeadPastePreviewResult | null;
 };
 
+export type CollectedLeadDraftForm = {
+  work_item_id: string;
+  import_row_id: string | null;
+  customer_id: string | null;
+  company_name: string;
+  contact_name: string;
+  position: string;
+  mobile: string;
+  tel: string;
+  website: string;
+  email: string;
+  raw_text: string;
+  note: string;
+  contactNameSuggestion: string;
+};
+
 export function filterLeadWorkItemsByStatus(
   items: LeadWorkItem[],
   status: LeadWorkStatus,
@@ -98,6 +115,14 @@ export function getLeadCaptureSaveSuccessMessage(): string {
 }
 
 export function getLeadCaptureSaveErrorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+export function getCollectedLeadDraftSaveSuccessMessage(): string {
+  return '采集线索草稿已保存';
+}
+
+export function getCollectedLeadDraftSaveErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
@@ -154,6 +179,58 @@ export function buildLeadPastePreviewResult(rawText: string): LeadPastePreviewRe
       || parsed.urls.length > 0
       || parsed.emails.length > 0,
   };
+}
+
+export function buildCollectedLeadDraftForm(
+  item: LeadWorkItem,
+  rawText: string,
+  previewResult: LeadPastePreviewResult,
+): CollectedLeadDraftForm {
+  return {
+    work_item_id: item.id,
+    import_row_id: item.import_row_id,
+    customer_id: item.customer_id,
+    company_name: item.company_name?.trim() || '',
+    contact_name: '',
+    position: '',
+    mobile: previewResult.mobiles[0] || '',
+    tel: previewResult.tels[0] || '',
+    website: previewResult.urls[0] || '',
+    email: previewResult.emails[0] || '',
+    raw_text: rawText,
+    note: previewResult.note,
+    contactNameSuggestion: previewResult.possibleContact[0] || '',
+  };
+}
+
+export function shouldEnableCollectedLeadDraftSave(
+  item: LeadWorkItem | null,
+  previewResult: LeadPastePreviewResult | null,
+  draft: CollectedLeadDraftForm | null,
+): boolean {
+  if (!item || !previewResult || !draft) return false;
+  return [
+    draft.mobile,
+    draft.tel,
+    draft.website,
+    draft.email,
+    draft.contact_name,
+    draft.note,
+  ].some(value => value.trim());
+}
+
+export function getCollectedLeadDraftSaveConfirmationMessage(
+  item: Pick<LeadWorkItem, 'company_name'>,
+): string {
+  const companyName = item.company_name?.trim() || '未命名公司';
+  return `确认将「${companyName}」保存为采集线索草稿吗？`;
+}
+
+export function shouldRunCollectedLeadDraftSave(
+  item: Pick<LeadWorkItem, 'company_name'>,
+  confirm: ConfirmFn,
+): boolean {
+  return confirm(getCollectedLeadDraftSaveConfirmationMessage(item));
 }
 
 export function shouldEnableLeadCaptureSave(
@@ -302,9 +379,11 @@ export default function LeadWorkbenchPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
   const [isSavingCapture, setIsSavingCapture] = useState(false);
+  const [isSavingCollectedLead, setIsSavingCollectedLead] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [pastePreviewState, setPastePreviewState] = useState<LeadPastePreviewState>(getEmptyLeadPastePreviewState);
+  const [collectedLeadDraft, setCollectedLeadDraft] = useState<CollectedLeadDraftForm | null>(null);
   const [captureEvents, setCaptureEvents] = useState<LeadCaptureEvent[]>([]);
 
   const selectedItem = useMemo(
@@ -346,6 +425,7 @@ export default function LeadWorkbenchPage() {
 
   useEffect(() => {
     setPastePreviewState(getEmptyLeadPastePreviewState());
+    setCollectedLeadDraft(null);
   }, [selectedItemId]);
 
   const loadCaptureEvents = useCallback(async (workItemId: string) => {
@@ -407,14 +487,20 @@ export default function LeadWorkbenchPage() {
   }, [loadItems, selectedItem, statusFilter]);
 
   const handleParsePastePreview = useCallback(() => {
-    setPastePreviewState(current => ({
-      ...current,
-      result: buildLeadPastePreviewResult(current.text),
-    }));
-  }, []);
+    if (!selectedItem) return;
+    setPastePreviewState(current => {
+      const result = buildLeadPastePreviewResult(current.text);
+      setCollectedLeadDraft(buildCollectedLeadDraftForm(selectedItem, current.text, result));
+      return {
+        ...current,
+        result,
+      };
+    });
+  }, [selectedItem]);
 
   const handleClearPastePreview = useCallback(() => {
     setPastePreviewState(getEmptyLeadPastePreviewState());
+    setCollectedLeadDraft(null);
   }, []);
 
   const handleSaveLeadCaptureEvent = useCallback(async () => {
@@ -444,11 +530,33 @@ export default function LeadWorkbenchPage() {
     }
   }, [loadCaptureEvents, pastePreviewState.result, pastePreviewState.text, selectedItem]);
 
+  const handleSaveCollectedLeadDraft = useCallback(async () => {
+    if (!selectedItem || !collectedLeadDraft) return;
+    if (!shouldRunCollectedLeadDraftSave(selectedItem, messageToConfirm => window.confirm(messageToConfirm))) {
+      return;
+    }
+
+    setIsSavingCollectedLead(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const { contactNameSuggestion: _contactNameSuggestion, ...input } = collectedLeadDraft;
+      const db = await getDb();
+      await insertCollectedLeadDraft(db, input);
+      setMessage(getCollectedLeadDraftSaveSuccessMessage());
+    } catch (err) {
+      setError(getCollectedLeadDraftSaveErrorMessage(err));
+    } finally {
+      setIsSavingCollectedLead(false);
+    }
+  }, [collectedLeadDraft, selectedItem]);
+
   const statusActions = selectedItem ? getLeadWorkItemStatusActions(selectedItem.status) : [];
   const searchKeyword = selectedItem ? getSuggestedTanjiSearchKeyword(selectedItem) : '';
   const searchKeywordFallback = Boolean(selectedItem && !hasConfiguredTanjiSearchKeyword(selectedItem));
   const terminalMessage = selectedItem ? getLeadWorkItemTerminalMessage(selectedItem.status) : null;
   const canSaveLeadCapture = shouldEnableLeadCaptureSave(selectedItem, pastePreviewState.text, pastePreviewState.result);
+  const canSaveCollectedLeadDraft = shouldEnableCollectedLeadDraftSave(selectedItem, pastePreviewState.result, collectedLeadDraft);
 
   return (
     <>
@@ -616,7 +724,10 @@ export default function LeadWorkbenchPage() {
                     <textarea
                       className="lead-workbench-paste-input"
                       value={pastePreviewState.text}
-                      onChange={event => setPastePreviewState({ text: event.target.value, result: null })}
+                      onChange={event => {
+                        setPastePreviewState({ text: event.target.value, result: null });
+                        setCollectedLeadDraft(null);
+                      }}
                       placeholder="手动粘贴从探迹复制的文本，仅用于本页解析预览"
                       rows={6}
                     />
@@ -637,6 +748,14 @@ export default function LeadWorkbenchPage() {
                       >
                         {isSavingCapture ? '保存中' : '保存捕获记录'}
                       </button>
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        onClick={() => { void handleSaveCollectedLeadDraft(); }}
+                        disabled={!canSaveCollectedLeadDraft || isSavingCollectedLead}
+                      >
+                        {isSavingCollectedLead ? '保存中' : '保存为采集线索草稿'}
+                      </button>
                     </div>
 
                     {pastePreviewState.result && (
@@ -653,6 +772,23 @@ export default function LeadWorkbenchPage() {
                         <PreviewList label="possibleContact / 可能联系人" values={pastePreviewState.result.possibleContact} />
                         <PreviewText label="note / 备注文本" value={pastePreviewState.result.note} />
                         <PreviewText label="raw_text 原文" value={pastePreviewState.result.raw_text} />
+                      </div>
+                    )}
+
+                    {collectedLeadDraft && (
+                      <div className="lead-workbench-draft-form">
+                        {collectedLeadDraft.contactNameSuggestion && (
+                          <div className="lead-workbench-search-hint">
+                            可能联系人建议：{collectedLeadDraft.contactNameSuggestion}
+                          </div>
+                        )}
+                        <DraftInput label="contact_name" field="contact_name" draft={collectedLeadDraft} onChange={setCollectedLeadDraft} />
+                        <DraftInput label="position" field="position" draft={collectedLeadDraft} onChange={setCollectedLeadDraft} />
+                        <DraftInput label="mobile" field="mobile" draft={collectedLeadDraft} onChange={setCollectedLeadDraft} />
+                        <DraftInput label="tel" field="tel" draft={collectedLeadDraft} onChange={setCollectedLeadDraft} />
+                        <DraftInput label="website" field="website" draft={collectedLeadDraft} onChange={setCollectedLeadDraft} />
+                        <DraftInput label="email" field="email" draft={collectedLeadDraft} onChange={setCollectedLeadDraft} />
+                        <DraftInput label="note" field="note" draft={collectedLeadDraft} onChange={setCollectedLeadDraft} multiline />
                       </div>
                     )}
                   </section>
@@ -736,5 +872,35 @@ function PreviewText({ label, value }: { label: string; value: string }) {
       <div className="label">{label}</div>
       <pre className="lead-workbench-preview-text">{value || '-'}</pre>
     </div>
+  );
+}
+
+function DraftInput({
+  label,
+  field,
+  draft,
+  onChange,
+  multiline = false,
+}: {
+  label: string;
+  field: keyof Pick<CollectedLeadDraftForm, 'contact_name' | 'position' | 'mobile' | 'tel' | 'website' | 'email' | 'note'>;
+  draft: CollectedLeadDraftForm;
+  onChange: (next: CollectedLeadDraftForm) => void;
+  multiline?: boolean;
+}) {
+  const value = draft[field];
+  const handleChange = (nextValue: string) => {
+    onChange({ ...draft, [field]: nextValue });
+  };
+
+  return (
+    <label className="lead-workbench-draft-field">
+      <span>{label}</span>
+      {multiline ? (
+        <textarea value={value} onChange={event => handleChange(event.target.value)} rows={3} />
+      ) : (
+        <input value={value} onChange={event => handleChange(event.target.value)} />
+      )}
+    </label>
   );
 }

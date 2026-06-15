@@ -16,9 +16,13 @@ import { updateLeadWorkItemStatus } from '../lib/leadWorkbench/workItemActions';
 import type { LeadWorkItem, LeadWorkStatus } from '../lib/leadWorkbench/types';
 import type { LeadCaptureEvent } from '../lib/leadWorkbench/captureEvents';
 import {
+  buildCollectedLeadDraftForm,
   buildLeadPastePreviewResult,
   copyLeadSearchKeyword,
   filterLeadWorkItemsByStatus,
+  getCollectedLeadDraftSaveConfirmationMessage,
+  getCollectedLeadDraftSaveErrorMessage,
+  getCollectedLeadDraftSaveSuccessMessage,
   getLeadCaptureHistoryEmptyMessage,
   getLeadCaptureParsedSummary,
   getLeadCaptureRawTextSummary,
@@ -39,6 +43,8 @@ import {
   isLeadPastePreviewVisible,
   LEAD_WORKBENCH_ACTION_LABELS,
   LEAD_WORKBENCH_STATUS_FILTERS,
+  shouldEnableCollectedLeadDraftSave,
+  shouldRunCollectedLeadDraftSave,
   shouldEnableLeadCaptureSave,
   shouldRunLeadCaptureSave,
   shouldRunLeadWorkItemStatusUpdate,
@@ -404,6 +410,61 @@ describe('lead workbench page operations', () => {
     });
   });
 
+  it('builds an editable collected lead draft from the selected task and preview', () => {
+    const item = createWorkItem({
+      id: 'draft-work',
+      import_row_id: 'row-1',
+      customer_id: 'customer-1',
+      company_name: 'Draft Co',
+    });
+    const preview = buildLeadPastePreviewResult(
+      '张总 手机 13800138000 电话 0757-88889999 官网 https://example.com 邮箱 sales@example.com',
+    );
+
+    const draft = buildCollectedLeadDraftForm(item, 'raw text', preview);
+
+    expect(draft).toMatchObject({
+      work_item_id: 'draft-work',
+      import_row_id: 'row-1',
+      customer_id: 'customer-1',
+      company_name: 'Draft Co',
+      contact_name: '',
+      position: '',
+      mobile: '13800138000',
+      tel: '0757-88889999',
+      website: 'https://example.com',
+      email: 'sales@example.com',
+      raw_text: 'raw text',
+    });
+    expect(draft.contactNameSuggestion).toBe('张总');
+  });
+
+  it('enables collected lead draft save only after parsed useful data exists', () => {
+    const item = createWorkItem();
+    const preview = buildLeadPastePreviewResult('手机 13800138000');
+    const draft = buildCollectedLeadDraftForm(item, '手机 13800138000', preview);
+
+    expect(shouldEnableCollectedLeadDraftSave(null, preview, draft)).toBe(false);
+    expect(shouldEnableCollectedLeadDraftSave(item, null, draft)).toBe(false);
+    expect(shouldEnableCollectedLeadDraftSave(item, preview, { ...draft, mobile: '', tel: '', website: '', email: '', contact_name: '', note: '' })).toBe(false);
+    expect(shouldEnableCollectedLeadDraftSave(item, preview, draft)).toBe(true);
+  });
+
+  it('requires confirmation before saving collected lead draft and includes company name', () => {
+    const item = createWorkItem({ company_name: 'Draft Co' });
+    const confirm = vi.fn().mockReturnValue(false);
+
+    expect(getCollectedLeadDraftSaveConfirmationMessage(item)).toContain('Draft Co');
+    expect(shouldRunCollectedLeadDraftSave(item, confirm)).toBe(false);
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('Draft Co'));
+  });
+
+  it('shows collected lead draft save success and readable errors', () => {
+    expect(getCollectedLeadDraftSaveSuccessMessage()).toBe('采集线索草稿已保存');
+    expect(getCollectedLeadDraftSaveErrorMessage(new Error('duplicate mobile'))).toBe('duplicate mobile');
+    expect(getCollectedLeadDraftSaveErrorMessage('save failed')).toBe('save failed');
+  });
+
   it('updates status and refreshes list, counts, and detail data through the shared action', async () => {
     const db = await createReadyDb();
     try {
@@ -449,6 +510,9 @@ describe('lead workbench page operations', () => {
     expect(pageSource).toContain('解析预览');
     expect(pageSource).toContain('清空粘贴内容');
     expect(pageSource).toContain('保存捕获记录');
+    expect(pageSource).toContain('保存为采集线索草稿');
+    expect(pageSource).toContain('采集线索草稿已保存');
+    expect(pageSource).toContain('insertCollectedLeadDraft');
     expect(pageSource).toContain('历史捕获记录');
     expect(pageSource).toContain('暂无捕获记录。');
     expect(pageSource).toContain('listLeadCaptureEventsByWorkItemId');
@@ -460,6 +524,8 @@ describe('lead workbench page operations', () => {
     expect(pageSource).not.toContain('生成线索');
     expect(pageSource).not.toContain('保存 collected_lead');
     expect(pageSource).not.toContain('同步 CRM');
+    expect(pageSource).not.toContain('创建 CRM 客户');
+    expect(pageSource).not.toContain('补充已有客户');
     expect(pageSource).not.toContain('编辑捕获记录');
     expect(pageSource).not.toContain('删除捕获记录');
     expect(pageSource).not.toContain('insertCustomerWithDb');
