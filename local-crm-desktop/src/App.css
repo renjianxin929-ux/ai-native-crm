@@ -656,6 +656,12 @@ tr.clickable {
   color: #059669;
 }
 
+.lead-alert-info {
+  background: #eff6ff;
+  color: #2563eb;
+  margin-bottom: 12px;
+}
+
 .lead-save-summary {
   display: flex;
   flex-direction: column;
@@ -886,12 +892,33 @@ tr.clickable {
   background: #f8fafc;
 }
 
+.lead-workbench-search-copy-zone {
+  min-width: 0;
+  flex: 1;
+}
+
 .lead-workbench-search-keyword {
   margin-top: 4px;
+  width: 100%;
+  min-height: 58px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
   color: var(--text-heading);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
   font-weight: 600;
+  line-height: 1.45;
+  resize: vertical;
   word-break: break-word;
   user-select: text;
+}
+
+.lead-workbench-search-hint {
+  margin-top: 6px;
+  color: var(--text-secondary);
+  font-size: 12px;
 }
 
 .lead-workbench-action-row {

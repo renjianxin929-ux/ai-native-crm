@@ -36,6 +36,8 @@ type ClipboardWriter = {
   writeText(text: string): Promise<void>;
 };
 
+type ConfirmFn = (message: string) => boolean;
+
 export function filterLeadWorkItemsByStatus(
   items: LeadWorkItem[],
   status: LeadWorkStatus,
@@ -43,13 +45,54 @@ export function filterLeadWorkItemsByStatus(
   return items.filter(item => item.status === status);
 }
 
+export function sortLeadWorkItemsForDisplay(items: LeadWorkItem[]): LeadWorkItem[] {
+  return [...items].sort((left, right) => {
+    if (left.priority !== right.priority) return right.priority - left.priority;
+    return left.created_at.localeCompare(right.created_at);
+  });
+}
+
+export function getLeadWorkbenchListEmptyMessage(
+  totalTaskCount: number,
+  _status: LeadWorkStatus,
+): string {
+  if (totalTaskCount === 0) {
+    return '暂无获客任务，请先在导入分流中心执行分流。';
+  }
+  return '当前状态下暂无任务。';
+}
+
+export function getLeadWorkbenchDetailEmptyMessage(): string {
+  return '请选择左侧任务查看详情。';
+}
+
 export function getSuggestedTanjiSearchKeyword(
   item: Pick<LeadWorkItem, 'tanji_search_keyword' | 'company_name'>,
 ): string {
-  return item.tanji_search_keyword || item.company_name || '';
+  const configuredKeyword = item.tanji_search_keyword?.trim();
+  return configuredKeyword || item.company_name?.trim() || '';
+}
+
+export function hasConfiguredTanjiSearchKeyword(
+  item: Pick<LeadWorkItem, 'tanji_search_keyword'>,
+): boolean {
+  return Boolean(item.tanji_search_keyword?.trim());
+}
+
+export function isLeadWorkItemTerminalStatus(status: LeadWorkStatus): boolean {
+  return status === 'NO_PHONE' || status === 'SKIPPED' || status === 'DONE';
+}
+
+export function getLeadWorkItemTerminalMessage(status: LeadWorkStatus): string | null {
+  if (status === 'NO_PHONE') return '该任务已标记为无电话，不能继续流转。';
+  if (status === 'SKIPPED') return '该任务已跳过，不能继续流转。';
+  if (status === 'DONE') return '该任务已完成，不能继续流转。';
+  return null;
 }
 
 export function getLeadWorkItemStatusActions(status: LeadWorkStatus): LeadWorkItemStatusAction[] {
+  if (isLeadWorkItemTerminalStatus(status)) return [];
+
   if (status === 'TODO') {
     return [
       { label: '开始查询', nextStatus: 'SEARCHING', icon: 'search' },
@@ -70,6 +113,37 @@ export function getLeadWorkItemStatusActions(status: LeadWorkStatus): LeadWorkIt
   }
 
   return [];
+}
+
+export function getStatusActionConfirmationMessage(
+  item: Pick<LeadWorkItem, 'company_name'>,
+  nextStatus: LeadWorkStatus,
+): string | null {
+  const companyName = item.company_name?.trim() || '未命名公司';
+  if (nextStatus === 'NO_PHONE') {
+    return `确认将「${companyName}」标记为无电话吗？`;
+  }
+  if (nextStatus === 'SKIPPED') {
+    return `确认跳过「${companyName}」吗？`;
+  }
+  return null;
+}
+
+export function shouldRunLeadWorkItemStatusUpdate(
+  item: Pick<LeadWorkItem, 'company_name' | 'status'>,
+  nextStatus: LeadWorkStatus,
+  confirm: ConfirmFn,
+): boolean {
+  if (isLeadWorkItemTerminalStatus(item.status)) return false;
+
+  const confirmationMessage = getStatusActionConfirmationMessage(item, nextStatus);
+  if (!confirmationMessage) return true;
+
+  return confirm(confirmationMessage);
+}
+
+export function getLeadWorkItemStatusUpdateSuccessMessage(nextStatus: LeadWorkStatus): string {
+  return `任务状态已更新为 ${nextStatus}`;
 }
 
 export async function copyLeadSearchKeyword(
@@ -100,6 +174,10 @@ function emptyStatusCounts(): Record<LeadWorkStatus, number> {
   };
 }
 
+function getTotalStatusCount(counts: Record<LeadWorkStatus, number>): number {
+  return LEAD_WORKBENCH_STATUS_FILTERS.reduce((total, status) => total + counts[status], 0);
+}
+
 export default function LeadWorkbenchPage() {
   const [statusFilter, setStatusFilter] = useState<LeadWorkStatus>('TODO');
   const [items, setItems] = useState<LeadWorkItem[]>([]);
@@ -115,6 +193,9 @@ export default function LeadWorkbenchPage() {
     [items, selectedItemId],
   );
 
+  const totalTaskCount = useMemo(() => getTotalStatusCount(counts), [counts]);
+  const visibleItems = useMemo(() => sortLeadWorkItemsForDisplay(items), [items]);
+
   const loadItems = useCallback(async (status: LeadWorkStatus) => {
     setIsLoading(true);
     setError(null);
@@ -124,11 +205,12 @@ export default function LeadWorkbenchPage() {
         listLeadWorkItemsByStatus(db, status),
         getLeadWorkItemStatusCounts(db),
       ]);
-      setItems(nextItems);
+      const sortedItems = sortLeadWorkItemsForDisplay(nextItems);
+      setItems(sortedItems);
       setCounts(nextCounts);
       setSelectedItemId(current => {
-        if (current && nextItems.some(item => item.id === current)) return current;
-        return nextItems[0]?.id ?? null;
+        if (current && sortedItems.some(item => item.id === current)) return current;
+        return sortedItems[0]?.id ?? null;
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -141,6 +223,11 @@ export default function LeadWorkbenchPage() {
 
   useEffect(() => {
     void loadItems(statusFilter);
+  }, [loadItems, statusFilter]);
+
+  const handleRefreshTasks = useCallback(async () => {
+    setMessage(null);
+    await loadItems(statusFilter);
   }, [loadItems, statusFilter]);
 
   const handleCopySearchKeyword = useCallback(async () => {
@@ -159,13 +246,17 @@ export default function LeadWorkbenchPage() {
 
   const handleStatusAction = useCallback(async (nextStatus: LeadWorkStatus) => {
     if (!selectedItem) return;
+    if (!shouldRunLeadWorkItemStatusUpdate(selectedItem, nextStatus, messageToConfirm => window.confirm(messageToConfirm))) {
+      return;
+    }
+
     setIsUpdating(true);
     setError(null);
     setMessage(null);
     try {
       const db = await getDb();
       await updateLeadWorkItemStatus(db, selectedItem.id, nextStatus);
-      setMessage(`任务状态已更新为 ${nextStatus}`);
+      setMessage(getLeadWorkItemStatusUpdateSuccessMessage(nextStatus));
       await loadItems(statusFilter);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -176,6 +267,8 @@ export default function LeadWorkbenchPage() {
 
   const statusActions = selectedItem ? getLeadWorkItemStatusActions(selectedItem.status) : [];
   const searchKeyword = selectedItem ? getSuggestedTanjiSearchKeyword(selectedItem) : '';
+  const searchKeywordFallback = Boolean(selectedItem && !hasConfiguredTanjiSearchKeyword(selectedItem));
+  const terminalMessage = selectedItem ? getLeadWorkItemTerminalMessage(selectedItem.status) : null;
 
   return (
     <>
@@ -204,11 +297,11 @@ export default function LeadWorkbenchPage() {
             <button
               type="button"
               className="btn btn-sm"
-              onClick={() => { void loadItems(statusFilter); }}
+              onClick={() => { void handleRefreshTasks(); }}
               disabled={isLoading || isUpdating}
             >
               <RefreshCw size={14} />
-              {isLoading ? '加载中' : '刷新'}
+              {isLoading ? '加载中' : '刷新任务'}
             </button>
           </div>
           <div className="lead-workbench-status-tabs">
@@ -218,6 +311,7 @@ export default function LeadWorkbenchPage() {
                 key={status}
                 className={`lead-workbench-status-tab ${status === statusFilter ? 'active' : ''}`}
                 onClick={() => setStatusFilter(status)}
+                disabled={isLoading || isUpdating}
               >
                 <span>{status}</span>
                 <strong>{counts[status]}</strong>
@@ -229,8 +323,8 @@ export default function LeadWorkbenchPage() {
         <div className="lead-workbench-layout">
           <section className="card">
             <div className="section-title">任务列表</div>
-            {items.length === 0 ? (
-              <div className="empty-state">当前状态下暂无获客任务</div>
+            {visibleItems.length === 0 ? (
+              <div className="empty-state">{getLeadWorkbenchListEmptyMessage(totalTaskCount, statusFilter)}</div>
             ) : (
               <div className="table-container lead-workbench-table">
                 <table>
@@ -247,7 +341,7 @@ export default function LeadWorkbenchPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {items.map(item => (
+                    {visibleItems.map(item => (
                       <tr
                         key={item.id}
                         className={`clickable ${item.id === selectedItemId ? 'lead-workbench-selected-row' : ''}`}
@@ -274,24 +368,38 @@ export default function LeadWorkbenchPage() {
           <section className="card">
             <div className="section-title">任务详情</div>
             {!selectedItem ? (
-              <div className="empty-state">请选择一个任务查看详情</div>
+              <div className="empty-state">{getLeadWorkbenchDetailEmptyMessage()}</div>
             ) : (
               <>
                 <div className="lead-workbench-search-panel">
-                  <div>
+                  <div className="lead-workbench-search-copy-zone">
                     <div className="label">探迹搜索词</div>
-                    <div className="lead-workbench-search-keyword">{searchKeyword || '-'}</div>
+                    <textarea
+                      className="lead-workbench-search-keyword"
+                      readOnly
+                      value={searchKeyword || '-'}
+                      rows={2}
+                    />
+                    {searchKeywordFallback && (
+                      <div className="lead-workbench-search-hint">未配置探迹搜索词，已使用公司名</div>
+                    )}
                   </div>
                   <button
                     type="button"
                     className="btn btn-sm"
                     onClick={() => { void handleCopySearchKeyword(); }}
-                    disabled={!searchKeyword}
+                    disabled={isLoading || isUpdating || !searchKeyword}
                   >
                     <Clipboard size={14} />
                     复制搜索词
                   </button>
                 </div>
+
+                {terminalMessage && (
+                  <div className="lead-alert lead-alert-info">
+                    <span>{terminalMessage}</span>
+                  </div>
+                )}
 
                 {statusActions.length > 0 && (
                   <div className="lead-workbench-action-row">
@@ -301,7 +409,7 @@ export default function LeadWorkbenchPage() {
                         key={action.nextStatus}
                         className="btn btn-sm"
                         onClick={() => { void handleStatusAction(action.nextStatus); }}
-                        disabled={isUpdating}
+                        disabled={isLoading || isUpdating}
                       >
                         {action.icon === 'search' && <Search size={14} />}
                         {action.icon === 'phone-off' && <PhoneOff size={14} />}
