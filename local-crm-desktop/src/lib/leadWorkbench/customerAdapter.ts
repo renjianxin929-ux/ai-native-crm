@@ -12,6 +12,7 @@ import type {
   TimeParseStatus,
   WechatAddStatus,
 } from '../types';
+import type { CollectedLead } from './collectedLeads';
 import type { LeadBatchType, LeadImportRow } from './types';
 
 export interface LeadWorkbenchCustomerInput {
@@ -41,6 +42,20 @@ export interface BuildCustomerInputOptions {
   sourceLabel?: string | null;
 }
 
+export interface BuildCollectedLeadCustomerInputOptions {
+  source?: string | null;
+}
+
+export type CustomerEnrichmentPatch = Partial<Pick<
+  Customer,
+  'phone_number' | 'contact_person' | 'website' | 'email' | 'notes'
+>>;
+
+export interface CustomerEnrichmentPatchResult {
+  patch: CustomerEnrichmentPatch;
+  message: string;
+}
+
 export function buildCustomerInputFromImportRow(
   importRow: LeadImportRow,
   options: BuildCustomerInputOptions = {},
@@ -65,6 +80,73 @@ export function buildCustomerInputFromImportRow(
     payment_status: 'NOT_STARTED',
     time_parse_status: 'NOT_PARSED',
     last_feedback_type: 'UNKNOWN',
+  };
+}
+
+export function buildCustomerInputFromCollectedLead(
+  collectedLead: CollectedLead,
+  options: BuildCollectedLeadCustomerInputOptions = {},
+): LeadWorkbenchCustomerInput {
+  return {
+    name: normalizeOptional(collectedLead.company_name) || 'Unnamed collected lead',
+    phone_number: normalizeOptional(collectedLead.mobile) || normalizeOptional(collectedLead.tel),
+    website: normalizeOptional(collectedLead.website),
+    region: null,
+    industry: null,
+    contact_person: normalizeOptional(collectedLead.contact_name),
+    email: normalizeOptional(collectedLead.email),
+    source: normalizeOptional(options.source) || '获客作业台/采集线索',
+    qualification_reason: null,
+    notes: buildCollectedLeadNotes(collectedLead),
+    customer_grade: 'C',
+    stage: 'NEW_LEAD',
+    contact_method: 'PHONE',
+    next_follow_up_at: null,
+    wechat_add_status: 'NOT_ADDED',
+    intent_level: 'UNKNOWN',
+    payment_status: 'NOT_STARTED',
+    time_parse_status: 'NOT_PARSED',
+    last_feedback_type: 'UNKNOWN',
+  };
+}
+
+export function buildCustomerEnrichmentPatchFromCollectedLead(
+  existingCustomer: Customer,
+  collectedLead: CollectedLead,
+): CustomerEnrichmentPatchResult {
+  const patch: CustomerEnrichmentPatch = {};
+  const changedFields: string[] = [];
+  const phoneNumber = normalizeOptional(collectedLead.mobile) || normalizeOptional(collectedLead.tel);
+
+  if (!normalizeOptional(existingCustomer.phone_number) && phoneNumber) {
+    patch.phone_number = phoneNumber;
+    changedFields.push('phone_number');
+  }
+  if (!normalizeOptional(existingCustomer.contact_person) && normalizeOptional(collectedLead.contact_name)) {
+    patch.contact_person = normalizeOptional(collectedLead.contact_name);
+    changedFields.push('contact_person');
+  }
+  if (!normalizeOptional(existingCustomer.website) && normalizeOptional(collectedLead.website)) {
+    patch.website = normalizeOptional(collectedLead.website);
+    changedFields.push('website');
+  }
+  if (!normalizeOptional(existingCustomer.email) && normalizeOptional(collectedLead.email)) {
+    patch.email = normalizeOptional(collectedLead.email);
+    changedFields.push('email');
+  }
+
+  const collectedNotes = buildCollectedLeadNotes(collectedLead);
+  if (collectedNotes) {
+    const existingNotes = normalizeOptional(existingCustomer.notes);
+    patch.notes = existingNotes ? `${existingNotes}\n${collectedNotes}` : collectedNotes;
+    changedFields.push('notes');
+  }
+
+  return {
+    patch,
+    message: changedFields.length > 0
+      ? `Prepared collected lead enrichment fields: ${changedFields.join(', ')}`
+      : 'No empty customer fields to enrich',
   };
 }
 
@@ -193,4 +275,18 @@ function buildNotes(importRow: LeadImportRow): string | null {
   }
 
   return parts.length > 0 ? parts.join('\n') : null;
+}
+
+function buildCollectedLeadNotes(collectedLead: CollectedLead): string | null {
+  const parts = [
+    normalizeOptional(collectedLead.note),
+    normalizeOptional(collectedLead.raw_text),
+  ].filter((part): part is string => Boolean(part));
+
+  return parts.length > 0 ? parts.join('\n') : null;
+}
+
+function normalizeOptional(value: string | null | undefined): string | null {
+  const normalized = value?.trim() || '';
+  return normalized || null;
 }

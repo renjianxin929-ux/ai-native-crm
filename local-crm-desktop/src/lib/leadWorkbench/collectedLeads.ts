@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 
 import type { DatabaseLike } from '../db';
+import { assertCollectedLeadSyncStatusTransition } from './stateMachine';
 import type { CollectedLeadSyncStatus } from './types';
 
 export interface CollectedLead {
@@ -37,6 +38,17 @@ export interface InsertCollectedLeadDraftInput {
   email: string | null;
   raw_text: string;
   note: string | null;
+}
+
+export interface UpdateCollectedLeadSyncStateInput {
+  id: string;
+  fromStatus?: CollectedLeadSyncStatus;
+  toStatus: CollectedLeadSyncStatus;
+  created_customer_id?: string | null;
+  updated_customer_id?: string | null;
+  error_message?: string | null;
+  message?: string | null;
+  updated_at: string;
 }
 
 export async function insertCollectedLeadDraft(
@@ -141,6 +153,66 @@ export async function insertCollectedLeadDraft(
   );
 
   return draft;
+}
+
+export async function getCollectedLeadById(
+  db: DatabaseLike,
+  id: string,
+): Promise<CollectedLead | null> {
+  const normalizedId = id.trim();
+  if (!normalizedId) return null;
+
+  const rows = await db.select<CollectedLead>(
+    'SELECT * FROM collected_leads WHERE id = ?',
+    [normalizedId],
+  );
+  return rows[0] || null;
+}
+
+export async function updateCollectedLeadSyncState(
+  db: DatabaseLike,
+  input: UpdateCollectedLeadSyncStateInput,
+): Promise<CollectedLead> {
+  const id = input.id.trim();
+  if (!id) {
+    throw new Error('collected_lead id is required');
+  }
+  if (!input.updated_at.trim()) {
+    throw new Error('updated_at is required');
+  }
+
+  const current = await getCollectedLeadById(db, id);
+  if (!current) {
+    throw new Error(`Collected lead not found: ${id}`);
+  }
+  if (input.fromStatus && current.sync_status !== input.fromStatus) {
+    throw new Error(`Collected lead sync status mismatch: expected ${input.fromStatus}, got ${current.sync_status}`);
+  }
+
+  assertCollectedLeadSyncStatusTransition(current.sync_status, input.toStatus);
+
+  const fields = ['sync_status = ?', 'updated_at = ?'];
+  const values: unknown[] = [input.toStatus, input.updated_at];
+
+  if ('created_customer_id' in input) {
+    fields.push('created_customer_id = ?');
+    values.push(input.created_customer_id ?? null);
+  }
+  if ('updated_customer_id' in input) {
+    fields.push('updated_customer_id = ?');
+    values.push(input.updated_customer_id ?? null);
+  }
+
+  await db.execute(
+    `UPDATE collected_leads SET ${fields.join(', ')} WHERE id = ?`,
+    [...values, id],
+  );
+
+  const updated = await getCollectedLeadById(db, id);
+  if (!updated) {
+    throw new Error(`Collected lead not found after update: ${id}`);
+  }
+  return updated;
 }
 
 export async function listCollectedLeadsByWorkItemId(
