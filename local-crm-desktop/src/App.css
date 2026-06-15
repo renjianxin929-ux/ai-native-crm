@@ -1061,6 +1061,16 @@ tr.clickable {
   word-break: break-word;
 }
 
+.lead-workbench-history-item .lead-workbench-collected-summary {
+  grid-template-columns: minmax(150px, 1.2fr) auto repeat(6, minmax(90px, 1fr)) minmax(120px, 1.4fr);
+  overflow-x: auto;
+}
+
+.lead-workbench-collected-summary span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .lead-workbench-detail-grid {
   display: grid;
   grid-template-columns: 1fr;

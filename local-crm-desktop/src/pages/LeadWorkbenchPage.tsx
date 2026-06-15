@@ -7,7 +7,11 @@ import {
   listLeadCaptureEventsByWorkItemId,
   type LeadCaptureEvent,
 } from '../lib/leadWorkbench/captureEvents';
-import { insertCollectedLeadDraft } from '../lib/leadWorkbench/collectedLeads';
+import {
+  insertCollectedLeadDraft,
+  listCollectedLeadsByWorkItemId,
+  type CollectedLead,
+} from '../lib/leadWorkbench/collectedLeads';
 import {
   getLeadWorkItemStatusCounts,
   listLeadWorkItemsByStatus,
@@ -124,6 +128,25 @@ export function getCollectedLeadDraftSaveSuccessMessage(): string {
 
 export function getCollectedLeadDraftSaveErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+export function getCollectedLeadDraftHistoryEmptyMessage(): string {
+  return '暂无采集线索草稿。';
+}
+
+export function isCollectedLeadDraftHistoryVisible(item: LeadWorkItem | null): boolean {
+  return Boolean(item);
+}
+
+export function getCollectedLeadDraftDisplayValue(value: string | number | null): string {
+  const normalized = typeof value === 'number' ? String(value) : value?.trim() || '';
+  return normalized || '-';
+}
+
+export function getCollectedLeadDraftNoteSummary(note: string | null): string {
+  const value = note?.trim() || '';
+  if (!value) return '-';
+  return value.length > 120 ? `${value.slice(0, 120)}...` : value;
 }
 
 export function isLeadCaptureHistoryVisible(item: LeadWorkItem | null): boolean {
@@ -385,6 +408,7 @@ export default function LeadWorkbenchPage() {
   const [pastePreviewState, setPastePreviewState] = useState<LeadPastePreviewState>(getEmptyLeadPastePreviewState);
   const [collectedLeadDraft, setCollectedLeadDraft] = useState<CollectedLeadDraftForm | null>(null);
   const [captureEvents, setCaptureEvents] = useState<LeadCaptureEvent[]>([]);
+  const [collectedLeadDrafts, setCollectedLeadDrafts] = useState<CollectedLead[]>([]);
 
   const selectedItem = useMemo(
     () => items.find(item => item.id === selectedItemId) || null,
@@ -434,6 +458,12 @@ export default function LeadWorkbenchPage() {
     setCaptureEvents(events);
   }, []);
 
+  const loadCollectedLeadDrafts = useCallback(async (workItemId: string) => {
+    const db = await getDb();
+    const drafts = await listCollectedLeadsByWorkItemId(db, workItemId);
+    setCollectedLeadDrafts(drafts);
+  }, []);
+
   useEffect(() => {
     if (!selectedItemId) {
       setCaptureEvents([]);
@@ -445,6 +475,18 @@ export default function LeadWorkbenchPage() {
       setError(getLeadCaptureSaveErrorMessage(err));
     });
   }, [loadCaptureEvents, selectedItemId]);
+
+  useEffect(() => {
+    if (!selectedItemId) {
+      setCollectedLeadDrafts([]);
+      return;
+    }
+
+    setCollectedLeadDrafts([]);
+    void loadCollectedLeadDrafts(selectedItemId).catch(err => {
+      setError(getCollectedLeadDraftSaveErrorMessage(err));
+    });
+  }, [loadCollectedLeadDrafts, selectedItemId]);
 
   const handleRefreshTasks = useCallback(async () => {
     setMessage(null);
@@ -543,13 +585,14 @@ export default function LeadWorkbenchPage() {
       const { contactNameSuggestion: _contactNameSuggestion, ...input } = collectedLeadDraft;
       const db = await getDb();
       await insertCollectedLeadDraft(db, input);
+      await loadCollectedLeadDrafts(selectedItem.id);
       setMessage(getCollectedLeadDraftSaveSuccessMessage());
     } catch (err) {
       setError(getCollectedLeadDraftSaveErrorMessage(err));
     } finally {
       setIsSavingCollectedLead(false);
     }
-  }, [collectedLeadDraft, selectedItem]);
+  }, [collectedLeadDraft, loadCollectedLeadDrafts, selectedItem]);
 
   const statusActions = selectedItem ? getLeadWorkItemStatusActions(selectedItem.status) : [];
   const searchKeyword = selectedItem ? getSuggestedTanjiSearchKeyword(selectedItem) : '';
@@ -813,6 +856,38 @@ export default function LeadWorkbenchPage() {
                             </div>
                             <PreviewText label="完整 raw_text" value={event.raw_text} />
                             <PreviewText label="完整 parsed_json" value={event.parsed_json} />
+                          </details>
+                        ))}
+                      </div>
+                    )}
+                  </section>
+                )}
+
+                {isCollectedLeadDraftHistoryVisible(selectedItem) && (
+                  <section className="lead-workbench-capture-history">
+                    <div className="section-title">采集线索草稿</div>
+                    {collectedLeadDrafts.length === 0 ? (
+                      <div className="empty-state lead-workbench-history-empty">{getCollectedLeadDraftHistoryEmptyMessage()}</div>
+                    ) : (
+                      <div className="lead-workbench-history-list">
+                        {collectedLeadDrafts.map(draft => (
+                          <details className="lead-workbench-history-item" key={draft.id}>
+                            <summary className="lead-workbench-collected-summary">
+                              <span>{draft.created_at}</span>
+                              <span className="badge badge-info">{draft.sync_status}</span>
+                              <span>{getCollectedLeadDraftDisplayValue(draft.contact_name)}</span>
+                              <span>{getCollectedLeadDraftDisplayValue(draft.position)}</span>
+                              <span>{getCollectedLeadDraftDisplayValue(draft.mobile)}</span>
+                              <span>{getCollectedLeadDraftDisplayValue(draft.tel)}</span>
+                              <span>{getCollectedLeadDraftDisplayValue(draft.website)}</span>
+                              <span>{getCollectedLeadDraftDisplayValue(draft.email)}</span>
+                              <span>{getCollectedLeadDraftNoteSummary(draft.note)}</span>
+                            </summary>
+                            <PreviewText label="完整 raw_text" value={draft.raw_text || ''} />
+                            <PreviewText label="完整 note" value={draft.note || ''} />
+                            <PreviewText label="work_item_id" value={draft.work_item_id || ''} />
+                            <PreviewText label="import_row_id" value={draft.import_row_id || ''} />
+                            <PreviewText label="customer_id" value={draft.customer_id || ''} />
                           </details>
                         ))}
                       </div>

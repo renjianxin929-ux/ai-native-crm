@@ -143,6 +143,47 @@ describe('lead workbench collected lead drafts', () => {
       db.close();
     }
   });
+
+  it('lists drafts by work_item_id in created_at descending order without side effects', async () => {
+    const db = await createReadyDb();
+    try {
+      const firstWorkItem = createWorkItem({ id: 'work-a', status: 'STAGED' });
+      const secondWorkItem = createWorkItem({ id: 'work-b', status: 'TODO' });
+      await insertLeadWorkItem(db, firstWorkItem);
+      await insertLeadWorkItem(db, secondWorkItem);
+      await insertStoredDraft(db, {
+        id: 'older',
+        work_item_id: 'work-a',
+        contact_name: 'Older Contact',
+        created_at: '2026-06-14T01:00:00.000Z',
+      });
+      await insertStoredDraft(db, {
+        id: 'other-work',
+        work_item_id: 'work-b',
+        contact_name: 'Other Work Contact',
+        created_at: '2026-06-14T03:00:00.000Z',
+      });
+      await insertStoredDraft(db, {
+        id: 'newer',
+        work_item_id: 'work-a',
+        contact_name: 'Newer Contact',
+        created_at: '2026-06-14T04:00:00.000Z',
+      });
+
+      const drafts = await listCollectedLeadsByWorkItemId(db, 'work-a');
+      const workItems = await db.select<LeadWorkItem>('SELECT * FROM lead_work_items ORDER BY id ASC');
+
+      expect(drafts.map(draft => draft.id)).toEqual(['newer', 'older']);
+      expect(drafts.every(draft => draft.work_item_id === 'work-a')).toBe(true);
+      expect(await db.select('SELECT * FROM customers')).toHaveLength(0);
+      expect(await db.select('SELECT * FROM lead_sync_logs')).toHaveLength(0);
+      expect(workItems).toHaveLength(2);
+      expect(workItems[0]).toMatchObject(firstWorkItem);
+      expect(workItems[1]).toMatchObject(secondWorkItem);
+    } finally {
+      db.close();
+    }
+  });
 });
 
 function createDraftInput(overrides: Record<string, string | null> = {}) {
@@ -181,4 +222,59 @@ function createWorkItem(overrides: Partial<LeadWorkItem> = {}): LeadWorkItem {
     updated_at: '2026-06-14T00:00:00.000Z',
     ...overrides,
   };
+}
+
+async function insertStoredDraft(
+  db: DatabaseLike,
+  overrides: Record<string, string | null>,
+) {
+  const draft = {
+    id: 'draft-1',
+    work_item_id: 'work-1',
+    import_row_id: null,
+    customer_id: null,
+    company_name: 'Draft Co',
+    contact_name: 'Draft Contact',
+    position: null,
+    mobile: null,
+    tel: null,
+    website: null,
+    email: null,
+    raw_text: 'raw text',
+    note: 'note text',
+    sync_status: 'UNSYNCED',
+    created_customer_id: null,
+    updated_customer_id: null,
+    created_at: '2026-06-14T00:00:00.000Z',
+    updated_at: '2026-06-14T00:00:00.000Z',
+    ...overrides,
+  };
+
+  await db.execute(
+    `INSERT INTO collected_leads (
+      id, work_item_id, import_row_id, customer_id, company_name, contact_name,
+      position, mobile, tel, website, email, raw_text, note, sync_status,
+      created_customer_id, updated_customer_id, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      draft.id,
+      draft.work_item_id,
+      draft.import_row_id,
+      draft.customer_id,
+      draft.company_name,
+      draft.contact_name,
+      draft.position,
+      draft.mobile,
+      draft.tel,
+      draft.website,
+      draft.email,
+      draft.raw_text,
+      draft.note,
+      draft.sync_status,
+      draft.created_customer_id,
+      draft.updated_customer_id,
+      draft.created_at,
+      draft.updated_at,
+    ],
+  );
 }

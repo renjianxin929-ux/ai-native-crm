@@ -15,11 +15,15 @@ import {
 import { updateLeadWorkItemStatus } from '../lib/leadWorkbench/workItemActions';
 import type { LeadWorkItem, LeadWorkStatus } from '../lib/leadWorkbench/types';
 import type { LeadCaptureEvent } from '../lib/leadWorkbench/captureEvents';
+import type { CollectedLead } from '../lib/leadWorkbench/collectedLeads';
 import {
   buildCollectedLeadDraftForm,
   buildLeadPastePreviewResult,
   copyLeadSearchKeyword,
   filterLeadWorkItemsByStatus,
+  getCollectedLeadDraftDisplayValue,
+  getCollectedLeadDraftHistoryEmptyMessage,
+  getCollectedLeadDraftNoteSummary,
   getCollectedLeadDraftSaveConfirmationMessage,
   getCollectedLeadDraftSaveErrorMessage,
   getCollectedLeadDraftSaveSuccessMessage,
@@ -38,6 +42,7 @@ import {
   getNoStructuredLeadPastePreviewMessage,
   getStatusActionConfirmationMessage,
   getSuggestedTanjiSearchKeyword,
+  isCollectedLeadDraftHistoryVisible,
   isLeadCaptureHistoryVisible,
   isLeadWorkItemTerminalStatus,
   isLeadPastePreviewVisible,
@@ -465,6 +470,54 @@ describe('lead workbench page operations', () => {
     expect(getCollectedLeadDraftSaveErrorMessage('save failed')).toBe('save failed');
   });
 
+  it('shows collected lead draft history only for a selected task and has an empty state', () => {
+    expect(isCollectedLeadDraftHistoryVisible(null)).toBe(false);
+    expect(isCollectedLeadDraftHistoryVisible(createWorkItem())).toBe(true);
+    expect(getCollectedLeadDraftHistoryEmptyMessage()).toBe('暂无采集线索草稿。');
+  });
+
+  it('summarizes collected lead draft notes to the first 120 characters', () => {
+    const longNote = 'a'.repeat(121);
+
+    expect(getCollectedLeadDraftNoteSummary(longNote)).toBe(`${'a'.repeat(120)}...`);
+    expect(getCollectedLeadDraftNoteSummary('short note')).toBe('short note');
+    expect(getCollectedLeadDraftNoteSummary(null)).toBe('-');
+  });
+
+  it('keeps collected lead draft fields available for read-only expanded display', () => {
+    const draft = createCollectedLead({
+      work_item_id: 'work-1',
+      import_row_id: 'row-1',
+      customer_id: 'customer-1',
+      contact_name: '张三',
+      position: '经理',
+      mobile: '13800138000',
+      tel: '0757-88889999',
+      website: 'https://example.com',
+      email: 'sales@example.com',
+      raw_text: '完整原文 '.repeat(30),
+      note: '完整备注 '.repeat(30),
+      sync_status: 'UNSYNCED',
+    });
+
+    expect(draft).toMatchObject({
+      work_item_id: 'work-1',
+      import_row_id: 'row-1',
+      customer_id: 'customer-1',
+      contact_name: '张三',
+      position: '经理',
+      mobile: '13800138000',
+      tel: '0757-88889999',
+      website: 'https://example.com',
+      email: 'sales@example.com',
+      sync_status: 'UNSYNCED',
+    });
+    expect(draft.raw_text?.length).toBeGreaterThan(120);
+    expect(draft.note?.length).toBeGreaterThan(120);
+    expect(getCollectedLeadDraftDisplayValue(draft.contact_name)).toBe('张三');
+    expect(getCollectedLeadDraftDisplayValue(null)).toBe('-');
+  });
+
   it('updates status and refreshes list, counts, and detail data through the shared action', async () => {
     const db = await createReadyDb();
     try {
@@ -513,6 +566,17 @@ describe('lead workbench page operations', () => {
     expect(pageSource).toContain('保存为采集线索草稿');
     expect(pageSource).toContain('采集线索草稿已保存');
     expect(pageSource).toContain('insertCollectedLeadDraft');
+    expect(pageSource).toContain('采集线索草稿');
+    expect(pageSource).toContain('暂无采集线索草稿。');
+    expect(pageSource).toContain('listCollectedLeadsByWorkItemId');
+    expect(pageSource).toContain('await loadCollectedLeadDrafts(selectedItem.id)');
+    expect(pageSource).toContain('setCollectedLeadDrafts([])');
+    expect(pageSource).toContain('sync_status');
+    expect(pageSource).toContain('完整 raw_text');
+    expect(pageSource).toContain('完整 note');
+    expect(pageSource).toContain('work_item_id');
+    expect(pageSource).toContain('import_row_id');
+    expect(pageSource).toContain('customer_id');
     expect(pageSource).toContain('历史捕获记录');
     expect(pageSource).toContain('暂无捕获记录。');
     expect(pageSource).toContain('listLeadCaptureEventsByWorkItemId');
@@ -526,6 +590,8 @@ describe('lead workbench page operations', () => {
     expect(pageSource).not.toContain('同步 CRM');
     expect(pageSource).not.toContain('创建 CRM 客户');
     expect(pageSource).not.toContain('补充已有客户');
+    expect(pageSource).not.toContain('编辑采集线索');
+    expect(pageSource).not.toContain('删除采集线索');
     expect(pageSource).not.toContain('编辑捕获记录');
     expect(pageSource).not.toContain('删除捕获记录');
     expect(pageSource).not.toContain('insertCustomerWithDb');
@@ -534,6 +600,7 @@ describe('lead workbench page operations', () => {
     expect(pageSource).not.toContain('INSERT INTO lead_work_items');
     expect(pageSource).not.toContain('collected_leads');
     expect(pageSource).not.toContain('lead_capture_events');
+    expect(pageSource).not.toContain('lead_sync_logs');
     expect(pageSource).not.toContain('importLeadRowsToBatch');
     expect(pageSource).not.toContain('executeLeadImportBatchDecisions');
     expect(pageSource).not.toContain('addEventListener');
@@ -560,6 +627,30 @@ function createCaptureEvent(overrides: Partial<LeadCaptureEvent> = {}): LeadCapt
     confidence_json: '{}',
     action: 'PARSED',
     created_at: '2026-06-14T00:00:00.000Z',
+    ...overrides,
+  };
+}
+
+function createCollectedLead(overrides: Partial<CollectedLead> = {}): CollectedLead {
+  return {
+    id: 'draft-1',
+    work_item_id: 'work-1',
+    import_row_id: null,
+    customer_id: null,
+    company_name: 'Draft Co',
+    contact_name: null,
+    position: null,
+    mobile: null,
+    tel: null,
+    website: null,
+    email: null,
+    raw_text: null,
+    note: null,
+    sync_status: 'UNSYNCED',
+    created_customer_id: null,
+    updated_customer_id: null,
+    created_at: '2026-06-14T00:00:00.000Z',
+    updated_at: '2026-06-14T00:00:00.000Z',
     ...overrides,
   };
 }
