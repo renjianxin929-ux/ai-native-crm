@@ -15,16 +15,20 @@ import {
 import { updateLeadWorkItemStatus } from '../lib/leadWorkbench/workItemActions';
 import type { LeadWorkItem, LeadWorkStatus } from '../lib/leadWorkbench/types';
 import {
+  buildLeadPastePreviewResult,
   copyLeadSearchKeyword,
   filterLeadWorkItemsByStatus,
+  getEmptyLeadPastePreviewState,
   getLeadWorkbenchDetailEmptyMessage,
   getLeadWorkbenchListEmptyMessage,
   getLeadWorkItemStatusActions,
   getLeadWorkItemStatusUpdateSuccessMessage,
   getLeadWorkItemTerminalMessage,
+  getNoStructuredLeadPastePreviewMessage,
   getStatusActionConfirmationMessage,
   getSuggestedTanjiSearchKeyword,
   isLeadWorkItemTerminalStatus,
+  isLeadPastePreviewVisible,
   LEAD_WORKBENCH_ACTION_LABELS,
   LEAD_WORKBENCH_STATUS_FILTERS,
   shouldRunLeadWorkItemStatusUpdate,
@@ -100,6 +104,8 @@ describe('lead workbench page operations', () => {
 
   it('shows an empty detail state until a task is selected', () => {
     expect(getLeadWorkbenchDetailEmptyMessage()).toBe('请选择左侧任务查看详情。');
+    expect(isLeadPastePreviewVisible(null)).toBe(false);
+    expect(isLeadPastePreviewVisible(createWorkItem())).toBe(true);
   });
 
   it('computes status counts for the queue', async () => {
@@ -259,6 +265,50 @@ describe('lead workbench page operations', () => {
     expect(getLeadWorkItemStatusUpdateSuccessMessage('NO_PHONE')).toBe('任务状态已更新为 NO_PHONE');
   });
 
+  it('builds a read-only paste preview with normalized mobile candidates', () => {
+    const preview = buildLeadPastePreviewResult('手机: +86 138 0013 8000');
+
+    expect(preview.mobiles).toEqual(['13800138000']);
+    expect(preview.raw_text).toBe('手机: +86 138 0013 8000');
+  });
+
+  it('builds a read-only paste preview with landline, URL, and email candidates', () => {
+    const preview = buildLeadPastePreviewResult(
+      '电话 0757-88889999 官网 https://example.com 邮箱 sales@example.com',
+    );
+
+    expect(preview.tels).toEqual(['0757-88889999']);
+    expect(preview.urls).toEqual(['https://example.com']);
+    expect(preview.emails).toEqual(['sales@example.com']);
+  });
+
+  it('shows title-only Chinese names only as possible contacts', () => {
+    const preview = buildLeadPastePreviewResult('张总 李经理');
+
+    expect(preview.contacts).toEqual([]);
+    expect(preview.possibleContact).toEqual(['张总', '李经理']);
+  });
+
+  it('does not confirm two or three Chinese characters as contacts', () => {
+    const preview = buildLeadPastePreviewResult('联系人 张三 李四');
+
+    expect(preview.contacts).toEqual([]);
+    expect(preview.possibleContact).toEqual([]);
+  });
+
+  it('shows a no-structured-data hint while preserving note and raw text', () => {
+    const preview = buildLeadPastePreviewResult('这是一段没有电话网址邮箱的备注');
+
+    expect(preview.hasStructuredInfo).toBe(false);
+    expect(preview.note).toBe('这是一段没有电话网址邮箱的备注');
+    expect(preview.raw_text).toBe('这是一段没有电话网址邮箱的备注');
+    expect(getNoStructuredLeadPastePreviewMessage()).toContain('未识别到电话、网址或邮箱');
+  });
+
+  it('clears paste preview input and result when clearing or switching tasks', () => {
+    expect(getEmptyLeadPastePreviewState()).toEqual({ text: '', result: null });
+  });
+
   it('updates status and refreshes list, counts, and detail data through the shared action', async () => {
     const db = await createReadyDb();
     try {
@@ -300,12 +350,20 @@ describe('lead workbench page operations', () => {
     expect(pageSource).toContain('navigator.clipboard.writeText');
     expect(pageSource).toContain('window.confirm');
     expect(pageSource).toContain('刷新任务');
+    expect(pageSource).toContain('粘贴解析预览');
+    expect(pageSource).toContain('解析预览');
+    expect(pageSource).toContain('清空粘贴内容');
+    expect(pageSource).toContain('parseLeadContactText');
     expect(pageSource).toContain('disabled={isLoading || isUpdating}');
+    expect(pageSource).not.toContain('保存线索');
+    expect(pageSource).not.toContain('保存 collected_lead');
+    expect(pageSource).not.toContain('同步 CRM');
     expect(pageSource).not.toContain('insertCustomerWithDb');
     expect(pageSource).not.toContain('createCustomer');
     expect(pageSource).not.toContain('insertLeadWorkItem');
     expect(pageSource).not.toContain('INSERT INTO lead_work_items');
     expect(pageSource).not.toContain('collected_leads');
+    expect(pageSource).not.toContain('lead_capture_events');
     expect(pageSource).not.toContain('importLeadRowsToBatch');
     expect(pageSource).not.toContain('executeLeadImportBatchDecisions');
     expect(pageSource).not.toContain('addEventListener');

@@ -6,6 +6,7 @@ import {
   getLeadWorkItemStatusCounts,
   listLeadWorkItemsByStatus,
 } from '../lib/leadWorkbench/db';
+import { parseLeadContactText } from '../lib/leadWorkbench/parser';
 import { updateLeadWorkItemStatus } from '../lib/leadWorkbench/workItemActions';
 import type { LeadWorkItem, LeadWorkStatus } from '../lib/leadWorkbench/types';
 
@@ -38,6 +39,23 @@ type ClipboardWriter = {
 
 type ConfirmFn = (message: string) => boolean;
 
+export type LeadPastePreviewResult = {
+  mobiles: string[];
+  tels: string[];
+  urls: string[];
+  emails: string[];
+  contacts: string[];
+  possibleContact: string[];
+  note: string;
+  raw_text: string;
+  hasStructuredInfo: boolean;
+};
+
+export type LeadPastePreviewState = {
+  text: string;
+  result: LeadPastePreviewResult | null;
+};
+
 export function filterLeadWorkItemsByStatus(
   items: LeadWorkItem[],
   status: LeadWorkStatus,
@@ -64,6 +82,36 @@ export function getLeadWorkbenchListEmptyMessage(
 
 export function getLeadWorkbenchDetailEmptyMessage(): string {
   return '请选择左侧任务查看详情。';
+}
+
+export function isLeadPastePreviewVisible(item: LeadWorkItem | null): boolean {
+  return Boolean(item);
+}
+
+export function getEmptyLeadPastePreviewState(): LeadPastePreviewState {
+  return { text: '', result: null };
+}
+
+export function getNoStructuredLeadPastePreviewMessage(): string {
+  return '未识别到电话、网址或邮箱，可作为备注参考。';
+}
+
+export function buildLeadPastePreviewResult(rawText: string): LeadPastePreviewResult {
+  const parsed = parseLeadContactText(rawText);
+  return {
+    mobiles: parsed.mobiles,
+    tels: parsed.tels,
+    urls: parsed.urls,
+    emails: parsed.emails,
+    contacts: parsed.contacts,
+    possibleContact: parsed.possibleContacts,
+    note: rawText.trim(),
+    raw_text: rawText,
+    hasStructuredInfo: parsed.mobiles.length > 0
+      || parsed.tels.length > 0
+      || parsed.urls.length > 0
+      || parsed.emails.length > 0,
+  };
 }
 
 export function getSuggestedTanjiSearchKeyword(
@@ -187,6 +235,7 @@ export default function LeadWorkbenchPage() {
   const [isUpdating, setIsUpdating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [pastePreviewState, setPastePreviewState] = useState<LeadPastePreviewState>(getEmptyLeadPastePreviewState);
 
   const selectedItem = useMemo(
     () => items.find(item => item.id === selectedItemId) || null,
@@ -224,6 +273,10 @@ export default function LeadWorkbenchPage() {
   useEffect(() => {
     void loadItems(statusFilter);
   }, [loadItems, statusFilter]);
+
+  useEffect(() => {
+    setPastePreviewState(getEmptyLeadPastePreviewState());
+  }, [selectedItemId]);
 
   const handleRefreshTasks = useCallback(async () => {
     setMessage(null);
@@ -264,6 +317,17 @@ export default function LeadWorkbenchPage() {
       setIsUpdating(false);
     }
   }, [loadItems, selectedItem, statusFilter]);
+
+  const handleParsePastePreview = useCallback(() => {
+    setPastePreviewState(current => ({
+      ...current,
+      result: buildLeadPastePreviewResult(current.text),
+    }));
+  }, []);
+
+  const handleClearPastePreview = useCallback(() => {
+    setPastePreviewState(getEmptyLeadPastePreviewState());
+  }, []);
 
   const statusActions = selectedItem ? getLeadWorkItemStatusActions(selectedItem.status) : [];
   const searchKeyword = selectedItem ? getSuggestedTanjiSearchKeyword(selectedItem) : '';
@@ -420,6 +484,56 @@ export default function LeadWorkbenchPage() {
                   </div>
                 )}
 
+                {isLeadPastePreviewVisible(selectedItem) && (
+                  <section className="lead-workbench-paste-preview">
+                    <div className="lead-section-header">
+                      <div className="section-title">粘贴解析预览</div>
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        onClick={handleClearPastePreview}
+                        disabled={!pastePreviewState.text && !pastePreviewState.result}
+                      >
+                        清空粘贴内容
+                      </button>
+                    </div>
+                    <textarea
+                      className="lead-workbench-paste-input"
+                      value={pastePreviewState.text}
+                      onChange={event => setPastePreviewState({ text: event.target.value, result: null })}
+                      placeholder="手动粘贴从探迹复制的文本，仅用于本页解析预览"
+                      rows={6}
+                    />
+                    <div className="lead-workbench-action-row">
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        onClick={handleParsePastePreview}
+                        disabled={!pastePreviewState.text.trim()}
+                      >
+                        解析预览
+                      </button>
+                    </div>
+
+                    {pastePreviewState.result && (
+                      <div className="lead-workbench-paste-result">
+                        {!pastePreviewState.result.hasStructuredInfo && (
+                          <div className="lead-alert lead-alert-info">
+                            <span>{getNoStructuredLeadPastePreviewMessage()}</span>
+                          </div>
+                        )}
+                        <PreviewList label="手机号候选" values={pastePreviewState.result.mobiles} />
+                        <PreviewList label="座机候选" values={pastePreviewState.result.tels} />
+                        <PreviewList label="URL 候选" values={pastePreviewState.result.urls} />
+                        <PreviewList label="邮箱候选" values={pastePreviewState.result.emails} />
+                        <PreviewList label="possibleContact / 可能联系人" values={pastePreviewState.result.possibleContact} />
+                        <PreviewText label="note / 备注文本" value={pastePreviewState.result.note} />
+                        <PreviewText label="raw_text 原文" value={pastePreviewState.result.raw_text} />
+                      </div>
+                    )}
+                  </section>
+                )}
+
                 <div className="lead-workbench-detail-grid">
                   <DetailItem label="id" value={selectedItem.id} />
                   <DetailItem label="import_row_id" value={selectedItem.import_row_id} />
@@ -449,6 +563,28 @@ function DetailItem({ label, value }: { label: string; value: string | number | 
     <div className="detail-item">
       <div className="label">{label}</div>
       <div className="value">{value ?? '-'}</div>
+    </div>
+  );
+}
+
+function PreviewList({ label, values }: { label: string; values: string[] }) {
+  return (
+    <div className="lead-workbench-preview-row">
+      <div className="label">{label}</div>
+      <div className="lead-workbench-preview-values">
+        {values.length === 0 ? '-' : values.map(value => (
+          <span className="badge badge-info" key={value}>{value}</span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PreviewText({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="lead-workbench-preview-row">
+      <div className="label">{label}</div>
+      <pre className="lead-workbench-preview-text">{value || '-'}</pre>
     </div>
   );
 }
