@@ -1,12 +1,15 @@
 import { v4 as uuidv4 } from 'uuid';
 
 import type { DatabaseLike } from '../db';
+import type { Customer } from '../types';
 import {
   getCollectedLeadById,
   updateCollectedLeadSyncState,
   type CollectedLead,
 } from './collectedLeads';
 import {
+  applyCustomerEnrichmentPatchWithDb,
+  buildCustomerEnrichmentPatchFromCollectedLead,
   buildCustomerInputFromCollectedLead,
   findCustomerByPhoneNumber,
   findCustomersByName,
@@ -45,6 +48,22 @@ export interface SyncCollectedLeadCreateCustomerResult {
   collectedLeadId: string;
   targetCustomerId?: string | null;
   status: SyncCollectedLeadCreateCustomerStatus;
+  message: string;
+}
+
+export type SyncCollectedLeadEnrichCustomerStatus =
+  | 'SUCCESS'
+  | 'ALREADY_SYNCED'
+  | 'INVALID_STATUS'
+  | 'INVALID_MODE'
+  | 'CUSTOMER_NOT_FOUND'
+  | 'NO_ENRICHABLE_FIELDS'
+  | 'FAILED';
+
+export interface SyncCollectedLeadEnrichCustomerResult {
+  collectedLeadId: string;
+  targetCustomerId?: string | null;
+  status: SyncCollectedLeadEnrichCustomerStatus;
   message: string;
 }
 
@@ -211,6 +230,125 @@ export async function syncCollectedLeadCreateCustomer(
   }
 }
 
+export async function syncCollectedLeadEnrichCustomer(
+  db: DatabaseLike,
+  collectedLeadId: string,
+): Promise<SyncCollectedLeadEnrichCustomerResult> {
+  const id = collectedLeadId.trim();
+  if (!id) {
+    return {
+      collectedLeadId: '',
+      status: 'FAILED',
+      message: 'collectedLeadId is required',
+    };
+  }
+
+  await db.execute('BEGIN');
+  try {
+    const collectedLead = await getCollectedLeadById(db, id);
+    if (!collectedLead) {
+      await db.execute('COMMIT');
+      return {
+        collectedLeadId: id,
+        status: 'FAILED',
+        message: `Collected lead not found: ${id}`,
+      };
+    }
+
+    const precheckResult = validateEnrichCustomerMode(collectedLead);
+    if (precheckResult) {
+      await db.execute('COMMIT');
+      return precheckResult;
+    }
+
+    const customerId = collectedLead.customer_id!;
+    const existingCustomer = await getCustomerByIdWithDb(db, customerId);
+    if (!existingCustomer) {
+      const message = `Customer not found: ${customerId}`;
+      await updateCollectedLeadSyncState(db, {
+        id,
+        fromStatus: collectedLead.sync_status,
+        toStatus: 'FAILED',
+        created_customer_id: null,
+        updated_customer_id: null,
+        message,
+        updated_at: new Date().toISOString(),
+      });
+      await insertLeadSyncLog(db, {
+        collected_lead_id: id,
+        action: 'ENRICH_CUSTOMER',
+        target_customer_id: null,
+        status: 'FAILED',
+        message,
+      });
+      await db.execute('COMMIT');
+      return {
+        collectedLeadId: id,
+        targetCustomerId: customerId,
+        status: 'CUSTOMER_NOT_FOUND',
+        message,
+      };
+    }
+
+    const { patch } = buildCustomerEnrichmentPatchFromCollectedLead(existingCustomer, collectedLead);
+    if (Object.keys(patch).length === 0) {
+      const message = 'No enrichable fields for collected lead';
+      await updateCollectedLeadSyncState(db, {
+        id,
+        fromStatus: collectedLead.sync_status,
+        toStatus: 'FAILED',
+        created_customer_id: null,
+        updated_customer_id: null,
+        message,
+        updated_at: new Date().toISOString(),
+      });
+      await insertLeadSyncLog(db, {
+        collected_lead_id: id,
+        action: 'ENRICH_CUSTOMER',
+        target_customer_id: customerId,
+        status: 'FAILED',
+        message,
+      });
+      await db.execute('COMMIT');
+      return {
+        collectedLeadId: id,
+        targetCustomerId: customerId,
+        status: 'NO_ENRICHABLE_FIELDS',
+        message,
+      };
+    }
+
+    await applyCustomerEnrichmentPatchWithDb(db, customerId, patch);
+    await updateCollectedLeadSyncState(db, {
+      id,
+      fromStatus: collectedLead.sync_status,
+      toStatus: 'SYNCED',
+      created_customer_id: null,
+      updated_customer_id: customerId,
+      message: 'Enriched customer from collected lead',
+      updated_at: new Date().toISOString(),
+    });
+    await insertLeadSyncLog(db, {
+      collected_lead_id: id,
+      action: 'ENRICH_CUSTOMER',
+      target_customer_id: customerId,
+      status: 'SUCCESS',
+      message: 'Enriched customer from collected lead',
+    });
+    await db.execute('COMMIT');
+
+    return {
+      collectedLeadId: id,
+      targetCustomerId: customerId,
+      status: 'SUCCESS',
+      message: 'Enriched customer from collected lead',
+    };
+  } catch (error) {
+    await db.execute('ROLLBACK');
+    throw error;
+  }
+}
+
 function validateCreateCustomerMode(
   collectedLead: CollectedLead,
 ): SyncCollectedLeadCreateCustomerResult | null {
@@ -273,6 +411,55 @@ function validateCreateCustomerMode(
   }
 
   return null;
+}
+
+function validateEnrichCustomerMode(
+  collectedLead: CollectedLead,
+): SyncCollectedLeadEnrichCustomerResult | null {
+  if (!collectedLead.customer_id) {
+    return {
+      collectedLeadId: collectedLead.id,
+      status: 'INVALID_MODE',
+      message: 'Collected lead is not linked to an existing customer',
+    };
+  }
+
+  if (collectedLead.sync_status === 'SYNCED') {
+    return {
+      collectedLeadId: collectedLead.id,
+      targetCustomerId: collectedLead.updated_customer_id ?? collectedLead.customer_id,
+      status: 'ALREADY_SYNCED',
+      message: 'Collected lead is already synced',
+    };
+  }
+
+  if (collectedLead.sync_status === 'IGNORED') {
+    return {
+      collectedLeadId: collectedLead.id,
+      targetCustomerId: collectedLead.customer_id,
+      status: 'INVALID_STATUS',
+      message: 'Ignored collected lead cannot be synced',
+    };
+  }
+
+  if (collectedLead.sync_status !== 'UNSYNCED' && collectedLead.sync_status !== 'FAILED') {
+    return {
+      collectedLeadId: collectedLead.id,
+      targetCustomerId: collectedLead.customer_id,
+      status: 'INVALID_STATUS',
+      message: `Collected lead cannot be synced from status ${collectedLead.sync_status}`,
+    };
+  }
+
+  return null;
+}
+
+async function getCustomerByIdWithDb(db: DatabaseLike, customerId: string): Promise<Customer | null> {
+  const rows = await db.select<Customer>(
+    'SELECT * FROM customers WHERE id = ?',
+    [customerId],
+  );
+  return rows[0] || null;
 }
 
 function normalizeOptional(value: string | null | undefined): string | null {

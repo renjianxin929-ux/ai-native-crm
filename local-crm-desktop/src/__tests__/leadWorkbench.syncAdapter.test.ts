@@ -13,7 +13,11 @@ import {
   buildCustomerInputFromCollectedLead,
 } from '../lib/leadWorkbench/customerAdapter';
 import { ensureLeadWorkbenchSchema } from '../lib/leadWorkbench/db';
-import { insertLeadSyncLog, syncCollectedLeadCreateCustomer } from '../lib/leadWorkbench/syncAdapter';
+import {
+  insertLeadSyncLog,
+  syncCollectedLeadCreateCustomer,
+  syncCollectedLeadEnrichCustomer,
+} from '../lib/leadWorkbench/syncAdapter';
 import type { Customer } from '../lib/types';
 
 function createSqliteDb(): DatabaseLike & { close(): void } {
@@ -310,17 +314,17 @@ describe('lead workbench sync adapter foundations', () => {
     expect(result.patch).not.toHaveProperty('customer_grade');
     expect(result.patch).not.toHaveProperty('stage');
     expect(result.patch).not.toHaveProperty('source');
-    expect(result.message).toContain('No empty customer fields');
+    expect(result.patch.notes).toContain('Collected Contact');
+    expect(result.message).toContain('notes');
   });
 
-  it('Phase 4C-2 sync adapter stays out of legacy db, ENRICH, decision execution, and UI pages', () => {
+  it('Phase 4C-3 sync adapter stays out of legacy db, decision execution, and UI pages', () => {
     const syncSource = readFileSync(new URL('../lib/leadWorkbench/syncAdapter.ts', import.meta.url), 'utf8');
 
     expect(syncSource).toContain('insertCustomerWithDb');
+    expect(syncSource).toContain('buildCustomerEnrichmentPatchFromCollectedLead');
     expect(syncSource).not.toContain('getDb(');
     expect(syncSource).not.toContain('createCustomer(');
-    expect(syncSource).not.toContain('updateCustomer');
-    expect(syncSource).not.toContain('buildCustomerEnrichmentPatchFromCollectedLead');
     expect(syncSource).not.toContain('updateCustomer');
     expect(syncSource).not.toContain('DataImportPage');
     expect(syncSource).not.toContain('LeadImportCenterPage');
@@ -748,6 +752,374 @@ describe('lead workbench collected lead CREATE_CUSTOMER sync', () => {
   });
 });
 
+describe('lead workbench collected lead ENRICH_CUSTOMER sync', () => {
+  it('enriches an UNSYNCED collected lead into an existing customer and writes SYNCED state and success log', async () => {
+    const db = await createReadyDb();
+    try {
+      await insertExistingCustomer(db, {
+        id: 'enrich-customer-1',
+        name: 'Existing Enrich Co',
+        phone_number: null,
+        contact_person: null,
+        website: null,
+        email: null,
+        notes: 'existing notes',
+        customer_grade: 'B',
+        stage: 'CONTACTED',
+        source: 'manual source',
+      });
+      await insertStoredDraft(db, {
+        id: 'draft-enrich-1',
+        customer_id: 'enrich-customer-1',
+        company_name: 'Existing Enrich Co',
+        contact_name: 'New Contact',
+        position: 'Manager',
+        mobile: '13800138000',
+        tel: '0757-88889999',
+        website: 'https://enrich.example',
+        email: 'sales@enrich.example',
+        note: 'verified by operator',
+        raw_text: 'raw enrich evidence',
+      });
+
+      const result = await syncCollectedLeadEnrichCustomer(db, 'draft-enrich-1');
+      const customers = await db.select<Customer>('SELECT * FROM customers');
+      const draft = await getCollectedLeadById(db, 'draft-enrich-1');
+      const logs = await db.select<{ action: string; status: string; target_customer_id: string; message: string }>(
+        'SELECT action, status, target_customer_id, message FROM lead_sync_logs',
+      );
+
+      expect(result).toMatchObject({
+        collectedLeadId: 'draft-enrich-1',
+        targetCustomerId: 'enrich-customer-1',
+        status: 'SUCCESS',
+      });
+      expect(customers).toHaveLength(1);
+      expect(customers[0]).toMatchObject({
+        id: 'enrich-customer-1',
+        phone_number: '13800138000',
+        contact_person: 'New Contact',
+        website: 'https://enrich.example',
+        email: 'sales@enrich.example',
+        customer_grade: 'B',
+        stage: 'CONTACTED',
+        source: 'manual source',
+      });
+      expect(customers[0].notes).toContain('existing notes');
+      expect(customers[0].notes).toContain('获客作业台采集线索');
+      expect(customers[0].notes).toContain('Manager');
+      expect(customers[0].notes).toContain('raw enrich evidence');
+      expect(draft).toMatchObject({
+        sync_status: 'SYNCED',
+        created_customer_id: null,
+        updated_customer_id: 'enrich-customer-1',
+      });
+      expect(logs).toEqual([{
+        action: 'ENRICH_CUSTOMER',
+        status: 'SUCCESS',
+        target_customer_id: 'enrich-customer-1',
+        message: 'Enriched customer from collected lead',
+      }]);
+      expect(await db.select('SELECT * FROM lead_work_items')).toHaveLength(0);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('rejects ENRICH when collected_lead.customer_id is empty without creating customers', async () => {
+    const db = await createReadyDb();
+    try {
+      await insertStoredDraft(db, {
+        id: 'draft-create-mode',
+        customer_id: null,
+        company_name: 'Create Mode Co',
+        mobile: '13800138000',
+      });
+
+      const result = await syncCollectedLeadEnrichCustomer(db, 'draft-create-mode');
+
+      expect(result.status).toBe('INVALID_MODE');
+      expect(await db.select('SELECT * FROM customers')).toHaveLength(0);
+      expect(await db.select('SELECT * FROM lead_sync_logs')).toHaveLength(0);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('marks FAILED and writes a failed log when customer_id does not exist', async () => {
+    const db = await createReadyDb();
+    try {
+      await insertStoredDraft(db, {
+        id: 'draft-missing-customer',
+        customer_id: 'missing-customer',
+        company_name: 'Missing Customer Co',
+        mobile: '13800138000',
+      }, { skipForeignKeys: true });
+
+      const result = await syncCollectedLeadEnrichCustomer(db, 'draft-missing-customer');
+      const draft = await getCollectedLeadById(db, 'draft-missing-customer');
+      const logs = await db.select<{ action: string; status: string; target_customer_id: string | null; message: string }>(
+        'SELECT action, status, target_customer_id, message FROM lead_sync_logs',
+      );
+
+      expect(result.status).toBe('CUSTOMER_NOT_FOUND');
+      expect(draft?.sync_status).toBe('FAILED');
+      expect(logs).toEqual([{
+        action: 'ENRICH_CUSTOMER',
+        status: 'FAILED',
+        target_customer_id: null,
+        message: 'Customer not found: missing-customer',
+      }]);
+      expect(await db.select('SELECT * FROM customers')).toHaveLength(0);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('returns ALREADY_SYNCED for SYNCED enrich leads without modifying customers again', async () => {
+    const db = await createReadyDb();
+    try {
+      await insertExistingCustomer(db, {
+        id: 'already-enriched-customer',
+        name: 'Already Enriched Co',
+        phone_number: '13900139000',
+        notes: 'stable notes',
+      });
+      await insertStoredDraft(db, {
+        id: 'draft-already-enriched',
+        customer_id: 'already-enriched-customer',
+        company_name: 'Already Enriched Co',
+        mobile: '13800138000',
+        sync_status: 'SYNCED',
+        updated_customer_id: 'already-enriched-customer',
+      });
+      const before = await db.select<Customer>('SELECT * FROM customers WHERE id = ?', ['already-enriched-customer']);
+
+      const result = await syncCollectedLeadEnrichCustomer(db, 'draft-already-enriched');
+      const after = await db.select<Customer>('SELECT * FROM customers WHERE id = ?', ['already-enriched-customer']);
+
+      expect(result).toMatchObject({
+        collectedLeadId: 'draft-already-enriched',
+        targetCustomerId: 'already-enriched-customer',
+        status: 'ALREADY_SYNCED',
+      });
+      expect(after).toEqual(before);
+      expect(await db.select('SELECT * FROM lead_sync_logs')).toHaveLength(0);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('allows FAILED enrich leads to retry successfully', async () => {
+    const db = await createReadyDb();
+    try {
+      await insertExistingCustomer(db, {
+        id: 'retry-enrich-customer',
+        name: 'Retry Enrich Co',
+        phone_number: null,
+      });
+      await insertStoredDraft(db, {
+        id: 'draft-enrich-retry',
+        customer_id: 'retry-enrich-customer',
+        company_name: 'Retry Enrich Co',
+        mobile: '13800138000',
+        sync_status: 'FAILED',
+      });
+
+      const result = await syncCollectedLeadEnrichCustomer(db, 'draft-enrich-retry');
+      const customer = await db.select<Customer>('SELECT * FROM customers WHERE id = ?', ['retry-enrich-customer']);
+      const draft = await getCollectedLeadById(db, 'draft-enrich-retry');
+
+      expect(result.status).toBe('SUCCESS');
+      expect(customer[0].phone_number).toBe('13800138000');
+      expect(draft?.sync_status).toBe('SYNCED');
+    } finally {
+      db.close();
+    }
+  });
+
+  it('rejects IGNORED enrich leads without modifying customers', async () => {
+    const db = await createReadyDb();
+    try {
+      await insertExistingCustomer(db, {
+        id: 'ignored-enrich-customer',
+        name: 'Ignored Enrich Co',
+        phone_number: null,
+      });
+      await insertStoredDraft(db, {
+        id: 'draft-enrich-ignored',
+        customer_id: 'ignored-enrich-customer',
+        company_name: 'Ignored Enrich Co',
+        mobile: '13800138000',
+        sync_status: 'IGNORED',
+      });
+
+      const result = await syncCollectedLeadEnrichCustomer(db, 'draft-enrich-ignored');
+      const customer = await db.select<Customer>('SELECT * FROM customers WHERE id = ?', ['ignored-enrich-customer']);
+
+      expect(result.status).toBe('INVALID_STATUS');
+      expect(customer[0].phone_number).toBeNull();
+      expect(await db.select('SELECT * FROM lead_sync_logs')).toHaveLength(0);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('fills empty phone/contact/website/email but never overwrites existing values', async () => {
+    const db = await createReadyDb();
+    try {
+      await insertExistingCustomer(db, {
+        id: 'protected-enrich-customer',
+        name: 'Protected Co',
+        phone_number: '13900139000',
+        contact_person: 'Existing Contact',
+        website: 'https://existing.example',
+        email: 'existing@example.com',
+        notes: 'existing notes',
+        customer_grade: 'A',
+        stage: 'VISITED',
+        source: 'trusted source',
+      });
+      await insertStoredDraft(db, {
+        id: 'draft-protected-enrich',
+        customer_id: 'protected-enrich-customer',
+        company_name: 'Protected Co',
+        contact_name: 'Collected Contact',
+        mobile: '13800138000',
+        tel: '0757-88889999',
+        website: 'https://collected.example',
+        email: 'collected@example.com',
+        note: 'append-only note',
+      });
+
+      const result = await syncCollectedLeadEnrichCustomer(db, 'draft-protected-enrich');
+      const customer = await db.select<Customer>('SELECT * FROM customers WHERE id = ?', ['protected-enrich-customer']);
+
+      expect(result.status).toBe('SUCCESS');
+      expect(customer[0]).toMatchObject({
+        phone_number: '13900139000',
+        contact_person: 'Existing Contact',
+        website: 'https://existing.example',
+        email: 'existing@example.com',
+        customer_grade: 'A',
+        stage: 'VISITED',
+        source: 'trusted source',
+        name: 'Protected Co',
+      });
+      expect(customer[0].notes).toContain('existing notes');
+      expect(customer[0].notes).toContain('append-only note');
+    } finally {
+      db.close();
+    }
+  });
+
+  it('fails with No enrichable fields when no safe patch can be produced', async () => {
+    const db = await createReadyDb();
+    try {
+      await insertExistingCustomer(db, {
+        id: 'no-fields-customer',
+        name: 'No Fields Co',
+        phone_number: '13900139000',
+        contact_person: 'Existing Contact',
+        website: 'https://existing.example',
+        email: 'existing@example.com',
+        notes: 'existing notes',
+      });
+      await insertStoredDraft(db, {
+        id: 'draft-no-enrichable-fields',
+        customer_id: 'no-fields-customer',
+        company_name: 'No Fields Co',
+        contact_name: null,
+        position: null,
+        mobile: null,
+        tel: null,
+        website: null,
+        email: null,
+        note: null,
+        raw_text: null,
+      });
+      const before = await db.select<Customer>('SELECT * FROM customers WHERE id = ?', ['no-fields-customer']);
+
+      const result = await syncCollectedLeadEnrichCustomer(db, 'draft-no-enrichable-fields');
+      const after = await db.select<Customer>('SELECT * FROM customers WHERE id = ?', ['no-fields-customer']);
+      const draft = await getCollectedLeadById(db, 'draft-no-enrichable-fields');
+      const logs = await db.select<{ action: string; status: string; target_customer_id: string; message: string }>(
+        'SELECT action, status, target_customer_id, message FROM lead_sync_logs',
+      );
+
+      expect(result.status).toBe('NO_ENRICHABLE_FIELDS');
+      expect(after).toEqual(before);
+      expect(draft?.sync_status).toBe('FAILED');
+      expect(logs).toEqual([{
+        action: 'ENRICH_CUSTOMER',
+        status: 'FAILED',
+        target_customer_id: 'no-fields-customer',
+        message: 'No enrichable fields for collected lead',
+      }]);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('rolls back if customer update succeeds but collected_lead writeback fails', async () => {
+    const db = await createReadyDb();
+    try {
+      await insertExistingCustomer(db, {
+        id: 'rollback-enrich-customer',
+        name: 'Rollback Enrich Co',
+        phone_number: null,
+      });
+      await insertStoredDraft(db, {
+        id: 'draft-enrich-rollback-writeback',
+        customer_id: 'rollback-enrich-customer',
+        company_name: 'Rollback Enrich Co',
+        mobile: '13800138000',
+      });
+      const throwingDb = createThrowingDb(db, sql => sql.includes('UPDATE collected_leads'));
+
+      await expect(syncCollectedLeadEnrichCustomer(throwingDb, 'draft-enrich-rollback-writeback')).rejects.toThrow('simulated db failure');
+      const customer = await db.select<Customer>('SELECT * FROM customers WHERE id = ?', ['rollback-enrich-customer']);
+      const draft = await getCollectedLeadById(db, 'draft-enrich-rollback-writeback');
+
+      expect(customer[0].phone_number).toBeNull();
+      expect(draft?.sync_status).toBe('UNSYNCED');
+      expect(draft?.updated_customer_id).toBeNull();
+      expect(await db.select('SELECT * FROM lead_sync_logs')).toHaveLength(0);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('rolls back if collected_lead writeback succeeds but sync log insert fails', async () => {
+    const db = await createReadyDb();
+    try {
+      await insertExistingCustomer(db, {
+        id: 'rollback-enrich-log-customer',
+        name: 'Rollback Enrich Log Co',
+        phone_number: null,
+      });
+      await insertStoredDraft(db, {
+        id: 'draft-enrich-rollback-log',
+        customer_id: 'rollback-enrich-log-customer',
+        company_name: 'Rollback Enrich Log Co',
+        mobile: '13800138000',
+      });
+      const throwingDb = createThrowingDb(db, sql => sql.includes('INSERT INTO lead_sync_logs'));
+
+      await expect(syncCollectedLeadEnrichCustomer(throwingDb, 'draft-enrich-rollback-log')).rejects.toThrow('simulated db failure');
+      const customer = await db.select<Customer>('SELECT * FROM customers WHERE id = ?', ['rollback-enrich-log-customer']);
+      const draft = await getCollectedLeadById(db, 'draft-enrich-rollback-log');
+
+      expect(customer[0].phone_number).toBeNull();
+      expect(draft?.sync_status).toBe('UNSYNCED');
+      expect(draft?.updated_customer_id).toBeNull();
+      expect(await db.select('SELECT * FROM lead_sync_logs')).toHaveLength(0);
+    } finally {
+      db.close();
+    }
+  });
+});
+
 function makeCollectedLead(overrides: Partial<CollectedLead> = {}): CollectedLead {
   return {
     id: 'draft-1',
@@ -821,18 +1193,28 @@ function makeCustomer(overrides: Partial<Customer> = {}): Customer {
 
 async function insertExistingCustomer(
   db: DatabaseLike,
-  input: { id: string; name: string; phone_number: string | null },
+  input: Pick<Customer, 'id' | 'name'> & Partial<Customer>,
 ) {
+  const customer = makeCustomer(input);
+
   await db.execute(
     `INSERT INTO customers (
-      id, name, phone_number, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?)`,
+      id, name, customer_grade, stage, phone_number, contact_person,
+      website, email, source, notes, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
-      input.id,
-      input.name,
-      input.phone_number,
-      '2026-06-14T00:00:00.000Z',
-      '2026-06-14T00:00:00.000Z',
+      customer.id,
+      customer.name,
+      customer.customer_grade,
+      customer.stage,
+      customer.phone_number,
+      customer.contact_person,
+      customer.website,
+      customer.email,
+      customer.source,
+      customer.notes,
+      customer.created_at,
+      customer.updated_at,
     ],
   );
 }
@@ -857,9 +1239,13 @@ function createThrowingDb(
 async function insertStoredDraft(
   db: DatabaseLike,
   overrides: Partial<CollectedLead> = {},
+  options: { skipForeignKeys?: boolean } = {},
 ) {
   const draft = makeCollectedLead(overrides);
 
+  if (options.skipForeignKeys) {
+    await db.execute('PRAGMA foreign_keys = OFF');
+  }
   await db.execute(
     `INSERT INTO collected_leads (
       id, work_item_id, import_row_id, customer_id, company_name, contact_name,
@@ -887,4 +1273,7 @@ async function insertStoredDraft(
       draft.updated_at,
     ],
   );
+  if (options.skipForeignKeys) {
+    await db.execute('PRAGMA foreign_keys = ON');
+  }
 }

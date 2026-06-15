@@ -56,6 +56,36 @@ export interface CustomerEnrichmentPatchResult {
   message: string;
 }
 
+export async function applyCustomerEnrichmentPatchWithDb(
+  db: DatabaseLike,
+  customerId: string,
+  patch: CustomerEnrichmentPatch,
+): Promise<void> {
+  const id = customerId.trim();
+  if (!id) {
+    throw new Error('customerId is required');
+  }
+
+  const allowedFields: Array<keyof CustomerEnrichmentPatch> = [
+    'phone_number',
+    'contact_person',
+    'website',
+    'email',
+    'notes',
+  ];
+  const fields = allowedFields.filter(field => field in patch);
+  if (fields.length === 0) return;
+
+  const now = new Date().toISOString();
+  const sets = fields.map(field => `${field} = ?`).join(', ');
+  const values = fields.map(field => patch[field] ?? null);
+
+  await db.execute(
+    `UPDATE customers SET ${sets}, updated_at = ? WHERE id = ?`,
+    [...values, now, id],
+  );
+}
+
 export function buildCustomerInputFromImportRow(
   importRow: LeadImportRow,
   options: BuildCustomerInputOptions = {},
@@ -278,12 +308,23 @@ function buildNotes(importRow: LeadImportRow): string | null {
 }
 
 function buildCollectedLeadNotes(collectedLead: CollectedLead): string | null {
-  const parts = [
-    normalizeOptional(collectedLead.note),
-    normalizeOptional(collectedLead.raw_text),
-  ].filter((part): part is string => Boolean(part));
+  const details = [
+    ['contact_name', collectedLead.contact_name],
+    ['position', collectedLead.position],
+    ['mobile', collectedLead.mobile],
+    ['tel', collectedLead.tel],
+    ['website', collectedLead.website],
+    ['email', collectedLead.email],
+    ['note', collectedLead.note],
+    ['raw_text', collectedLead.raw_text],
+  ]
+    .map(([label, value]) => {
+      const normalized = normalizeOptional(value);
+      return normalized ? `${label}: ${normalized}` : null;
+    })
+    .filter((part): part is string => Boolean(part));
 
-  return parts.length > 0 ? parts.join('\n') : null;
+  return details.length > 0 ? ['获客作业台采集线索', ...details].join('\n') : null;
 }
 
 function normalizeOptional(value: string | null | undefined): string | null {
