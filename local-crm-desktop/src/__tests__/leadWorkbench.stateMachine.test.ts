@@ -16,6 +16,11 @@ describe('lead workbench state machine', () => {
     expect(isLeadDecisionStatusTransitionAllowed('EXECUTING', 'FAILED')).toBe(true);
     expect(isLeadDecisionStatusTransitionAllowed('FAILED', 'EXECUTING')).toBe(true);
     expect(isLeadWorkStatusTransitionAllowed('TODO', 'SEARCHING')).toBe(true);
+    expect(isLeadWorkStatusTransitionAllowed('TODO', 'NO_PHONE')).toBe(true);
+    expect(isLeadWorkStatusTransitionAllowed('TODO', 'SKIPPED')).toBe(true);
+    expect(isLeadWorkStatusTransitionAllowed('SEARCHING', 'NO_PHONE')).toBe(true);
+    expect(isLeadWorkStatusTransitionAllowed('SEARCHING', 'SKIPPED')).toBe(true);
+    expect(isLeadWorkStatusTransitionAllowed('STAGED', 'SKIPPED')).toBe(true);
     expect(isLeadWorkStatusTransitionAllowed('SEARCHING', 'COLLECTED')).toBe(true);
     expect(isCollectedLeadSyncStatusTransitionAllowed('UNSYNCED', 'SYNCED')).toBe(true);
   });
@@ -28,6 +33,9 @@ describe('lead workbench state machine', () => {
     expect(isLeadDecisionStatusTransitionAllowed('DONE', 'EXECUTING')).toBe(false);
     expect(isLeadDecisionStatusTransitionAllowed('DONE', 'FAILED')).toBe(false);
     expect(isLeadWorkStatusTransitionAllowed('DONE', 'SEARCHING')).toBe(false);
+    expect(isLeadWorkStatusTransitionAllowed('NO_PHONE', 'SEARCHING')).toBe(false);
+    expect(isLeadWorkStatusTransitionAllowed('NO_PHONE', 'SKIPPED')).toBe(false);
+    expect(isLeadWorkStatusTransitionAllowed('SKIPPED', 'SEARCHING')).toBe(false);
     expect(isCollectedLeadSyncStatusTransitionAllowed('SYNCED', 'UNSYNCED')).toBe(false);
 
     expect(() => assertLeadDecisionStatusTransition('DONE', 'PENDING')).toThrow('Invalid lead decision status transition');
@@ -37,6 +45,7 @@ describe('lead workbench state machine', () => {
     expect(() => assertLeadDecisionStatusTransition('DONE', 'EXECUTING')).toThrow('Invalid lead decision status transition');
     expect(() => assertLeadDecisionStatusTransition('DONE', 'FAILED')).toThrow('Invalid lead decision status transition');
     expect(() => assertLeadWorkStatusTransition('DONE', 'TODO')).toThrow('Invalid lead work status transition');
+    expect(() => assertLeadWorkStatusTransition('NO_PHONE', 'SEARCHING')).toThrow('Invalid lead work status transition');
     expect(() => assertCollectedLeadSyncStatusTransition('IGNORED', 'SYNCED')).toThrow(
       'Invalid collected lead sync status transition',
     );

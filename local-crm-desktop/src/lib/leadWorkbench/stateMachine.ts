@@ -8,11 +8,11 @@ const LEAD_DECISION_TRANSITIONS: Record<LeadDecisionStatus, LeadDecisionStatus[]
 };
 
 const LEAD_WORK_TRANSITIONS: Record<LeadWorkStatus, LeadWorkStatus[]> = {
-  TODO: ['TODO', 'SEARCHING', 'SKIPPED'],
+  TODO: ['TODO', 'SEARCHING', 'NO_PHONE', 'SKIPPED'],
   SEARCHING: ['SEARCHING', 'STAGED', 'COLLECTED', 'NO_PHONE', 'SKIPPED'],
   STAGED: ['STAGED', 'COLLECTED', 'SKIPPED'],
   COLLECTED: ['COLLECTED', 'DONE'],
-  NO_PHONE: ['NO_PHONE', 'SEARCHING', 'SKIPPED', 'DONE'],
+  NO_PHONE: ['NO_PHONE'],
   SKIPPED: ['SKIPPED'],
   DONE: ['DONE'],
 };

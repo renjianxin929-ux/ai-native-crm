@@ -874,6 +874,33 @@ tr.clickable {
   background: var(--primary-light);
 }
 
+.lead-workbench-search-panel {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.lead-workbench-search-keyword {
+  margin-top: 4px;
+  color: var(--text-heading);
+  font-weight: 600;
+  word-break: break-word;
+  user-select: text;
+}
+
+.lead-workbench-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
 .lead-workbench-detail-grid {
   display: grid;
   grid-template-columns: 1fr;

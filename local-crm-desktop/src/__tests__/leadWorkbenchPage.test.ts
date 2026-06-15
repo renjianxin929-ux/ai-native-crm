@@ -1,21 +1,25 @@
 import Database from 'better-sqlite3';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { ensureBaseSchema, type DatabaseLike } from '../lib/db';
 import {
   ensureLeadWorkbenchSchema,
+  getLeadWorkItemById,
   getLeadWorkItemStatusCounts,
   insertLeadWorkItem,
   listLeadWorkItems,
   listLeadWorkItemsByStatus,
 } from '../lib/leadWorkbench/db';
+import { updateLeadWorkItemStatus } from '../lib/leadWorkbench/workItemActions';
 import type { LeadWorkItem, LeadWorkStatus } from '../lib/leadWorkbench/types';
 import {
+  copyLeadSearchKeyword,
   filterLeadWorkItemsByStatus,
+  getLeadWorkItemStatusActions,
   getSuggestedTanjiSearchKeyword,
-  LEAD_WORKBENCH_FORBIDDEN_ACTION_LABELS,
+  LEAD_WORKBENCH_ACTION_LABELS,
   LEAD_WORKBENCH_STATUS_FILTERS,
 } from '../pages/LeadWorkbenchPage';
 
@@ -43,7 +47,7 @@ async function createReadyDb() {
   return db;
 }
 
-describe('lead workbench read-only page', () => {
+describe('lead workbench page operations', () => {
   it('lists lead work items without creating customers or extra work items', async () => {
     const db = await createReadyDb();
     try {
@@ -134,24 +138,93 @@ describe('lead workbench read-only page', () => {
     expect(getSuggestedTanjiSearchKeyword(item)).toBe('Detail Co');
   });
 
-  it('does not expose write, paste, clipboard, automation, or collected lead actions', () => {
+  it('exposes copy search keyword action and uses navigator.clipboard.writeText', async () => {
+    const clipboard = { writeText: vi.fn().mockResolvedValue(undefined) };
+    const item = createWorkItem({ tanji_search_keyword: 'Tanji Keyword' });
+
+    const result = await copyLeadSearchKeyword(item, clipboard);
+
+    expect(LEAD_WORKBENCH_ACTION_LABELS).toContain('复制搜索词');
+    expect(clipboard.writeText).toHaveBeenCalledWith('Tanji Keyword');
+    expect(result).toEqual({ ok: true, message: '已复制搜索词' });
+  });
+
+  it('keeps manual search text visible when clipboard is unavailable or fails', async () => {
+    const clipboard = { writeText: vi.fn().mockRejectedValue(new Error('denied')) };
+    const item = createWorkItem({ company_name: 'Fallback Co', tanji_search_keyword: null });
+
+    await expect(copyLeadSearchKeyword(item, clipboard)).resolves.toEqual({
+      ok: false,
+      message: '复制失败，请手动复制',
+    });
+    expect(getSuggestedTanjiSearchKeyword(item)).toBe('Fallback Co');
+  });
+
+  it('offers only minimal legal status actions for non-terminal tasks', () => {
+    expect(getLeadWorkItemStatusActions('TODO').map(action => action.nextStatus)).toEqual([
+      'SEARCHING',
+      'NO_PHONE',
+      'SKIPPED',
+    ]);
+    expect(getLeadWorkItemStatusActions('SEARCHING').map(action => action.nextStatus)).toEqual([
+      'NO_PHONE',
+      'SKIPPED',
+    ]);
+    expect(getLeadWorkItemStatusActions('STAGED').map(action => action.nextStatus)).toEqual(['SKIPPED']);
+    expect(getLeadWorkItemStatusActions('NO_PHONE')).toEqual([]);
+    expect(getLeadWorkItemStatusActions('SKIPPED')).toEqual([]);
+    expect(getLeadWorkItemStatusActions('DONE')).toEqual([]);
+  });
+
+  it('updates status and refreshes list, counts, and detail data through the shared action', async () => {
+    const db = await createReadyDb();
+    try {
+      await insertLeadWorkItem(db, createWorkItem({ id: 'todo-1', status: 'TODO' }));
+
+      const updated = await updateLeadWorkItemStatus(db, 'todo-1', 'SEARCHING');
+      const todoItems = await listLeadWorkItemsByStatus(db, 'TODO');
+      const searchingItems = await listLeadWorkItemsByStatus(db, 'SEARCHING');
+      const counts = await getLeadWorkItemStatusCounts(db);
+      const detail = await getLeadWorkItemById(db, 'todo-1');
+
+      expect(updated.status).toBe('SEARCHING');
+      expect(todoItems).toHaveLength(0);
+      expect(searchingItems.map(item => item.id)).toEqual(['todo-1']);
+      expect(counts.TODO).toBe(0);
+      expect(counts.SEARCHING).toBe(1);
+      expect(detail?.status).toBe('SEARCHING');
+    } finally {
+      db.close();
+    }
+  });
+
+  it('rejects illegal status transitions with a readable error', async () => {
+    const db = await createReadyDb();
+    try {
+      await insertLeadWorkItem(db, createWorkItem({ id: 'done-1', status: 'DONE' }));
+
+      await expect(updateLeadWorkItemStatus(db, 'done-1', 'SEARCHING')).rejects.toThrow(
+        'Invalid lead work status transition',
+      );
+    } finally {
+      db.close();
+    }
+  });
+
+  it('does not expose customer, work-item creation, collected lead, paste, listener, or automation logic', () => {
     const pageSource = readFileSync(resolve(__dirname, '../pages/LeadWorkbenchPage.tsx'), 'utf8');
 
-    expect(LEAD_WORKBENCH_FORBIDDEN_ACTION_LABELS).toEqual([
-      '复制搜索词',
-      '标记无电话',
-      '跳过',
-      '完成',
-      '粘贴解析',
-    ]);
-    for (const label of LEAD_WORKBENCH_FORBIDDEN_ACTION_LABELS) {
-      expect(pageSource).not.toContain(label);
-    }
+    expect(pageSource).toContain('navigator.clipboard.writeText');
     expect(pageSource).not.toContain('insertCustomerWithDb');
+    expect(pageSource).not.toContain('createCustomer');
     expect(pageSource).not.toContain('insertLeadWorkItem');
-    expect(pageSource).not.toContain('updateLeadImportRowDecisionStatus');
     expect(pageSource).not.toContain('collected_leads');
-    expect(pageSource).not.toContain('navigator.clipboard');
+    expect(pageSource).not.toContain('importLeadRowsToBatch');
+    expect(pageSource).not.toContain('executeLeadImportBatchDecisions');
+    expect(pageSource).not.toContain('addEventListener');
+    expect(pageSource).not.toContain('readText');
+    expect(pageSource).not.toContain('DataImportPage');
+    expect(pageSource).not.toContain('../lib/importer');
   });
 });
 
