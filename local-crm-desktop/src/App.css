@@ -485,6 +485,16 @@ tr.clickable {
   z-index: 1;
 }
 
+.import-preview-source {
+  display: block;
+  margin-top: 3px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
 .import-preview-name {
   font-weight: 600;
   color: var(--text-heading);

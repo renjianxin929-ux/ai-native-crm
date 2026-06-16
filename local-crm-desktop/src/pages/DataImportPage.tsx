@@ -25,7 +25,7 @@ interface Props {
   onRefresh: () => void;
 }
 
-const FIELD_LABELS: Record<ImportableCrmField, string> = {
+export const FIELD_LABELS: Record<ImportableCrmField, string> = {
   name: '客户名称',
   customer_grade: '客户等级',
   wechat_id: '微信号',
@@ -48,6 +48,99 @@ const FIELD_LABELS: Record<ImportableCrmField, string> = {
   notes: '备注',
 };
 
+type FinalImportPreviewColumn = {
+  field: ImportableCrmField;
+  label: string;
+  sourceColumn: string;
+};
+
+type FinalImportPreviewRow = {
+  index: number;
+  values: Partial<Record<ImportableCrmField, string>>;
+};
+
+const FINAL_PREVIEW_FIELD_ORDER: ImportableCrmField[] = [
+  'name',
+  'phone_number',
+  'wechat_id',
+  'intent_level',
+  'customer_grade',
+  'notes',
+];
+
+export function getSourceColumnDisplayName(sourceColumn: string, index: number): string {
+  const trimmed = sourceColumn.trim();
+  return trimmed || `第${index + 1}列`;
+}
+
+export function normalizeImportPreviewSourceColumns(preview: ImportPreview): ImportPreview {
+  const used = new Map<string, number>();
+  const headers = preview.headers.map((header, index) => {
+    const baseName = getSourceColumnDisplayName(header, index);
+    const usedCount = used.get(baseName) ?? 0;
+    used.set(baseName, usedCount + 1);
+    return usedCount === 0 ? baseName : `${baseName}（第${index + 1}列）`;
+  });
+
+  return {
+    ...preview,
+    headers,
+    autoMapping: preview.autoMapping.map((mapping, index) => ({
+      ...mapping,
+      sourceColumn: headers[index] ?? getSourceColumnDisplayName(mapping.sourceColumn, index),
+    })),
+  };
+}
+
+export function getDuplicateMappingErrors(mapping: FieldMapping[]): string[] {
+  const counts = new Map<ImportableCrmField, number>();
+  for (const item of mapping) {
+    if (!item.crmField) continue;
+    counts.set(item.crmField, (counts.get(item.crmField) ?? 0) + 1);
+  }
+
+  return Array.from(counts.entries())
+    .filter(([, count]) => count > 1)
+    .map(([field]) => `${FIELD_LABELS[field]}已被其他列映射，请先取消重复映射。`);
+}
+
+export function hasDuplicateMappings(mapping: FieldMapping[]): boolean {
+  return getDuplicateMappingErrors(mapping).length > 0;
+}
+
+export function getFinalImportPreviewColumns(mapping: FieldMapping[]): FinalImportPreviewColumn[] {
+  const mappedByField = new Map<ImportableCrmField, FieldMapping>();
+  for (const item of mapping) {
+    if (!item.crmField || mappedByField.has(item.crmField)) continue;
+    mappedByField.set(item.crmField, item);
+  }
+
+  return FINAL_PREVIEW_FIELD_ORDER
+    .filter(field => mappedByField.has(field))
+    .map(field => ({
+      field,
+      label: field === 'notes' ? '备注摘要' : FIELD_LABELS[field],
+      sourceColumn: mappedByField.get(field)!.sourceColumn,
+    }));
+}
+
+export function buildFinalImportPreviewRows(
+  rows: string[][],
+  headers: string[],
+  mapping: FieldMapping[],
+): FinalImportPreviewRow[] {
+  const columns = getFinalImportPreviewColumns(mapping);
+  return rows.slice(0, 20).map((row, index) => {
+    const record = buildImportableRecord(row, headers, mapping).record;
+    const values = columns.reduce<Partial<Record<ImportableCrmField, string>>>((next, column) => {
+      const rawValue = record[column.field];
+      next[column.field] = rawValue === null || rawValue === undefined ? '' : String(rawValue);
+      return next;
+    }, {});
+    return { index: index + 1, values };
+  });
+}
+
 export default function DataImportPage({ customers, onRefresh }: Props) {
   const navigate = useNavigate();
   const [step, setStep] = useState<Step>('select');
@@ -66,14 +159,13 @@ export default function DataImportPage({ customers, onRefresh }: Props) {
   const hasNameMapping = mapping.some(m => m.crmField === 'name');
   const mappedFields = useMemo(() => mapping.filter(m => m.crmField), [mapping]);
   const mappedFieldCount = mappedFields.length;
-  const noteFieldCount = mappedFields.filter(m => m.crmField === 'notes').length;
+  const duplicateMappingErrors = useMemo(() => getDuplicateMappingErrors(mapping), [mapping]);
+  const hasMappingErrors = duplicateMappingErrors.length > 0;
+  const finalPreviewColumns = useMemo(() => getFinalImportPreviewColumns(mapping), [mapping]);
 
   const previewRecords = useMemo(() => {
     if (!preview) return [];
-    return preview.rows.slice(0, 20).map((row, index) => ({
-      index: index + 1,
-      record: buildImportableRecord(row, preview.headers, mapping).record,
-    }));
+    return buildFinalImportPreviewRows(preview.rows, preview.headers, mapping);
   }, [preview, mapping]);
 
   function reset() {
@@ -95,12 +187,13 @@ export default function DataImportPage({ customers, onRefresh }: Props) {
     setError(null);
 
     try {
-      const p = await parseExcelFile(file);
-      if (p.headers.length === 0) {
+      const parsedPreview = await parseExcelFile(file);
+      if (parsedPreview.headers.length === 0) {
         setError('文件为空或无法读取');
         setStep('select');
         return;
       }
+      const p = normalizeImportPreviewSourceColumns(parsedPreview);
       setPreview(p);
       setMapping(p.autoMapping);
       setStep('preview');
@@ -119,6 +212,10 @@ export default function DataImportPage({ customers, onRefresh }: Props) {
 
   async function handleImport() {
     if (!preview) return;
+    if (hasMappingErrors) {
+      setError(duplicateMappingErrors.join('\n'));
+      return;
+    }
     setStep('importing');
     setError(null);
 
@@ -231,7 +328,7 @@ export default function DataImportPage({ customers, onRefresh }: Props) {
             <button className="btn btn-secondary" onClick={reset}>返回重选</button>
             <button
               className="btn btn-primary"
-              disabled={!hasNameMapping}
+              disabled={!hasNameMapping || hasMappingErrors}
               onClick={handleImport}
             >
               确认导入
@@ -284,7 +381,7 @@ export default function DataImportPage({ customers, onRefresh }: Props) {
               <div className="import-detected-title">已自动识别</div>
               <div className="import-detected-meta">
                 {preview.sheetName ? `工作表：${preview.sheetName} · ` : ''}
-                {mappedFieldCount} 个字段已映射，其中 {noteFieldCount} 个字段会合并进备注
+                {mappedFieldCount} 个字段已映射。上方预览会按当前字段映射实时更新
               </div>
             </div>
             <div className="import-detected-badges">
@@ -295,34 +392,45 @@ export default function DataImportPage({ customers, onRefresh }: Props) {
             </div>
           </div>
 
-          <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>数据预览（前 20 行）</h3>
+          <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>最终导入预览（前 20 行，按当前字段映射）</h3>
           <div className="table-container import-preview-table">
             <table>
               <thead>
                 <tr>
                   <th style={{ width: 52 }}>#</th>
-                  <th style={{ width: 88 }}>等级</th>
-                  <th style={{ width: 220 }}>客户名称</th>
-                  <th style={{ width: 160 }}>手机号</th>
-                  <th style={{ width: 140 }}>微信</th>
-                  <th style={{ width: 96 }}>意向</th>
-                  <th>备注摘要</th>
+                  {finalPreviewColumns.map(column => (
+                    <th key={column.field}>
+                      <div>{column.label}</div>
+                      <small className="import-preview-source">来自：{column.sourceColumn}</small>
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
-                {previewRecords.map(({ index, record }) => (
+                {previewRecords.map(({ index, values }) => (
                   <tr key={index}>
                     <td>{index}</td>
-                    <td><span className={`badge badge-${String(record.customer_grade || 'c').toLowerCase()}`}>{record.customer_grade || '-'}</span></td>
-                    <td className="import-preview-name">{record.name || '-'}</td>
-                    <td>{record.phone_number || '-'}</td>
-                    <td>{record.wechat_id || '-'}</td>
-                    <td>{record.intent_level || '-'}</td>
-                    <td className="import-preview-notes">{record.notes || '-'}</td>
+                    {finalPreviewColumns.map(column => (
+                      <td
+                        key={column.field}
+                        className={column.field === 'name' ? 'import-preview-name' : column.field === 'notes' ? 'import-preview-notes' : undefined}
+                      >
+                        {column.field === 'customer_grade' ? (
+                          <span className={`badge badge-${String(values[column.field] || 'c').toLowerCase()}`}>
+                            {values[column.field] || '-'}
+                          </span>
+                        ) : (
+                          values[column.field] || '-'
+                        )}
+                      </td>
+                    ))}
                   </tr>
                 ))}
                 {previewRecords.length === 0 && (
-                  <tr><td colSpan={7} style={{ textAlign: 'center', color: '#9ca3af', padding: 24 }}>无数据</td></tr>
+                  <tr><td colSpan={finalPreviewColumns.length + 1} style={{ textAlign: 'center', color: '#9ca3af', padding: 24 }}>无数据</td></tr>
+                )}
+                {previewRecords.length > 0 && finalPreviewColumns.length === 0 && (
+                  <tr><td colSpan={1} style={{ textAlign: 'center', color: '#9ca3af', padding: 24 }}>请先在下方配置字段映射</td></tr>
                 )}
               </tbody>
             </table>
@@ -333,7 +441,7 @@ export default function DataImportPage({ customers, onRefresh }: Props) {
             <div className="import-mapping-grid">
               {mapping.map((m, i) => (
                 <div key={`${m.sourceColumn}-${i}`} className="import-mapping-row">
-                  <span title={m.sourceColumn}>{m.sourceColumn || `空列 ${i + 1}`}</span>
+                  <span title={m.sourceColumn}>{getSourceColumnDisplayName(m.sourceColumn, i)}</span>
                   <span>→</span>
                   <select
                     value={m.crmField || ''}
@@ -352,6 +460,11 @@ export default function DataImportPage({ customers, onRefresh }: Props) {
                 请至少配置“客户名称”字段映射才能导入
               </div>
             )}
+            {duplicateMappingErrors.map(message => (
+              <div className="import-mapping-error" key={message}>
+                {message}
+              </div>
+            ))}
           </details>
 
           {error && (
