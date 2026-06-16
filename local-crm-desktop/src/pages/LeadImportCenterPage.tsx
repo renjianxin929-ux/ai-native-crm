@@ -243,7 +243,19 @@ export function buildLeadImportSaveConfirmation(input: {
   ];
 }
 
-export function getLeadImportBatchExecutionState(rows: Pick<LeadImportRow, 'decision_status'>[]) {
+export function getLeadImportBatchExecutionState(
+  rows: Pick<LeadImportRow, 'decision_status'>[],
+  expectedTotalRows = rows.length,
+) {
+  if (rows.length === 0 && expectedTotalRows > 0) {
+    return {
+      canExecute: false,
+      label: '明细未加载，请刷新批次明细',
+      executableRows: 0,
+      missingRows: true,
+    };
+  }
+
   const executableRows = rows.filter(row => row.decision_status === 'PENDING' || row.decision_status === 'FAILED').length;
   return {
     canExecute: executableRows > 0,
@@ -345,7 +357,10 @@ export default function LeadImportCenterPage() {
   const decisionCounts = useMemo(() => countDecisions(preview?.rows ?? []), [preview]);
   const selectedBatch = batches.find(batch => batch.id === selectedBatchId) ?? null;
   const selectedBatchStats = useMemo(() => buildLeadImportBatchStats(selectedRows), [selectedRows]);
-  const executionState = useMemo(() => getLeadImportBatchExecutionState(selectedRows), [selectedRows]);
+  const executionState = useMemo(
+    () => getLeadImportBatchExecutionState(selectedRows, selectedBatch?.total_rows ?? selectedRows.length),
+    [selectedBatch?.total_rows, selectedRows],
+  );
 
   const loadBatches = useCallback(async () => {
     setIsLoadingBatches(true);
@@ -434,8 +449,13 @@ export default function LeadImportCenterPage() {
           return counts;
         }, {}),
       });
+      setBatches(previous => [
+        imported.batch,
+        ...previous.filter(batch => batch.id !== imported.batch.id),
+      ]);
+      setSelectedBatchId(imported.batch.id);
+      setSelectedRows(imported.rows);
       await loadBatches();
-      await handleSelectBatch(imported.batch.id);
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : String(error));
     } finally {

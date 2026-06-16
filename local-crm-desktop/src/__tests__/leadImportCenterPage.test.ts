@@ -8,9 +8,12 @@ import {
   ensureLeadWorkbenchSchema,
   listLeadImportBatches,
   listLeadImportRowsByBatchId,
+  listLeadWorkItemsByStatus,
 } from '../lib/leadWorkbench/db';
+import { executeLeadImportBatchDecisions } from '../lib/leadWorkbench/decision';
 import { importLeadRowsToBatch } from '../lib/leadWorkbench/importer';
 import type { LeadImportBatch, LeadImportRow } from '../lib/leadWorkbench/types';
+import type { Customer } from '../lib/types';
 import {
   buildLeadImportBatchStats,
   buildLeadImportExecutionConfirmation,
@@ -97,6 +100,116 @@ describe('lead import center preview', () => {
     expect(preview.rows.map(row => row.company_name)).toEqual(['Wrapped Phone Co', 'Wrapped Lookup Co']);
     expect(preview.rows.map(row => row.decision)).toEqual(['DIRECT_TO_CRM', 'CRM_WITH_LOOKUP']);
     expect(preview.inputRows).toHaveLength(2);
+  });
+
+  it('keeps wrapped records executable from preview through saved rows and workbench tasks', async () => {
+    const db = await createReadyDb();
+    const preview = buildLeadImportPreview(JSON.stringify({
+      batch_name: '6.16mingdan',
+      records: [
+        {
+          company_name: '广州BEN包装机械有限公司',
+          city: '广州',
+          industry: '灌装/贴标/包装设备',
+          mobile: '13800138001',
+          score: 82,
+          grade: 'A',
+          tanji_search_keyword: '广州BEN包装机械有限公司',
+          matching_reason: '测试：有电话，应该直接入库',
+        },
+        {
+          company_name: '广州高分待查样例',
+          city: '广州',
+          industry: '照明工程',
+          score: 86,
+          grade: 'S',
+          tanji_search_keyword: '广州高分待查样例',
+          matching_reason: '测试：高分无电话，应该先查重后入库',
+        },
+        {
+          company_name: '中山优先查询样例',
+          city: '中山',
+          industry: '五金',
+          score: 75,
+          grade: 'B',
+          tanji_search_keyword: '中山优先查询样例',
+          matching_reason: '测试：70-79 分无电话，应该先查询',
+        },
+      ],
+    }));
+
+    try {
+      expect(preview.error).toBeNull();
+      expect(preview.batchNameSuggestion).toBe('6.16mingdan');
+      expect(preview.rows.map(row => row.decision)).toEqual([
+        'DIRECT_TO_CRM',
+        'CRM_WITH_LOOKUP',
+        'LOOKUP_FIRST',
+      ]);
+
+      const imported = await importLeadRowsToBatch(
+        db,
+        { batch_name: preview.batchNameSuggestion!, batch_type: 'AI_DAILY', source_label: null },
+        preview.inputRows,
+      );
+      const savedRows = await listLeadImportRowsByBatchId(db, imported.batch.id);
+      const savedStats = buildLeadImportBatchStats(savedRows);
+
+      expect(savedRows).toHaveLength(3);
+      expect(savedRows.map(row => row.decision)).toEqual([
+        'DIRECT_TO_CRM',
+        'CRM_WITH_LOOKUP',
+        'LOOKUP_FIRST',
+      ]);
+      expect(savedRows.every(row => row.decision_status === 'PENDING')).toBe(true);
+      expect(savedStats.decisionCounts).toMatchObject({
+        DIRECT_TO_CRM: 1,
+        CRM_WITH_LOOKUP: 1,
+        LOOKUP_FIRST: 1,
+      });
+      expect(savedStats.statusCounts.PENDING).toBe(3);
+      expect(getLeadImportBatchExecutionState(savedRows, imported.batch.total_rows)).toMatchObject({
+        canExecute: true,
+        label: '执行分流，会创建 CRM 客户/获客任务',
+        executableRows: 3,
+      });
+
+      const firstResults = await executeLeadImportBatchDecisions(db, imported.batch.id);
+      const executedRows = await listLeadImportRowsByBatchId(db, imported.batch.id);
+      const customers = await db.select<Customer>('SELECT * FROM customers ORDER BY name ASC');
+      const todoTasks = await listLeadWorkItemsByStatus(db, 'TODO');
+
+      expect(firstResults.every(result => result.status === 'DONE')).toBe(true);
+      expect(customers.map(customer => customer.name)).toEqual([
+        '广州BEN包装机械有限公司',
+        '广州高分待查样例',
+      ]);
+      expect(todoTasks.map(item => item.company_name).sort()).toEqual([
+        '中山优先查询样例',
+        '广州高分待查样例',
+      ]);
+      expect(executedRows.find(row => row.company_name === '广州BEN包装机械有限公司')).toMatchObject({
+        decision: 'DIRECT_TO_CRM',
+        decision_status: 'DONE',
+        created_work_item_id: null,
+      });
+      expect(executedRows.find(row => row.company_name === '广州高分待查样例')).toMatchObject({
+        decision: 'CRM_WITH_LOOKUP',
+        decision_status: 'DONE',
+      });
+      expect(executedRows.find(row => row.company_name === '中山优先查询样例')).toMatchObject({
+        decision: 'LOOKUP_FIRST',
+        decision_status: 'DONE',
+        created_customer_id: null,
+      });
+
+      const secondResults = await executeLeadImportBatchDecisions(db, imported.batch.id);
+      expect(secondResults.every(result => result.status === 'ALREADY_DONE')).toBe(true);
+      expect(await db.select<Customer>('SELECT * FROM customers')).toHaveLength(2);
+      expect(await listLeadWorkItemsByStatus(db, 'TODO')).toHaveLength(2);
+    } finally {
+      db.close();
+    }
   });
 
   it('returns a concrete parse error for invalid JSON', () => {
@@ -268,6 +381,15 @@ describe('lead import center preview', () => {
       canExecute: false,
       label: '已完成/不可重复执行',
       executableRows: 0,
+    });
+  });
+
+  it('does not label a non-empty batch as completed while its rows are missing from the detail view', () => {
+    expect(getLeadImportBatchExecutionState([], 20)).toEqual({
+      canExecute: false,
+      label: '明细未加载，请刷新批次明细',
+      executableRows: 0,
+      missingRows: true,
     });
   });
 
