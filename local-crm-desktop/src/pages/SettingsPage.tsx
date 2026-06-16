@@ -20,6 +20,31 @@ export type RestorePreview = {
   errorMessage: string;
 };
 
+export type RestoreStatus = 'idle' | 'backing_up' | 'restoring';
+
+export type BackupDownloadKind = 'manual' | 'pre-restore';
+
+export type BackupDownloadAdapter = {
+  createObjectUrl(blob: Blob): string;
+  clickDownload(url: string, fileName: string): void;
+  revokeObjectUrl(url: string): void;
+};
+
+const browserBackupDownloadAdapter: BackupDownloadAdapter = {
+  createObjectUrl(blob) {
+    return URL.createObjectURL(blob);
+  },
+  clickDownload(url, fileName) {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    a.click();
+  },
+  revokeObjectUrl(url) {
+    URL.revokeObjectURL(url);
+  },
+};
+
 export function buildRestorePreviewFromText(text: string): RestorePreview {
   try {
     const rawPayload = JSON.parse(text);
@@ -51,6 +76,10 @@ export function buildRestoreConfirmationMessage(preview: RestorePreview): string
   const lines = [
     'Restore will overwrite current local CRM data.',
     'Please manually export a backup before restoring.',
+    'The system will automatically download a current data backup before restoring.',
+    'Please make sure downloads are not blocked by your browser.',
+    'If automatic backup fails, restore will not continue.',
+    'You can also manually click Export Backup first.',
     'New-format backups restore all business tables.',
     'Legacy backups may not include Lead Workbench data.',
     'Restore failure will automatically roll back.',
@@ -85,6 +114,66 @@ export function formatRestoreFailureMessage(error: unknown): string {
   return `Restore failed: ${message}. The restore was rolled back, and current data is not left in a half-restored state.`;
 }
 
+export function buildBackupDownloadFileName(input: {
+  kind: BackupDownloadKind;
+  version: string;
+  exportedAt: string;
+}): string {
+  const ts = input.exportedAt.replace(/[:.]/g, '-');
+  const prefix = input.kind === 'pre-restore' ? 'crm-pre-restore-backup' : 'crm-backup';
+  return `${prefix}-v${input.version}-${ts}.json`;
+}
+
+export function downloadBackupPayload(
+  payload: Awaited<ReturnType<typeof buildFullBackupPayload>>,
+  kind: BackupDownloadKind,
+  adapter: BackupDownloadAdapter = browserBackupDownloadAdapter,
+): string {
+  const fileName = buildBackupDownloadFileName({
+    kind,
+    version: payload.version,
+    exportedAt: payload.exported_at,
+  });
+  const backup = JSON.stringify(payload, null, 2);
+  const blob = new Blob([backup], { type: 'application/json' });
+  const url = adapter.createObjectUrl(blob);
+
+  try {
+    adapter.clickDownload(url, fileName);
+    return fileName;
+  } finally {
+    adapter.revokeObjectUrl(url);
+  }
+}
+
+export async function runRestoreWithPreRestoreBackup(input: {
+  db: Parameters<typeof buildFullBackupPayload>[0] & Parameters<typeof restoreBackupPayloadWithDb>[0];
+  rawPayload: unknown;
+  download?: typeof downloadBackupPayload;
+  restore?: typeof restoreBackupPayloadWithDb;
+  setStatus?: (status: RestoreStatus) => void;
+}): Promise<RestoreBackupResult> {
+  const download = input.download ?? downloadBackupPayload;
+  const restore = input.restore ?? restoreBackupPayloadWithDb;
+
+  input.setStatus?.('backing_up');
+  let preRestorePayload: Awaited<ReturnType<typeof buildFullBackupPayload>>;
+  try {
+    preRestorePayload = await buildFullBackupPayload(input.db, { version: APP_VERSION });
+  } catch (error) {
+    throw new Error('恢复前自动备份失败，已取消恢复，请先手动备份后重试。', { cause: error });
+  }
+
+  try {
+    download(preRestorePayload, 'pre-restore');
+  } catch (error) {
+    throw new Error('恢复前自动备份下载失败，已取消恢复，请先手动备份后重试。', { cause: error });
+  }
+
+  input.setStatus?.('restoring');
+  return restore(input.db, input.rawPayload);
+}
+
 export default function SettingsPage() {
   const navigate = useNavigate();
   const [msg, setMsg] = useState('');
@@ -92,6 +181,7 @@ export default function SettingsPage() {
   const [restoreWarning, setRestoreWarning] = useState(false);
   const [restoreFile, setRestoreFile] = useState<File | null>(null);
   const [restorePreview, setRestorePreview] = useState<RestorePreview | null>(null);
+  const [restoreStatus, setRestoreStatus] = useState<RestoreStatus>('idle');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -105,16 +195,7 @@ export default function SettingsPage() {
       const { getDb } = await import('../lib/db');
       const db = await getDb();
       const payload = await buildFullBackupPayload(db, { version: APP_VERSION });
-      const backup = JSON.stringify(payload, null, 2);
-
-      const blob = new Blob([backup], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      const ts = payload.exported_at.replace(/[:.]/g, '-');
-      a.href = url;
-      a.download = `crm-backup-v${APP_VERSION}-${ts}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
+      downloadBackupPayload(payload, 'manual');
       setMsg(`Backup success: exported ${payload.counts.customers} customers, ${payload.counts.follow_up_records} follow-ups, ${payload.counts.visit_records} visits, ${payload.counts.tasks} tasks, and Lead Workbench data.`);
     } catch (e) {
       const errMsg = e instanceof Error ? e.message : String(e);
@@ -143,6 +224,7 @@ export default function SettingsPage() {
 
   const handleRestoreConfirm = async () => {
     if (!restoreFile || !restorePreview) return;
+    if (restoreStatus !== 'idle') return;
 
     if (!restorePreview.validation.valid) {
       setMsg(`Restore validation failed: ${restorePreview.errorMessage}`);
@@ -152,13 +234,19 @@ export default function SettingsPage() {
     try {
       const { getDb } = await import('../lib/db');
       const db = await getDb();
-      const result = await restoreBackupPayloadWithDb(db, restorePreview.rawPayload);
+      const result = await runRestoreWithPreRestoreBackup({
+        db,
+        rawPayload: restorePreview.rawPayload,
+        setStatus: setRestoreStatus,
+      });
       setMsg(formatRestoreSuccessMessage(result));
       setRestoreWarning(false);
       setRestoreFile(null);
       setRestorePreview(null);
     } catch (e) {
       setMsg(formatRestoreFailureMessage(e));
+    } finally {
+      setRestoreStatus('idle');
     }
   };
   return (
@@ -207,6 +295,16 @@ export default function SettingsPage() {
               {msg}
             </p>
           )}
+          {restoreStatus === 'backing_up' && (
+            <p style={{ marginTop: 12, color: 'var(--text-secondary)', fontSize: 14 }}>
+              正在生成恢复前备份…
+            </p>
+          )}
+          {restoreStatus === 'restoring' && (
+            <p style={{ marginTop: 12, color: 'var(--text-secondary)', fontSize: 14 }}>
+              正在恢复数据…
+            </p>
+          )}
         </div>
 
         {restoreWarning && restoreFile && (
@@ -238,7 +336,11 @@ export default function SettingsPage() {
                 <button className="btn" onClick={() => { setRestoreWarning(false); setRestoreFile(null); setRestorePreview(null); }}>
                   Cancel
                 </button>
-                <button className="btn btn-primary" onClick={handleRestoreConfirm}>
+                <button
+                  className="btn btn-primary"
+                  onClick={handleRestoreConfirm}
+                  disabled={restoreStatus !== 'idle'}
+                >
                   Confirm Restore
                 </button>
               </div>

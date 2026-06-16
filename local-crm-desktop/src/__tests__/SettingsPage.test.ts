@@ -1,11 +1,14 @@
 import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
+  buildBackupDownloadFileName,
   buildRestoreConfirmationMessage,
   buildRestorePreviewFromText,
+  downloadBackupPayload,
   formatRestoreFailureMessage,
   formatRestoreSuccessMessage,
+  runRestoreWithPreRestoreBackup,
 } from '../pages/SettingsPage';
 
 function createCompleteBackupText() {
@@ -134,5 +137,135 @@ describe('SettingsPage restore integration helpers', () => {
     expect(restoreConfirmBlock).not.toContain('buildFullBackupPayload');
     expect(dataImportPage.length).toBeGreaterThan(0);
     expect(importer.length).toBeGreaterThan(0);
+  });
+
+  it('runs pre-restore backup download before restore execution', async () => {
+    const events: string[] = [];
+    const db = {
+      select: vi.fn().mockImplementation(async (sql: string) => {
+        events.push(`select:${sql}`);
+        return [];
+      }),
+      execute: vi.fn().mockResolvedValue({ rowsAffected: 1 }),
+    };
+    const download = vi.fn().mockImplementation(() => {
+      events.push('download');
+    });
+    const restore = vi.fn().mockImplementation(async () => {
+      events.push('restore');
+      return {
+        ok: true,
+        isLegacy: false,
+        restoredCounts: {
+          customers: 1,
+          follow_up_records: 0,
+          visit_records: 0,
+          tasks: 1,
+          settings: 1,
+          ai_drafts: 1,
+          lead_import_batches: 0,
+          lead_import_rows: 0,
+          lead_work_items: 0,
+          lead_capture_events: 0,
+          collected_leads: 0,
+          lead_sync_logs: 0,
+        },
+        warnings: [],
+      };
+    });
+    const setStatus = vi.fn();
+
+    const result = await runRestoreWithPreRestoreBackup({
+      db,
+      rawPayload: JSON.parse(createCompleteBackupText()),
+      download,
+      restore,
+      setStatus,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(download).toHaveBeenCalledBefore(restore);
+    expect(events.indexOf('download')).toBeLessThan(events.indexOf('restore'));
+    expect(setStatus).toHaveBeenNthCalledWith(1, 'backing_up');
+    expect(setStatus).toHaveBeenNthCalledWith(2, 'restoring');
+  });
+
+  it('does not restore when pre-restore backup building fails', async () => {
+    const db = {
+      select: vi.fn().mockRejectedValue(new Error('select failed')),
+      execute: vi.fn().mockResolvedValue({ rowsAffected: 1 }),
+    };
+    const restore = vi.fn();
+
+    await expect(runRestoreWithPreRestoreBackup({
+      db,
+      rawPayload: JSON.parse(createCompleteBackupText()),
+      download: vi.fn(),
+      restore,
+    })).rejects.toThrow('恢复前自动备份失败，已取消恢复，请先手动备份后重试。');
+
+    expect(restore).not.toHaveBeenCalled();
+  });
+
+  it('does not restore when pre-restore backup download fails', async () => {
+    const db = {
+      select: vi.fn().mockResolvedValue([]),
+      execute: vi.fn().mockResolvedValue({ rowsAffected: 1 }),
+    };
+    const restore = vi.fn();
+
+    await expect(runRestoreWithPreRestoreBackup({
+      db,
+      rawPayload: JSON.parse(createCompleteBackupText()),
+      download: vi.fn(() => {
+        throw new Error('download blocked');
+      }),
+      restore,
+    })).rejects.toThrow('恢复前自动备份下载失败，已取消恢复，请先手动备份后重试。');
+
+    expect(restore).not.toHaveBeenCalled();
+  });
+
+  it('builds and downloads pre-restore backup filenames safely', () => {
+    const fileName = buildBackupDownloadFileName({
+      kind: 'pre-restore',
+      version: '0.4.0',
+      exportedAt: '2026-06-16T02:00:00.000Z',
+    });
+    const adapter = {
+      createObjectUrl: vi.fn(() => 'blob:url'),
+      clickDownload: vi.fn(),
+      revokeObjectUrl: vi.fn(),
+    };
+
+    downloadBackupPayload({
+      version: '0.4.0',
+      exported_at: '2026-06-16T02:00:00.000Z',
+      counts: {} as never,
+      tables: {} as never,
+      customers: [],
+      followUps: [],
+      visits: [],
+      tasks: [],
+    }, 'pre-restore', adapter);
+
+    expect(fileName).toContain('pre-restore');
+    expect(fileName).toContain('v0.4.0');
+    expect(fileName).toContain('2026-06-16T02-00-00-000Z');
+    expect(adapter.createObjectUrl).toHaveBeenCalledWith(expect.any(Blob));
+    expect(adapter.clickDownload).toHaveBeenCalledWith('blob:url', fileName);
+    expect(adapter.revokeObjectUrl).toHaveBeenCalledWith('blob:url');
+  });
+
+  it('documents automatic backup warnings and loading states in SettingsPage', () => {
+    const settingsSrc = readFileSync(new URL('../../src/pages/SettingsPage.tsx', import.meta.url), 'utf8');
+
+    expect(settingsSrc).toContain('The system will automatically download a current data backup before restoring.');
+    expect(settingsSrc).toContain('Please make sure downloads are not blocked by your browser.');
+    expect(settingsSrc).toContain('If automatic backup fails, restore will not continue.');
+    expect(settingsSrc).toContain('You can also manually click Export Backup first.');
+    expect(settingsSrc).toContain('正在生成恢复前备份');
+    expect(settingsSrc).toContain('正在恢复数据');
+    expect(settingsSrc).toContain('disabled={restoreStatus !==');
   });
 });
