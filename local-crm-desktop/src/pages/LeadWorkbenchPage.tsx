@@ -36,6 +36,33 @@ export const LEAD_WORKBENCH_STATUS_FILTERS: LeadWorkStatus[] = [
   'DONE',
 ];
 
+const LEAD_WORK_STATUS_LABELS: Record<LeadWorkStatus, string> = {
+  TODO: '待处理',
+  SEARCHING: '查询中',
+  STAGED: '待整理',
+  COLLECTED: '已采集',
+  NO_PHONE: '无电话',
+  SKIPPED: '已跳过',
+  DONE: '已完成',
+};
+
+export function formatLeadWorkStatusLabel(status: LeadWorkStatus): string {
+  return LEAD_WORK_STATUS_LABELS[status];
+}
+
+export function formatCollectedLeadSyncStatusLabel(status: CollectedLead['sync_status']): string {
+  switch (status) {
+    case 'UNSYNCED':
+      return '未同步';
+    case 'SYNCED':
+      return '已同步';
+    case 'FAILED':
+      return '同步失败';
+    case 'IGNORED':
+      return '已忽略';
+  }
+}
+
 export const LEAD_WORKBENCH_ACTION_LABELS = [
   '复制搜索词',
   '开始查询',
@@ -472,7 +499,7 @@ export function shouldRunLeadWorkItemStatusUpdate(
 }
 
 export function getLeadWorkItemStatusUpdateSuccessMessage(nextStatus: LeadWorkStatus): string {
-  return `任务状态已更新为 ${nextStatus}`;
+  return `任务状态已更新为 ${formatLeadWorkStatusLabel(nextStatus)}`;
 }
 
 export async function copyLeadSearchKeyword(
@@ -826,7 +853,7 @@ export default function LeadWorkbenchPage() {
                 onClick={() => setStatusFilter(status)}
                 disabled={isLoading || isUpdating}
               >
-                <span>{status}</span>
+                <span>{formatLeadWorkStatusLabel(status)}</span>
                 <strong>{counts[status]}</strong>
               </button>
             ))}
@@ -843,14 +870,14 @@ export default function LeadWorkbenchPage() {
                 <table>
                   <thead>
                     <tr>
-                      <th>company_name</th>
-                      <th>city</th>
-                      <th>industry</th>
-                      <th>work_type</th>
-                      <th>lookup_goal</th>
-                      <th>status</th>
-                      <th>priority</th>
-                      <th>tanji_search_keyword</th>
+                      <th>公司名称</th>
+                      <th>城市</th>
+                      <th>行业</th>
+                      <th>任务类型</th>
+                      <th>查询目标</th>
+                      <th>状态</th>
+                      <th>优先级</th>
+                      <th>搜索词</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -867,7 +894,7 @@ export default function LeadWorkbenchPage() {
                         <td>{item.industry || '-'}</td>
                         <td><span className="badge badge-info">{item.work_type}</span></td>
                         <td>{item.lookup_goal}</td>
-                        <td><span className="badge badge-warning">{item.status}</span></td>
+                        <td><span className="badge badge-warning">{formatLeadWorkStatusLabel(item.status)}</span></td>
                         <td>{item.priority}</td>
                         <td>{getSuggestedTanjiSearchKeyword(item) || '-'}</td>
                       </tr>
@@ -1007,13 +1034,13 @@ export default function LeadWorkbenchPage() {
                             可能联系人建议：{collectedLeadDraft.contactNameSuggestion}
                           </div>
                         )}
-                        <DraftInput label="contact_name" field="contact_name" draft={collectedLeadDraft} onChange={setCollectedLeadDraft} />
-                        <DraftInput label="position" field="position" draft={collectedLeadDraft} onChange={setCollectedLeadDraft} />
-                        <DraftInput label="mobile" field="mobile" draft={collectedLeadDraft} onChange={setCollectedLeadDraft} />
-                        <DraftInput label="tel" field="tel" draft={collectedLeadDraft} onChange={setCollectedLeadDraft} />
-                        <DraftInput label="website" field="website" draft={collectedLeadDraft} onChange={setCollectedLeadDraft} />
-                        <DraftInput label="email" field="email" draft={collectedLeadDraft} onChange={setCollectedLeadDraft} />
-                        <DraftInput label="note" field="note" draft={collectedLeadDraft} onChange={setCollectedLeadDraft} multiline />
+                        <DraftInput label="联系人" field="contact_name" draft={collectedLeadDraft} onChange={setCollectedLeadDraft} />
+                        <DraftInput label="职位" field="position" draft={collectedLeadDraft} onChange={setCollectedLeadDraft} />
+                        <DraftInput label="手机号" field="mobile" draft={collectedLeadDraft} onChange={setCollectedLeadDraft} />
+                        <DraftInput label="座机" field="tel" draft={collectedLeadDraft} onChange={setCollectedLeadDraft} />
+                        <DraftInput label="官网" field="website" draft={collectedLeadDraft} onChange={setCollectedLeadDraft} />
+                        <DraftInput label="邮箱" field="email" draft={collectedLeadDraft} onChange={setCollectedLeadDraft} />
+                        <DraftInput label="备注" field="note" draft={collectedLeadDraft} onChange={setCollectedLeadDraft} multiline />
                       </div>
                     )}
                   </section>
@@ -1064,7 +1091,7 @@ export default function LeadWorkbenchPage() {
                             <details className="lead-workbench-history-item" key={draft.id}>
                               <summary className="lead-workbench-collected-summary">
                                 <span>{draft.created_at}</span>
-                                <span className="badge badge-info">{draft.sync_status}</span>
+                                <span className="badge badge-info">{formatCollectedLeadSyncStatusLabel(draft.sync_status)}</span>
                                 <span>{getCollectedLeadDraftDisplayValue(draft.contact_name)}</span>
                                 <span>{getCollectedLeadDraftDisplayValue(draft.position)}</span>
                                 <span>{getCollectedLeadDraftDisplayValue(draft.mobile)}</span>
@@ -1073,7 +1100,7 @@ export default function LeadWorkbenchPage() {
                                 <span>{getCollectedLeadDraftDisplayValue(draft.email)}</span>
                                 <span>{getCollectedLeadDraftNoteSummary(draft.note)}</span>
                               </summary>
-                              <PreviewText label="company_name" value={draft.company_name || ''} />
+                              <PreviewText label="公司名称" value={draft.company_name || ''} />
                               <PreviewText label="完整 raw_text" value={draft.raw_text || ''} />
                               <PreviewText label="完整 note" value={draft.note || ''} />
                               <PreviewText label="work_item_id" value={draft.work_item_id || ''} />
@@ -1116,15 +1143,15 @@ export default function LeadWorkbenchPage() {
 
                 <div className="lead-workbench-detail-grid">
                   <DetailItem label="id" value={selectedItem.id} />
-                  <DetailItem label="import_row_id" value={selectedItem.import_row_id} />
-                  <DetailItem label="customer_id" value={selectedItem.customer_id} />
-                  <DetailItem label="company_name" value={selectedItem.company_name} />
-                  <DetailItem label="city" value={selectedItem.city} />
-                  <DetailItem label="industry" value={selectedItem.industry} />
-                  <DetailItem label="work_type" value={selectedItem.work_type} />
-                  <DetailItem label="lookup_goal" value={selectedItem.lookup_goal} />
+                  <DetailItem label="导入行 ID" value={selectedItem.import_row_id} />
+                  <DetailItem label="客户 ID" value={selectedItem.customer_id} />
+                  <DetailItem label="公司名称" value={selectedItem.company_name} />
+                  <DetailItem label="城市" value={selectedItem.city} />
+                  <DetailItem label="行业" value={selectedItem.industry} />
+                  <DetailItem label="任务类型" value={selectedItem.work_type} />
+                  <DetailItem label="查询目标" value={selectedItem.lookup_goal} />
                   <DetailItem label="tanji_search_keyword" value={searchKeyword} />
-                  <DetailItem label="status" value={selectedItem.status} />
+                  <DetailItem label="状态" value={formatLeadWorkStatusLabel(selectedItem.status)} />
                   <DetailItem label="note" value={selectedItem.note} />
                   <DetailItem label="created_at" value={selectedItem.created_at} />
                   <DetailItem label="updated_at" value={selectedItem.updated_at} />

@@ -41,10 +41,10 @@ describe('SettingsPage restore integration helpers', () => {
 
     const message = buildRestoreConfirmationMessage(preview);
 
-    expect(message).toContain('Restore will overwrite current local CRM data.');
-    expect(message).toContain('Please manually export a backup before restoring.');
-    expect(message).toContain('New-format backups restore all business tables.');
-    expect(message).toContain('Restore failure will automatically roll back.');
+    expect(message).toContain('恢复会覆盖当前本地 CRM 数据。');
+    expect(message).toContain('恢复前请先手动导出备份。');
+    expect(message).toContain('新格式备份会恢复完整业务表。');
+    expect(message).toContain('恢复失败会自动回滚。');
   });
 
   it('shows legacy compatibility and missing table hints without rejecting legacy backups', () => {
@@ -61,9 +61,9 @@ describe('SettingsPage restore integration helpers', () => {
 
     const message = buildRestoreConfirmationMessage(preview);
 
-    expect(message).toContain('Detected legacy backup.');
-    expect(message).toContain('Legacy backups may not include Lead Workbench data.');
-    expect(message).toContain('Missing tables:');
+    expect(message).toContain('检测到旧版备份。');
+    expect(message).toContain('旧格式备份可能不包含获客作业台数据。');
+    expect(message).toContain('缺失表：');
   });
 
   it('returns readable validation errors for invalid backups before restore execution', () => {
@@ -99,23 +99,23 @@ describe('SettingsPage restore integration helpers', () => {
       warnings: ['Legacy backup missing table lead_work_items; restored as empty array.'],
     });
 
-    expect(message).toContain('Restore succeeded.');
+    expect(message).toContain('恢复成功。');
     expect(message).toContain('customers: 1');
     expect(message).toContain('tasks: 1');
     expect(message).toContain('settings: 1');
     expect(message).toContain('ai_drafts: 1');
     expect(message).toContain('lead_work_items: 1');
-    expect(message).toContain('Legacy backup: yes');
+    expect(message).toContain('旧版备份：是');
     expect(message).toContain('Legacy backup missing table lead_work_items');
-    expect(message).toContain('Refresh the page to view restored data.');
+    expect(message).toContain('请刷新页面查看恢复后的数据。');
   });
 
   it('formats restore failures with rollback and no-half-restore guidance', () => {
     const message = formatRestoreFailureMessage(new Error('forced failure'));
 
-    expect(message).toContain('Restore failed: forced failure');
-    expect(message).toContain('rolled back');
-    expect(message).toContain('not left in a half-restored state');
+    expect(message).toContain('恢复失败：forced failure');
+    expect(message).toContain('已回滚');
+    expect(message).toContain('不会处于半恢复状态');
   });
 
   it('uses restoreBackupPayloadWithDb and stops using old hand-written restore SQL', () => {
@@ -260,12 +260,27 @@ describe('SettingsPage restore integration helpers', () => {
   it('documents automatic backup warnings and loading states in SettingsPage', () => {
     const settingsSrc = readFileSync(new URL('../../src/pages/SettingsPage.tsx', import.meta.url), 'utf8');
 
-    expect(settingsSrc).toContain('The system will automatically download a current data backup before restoring.');
-    expect(settingsSrc).toContain('Please make sure downloads are not blocked by your browser.');
-    expect(settingsSrc).toContain('If automatic backup fails, restore will not continue.');
-    expect(settingsSrc).toContain('You can also manually click Export Backup first.');
+    expect(settingsSrc).toContain('系统将在恢复前自动下载当前数据备份。');
+    expect(settingsSrc).toContain('请确认浏览器没有阻止下载。');
+    expect(settingsSrc).toContain('如果自动备份失败，恢复不会继续。');
+    expect(settingsSrc).toContain('你也可以先手动点击“导出备份”。');
     expect(settingsSrc).toContain('正在生成恢复前备份');
     expect(settingsSrc).toContain('正在恢复数据');
     expect(settingsSrc).toContain('disabled={restoreStatus !==');
+  });
+
+  it('uses Chinese fixed UI copy for the settings page', () => {
+    const settingsSrc = readFileSync(new URL('../../src/pages/SettingsPage.tsx', import.meta.url), 'utf8');
+
+    expect(settingsSrc).toContain('<h2>设置</h2>');
+    expect(settingsSrc).toContain('数据库');
+    expect(settingsSrc).toContain('数据存储在本地 SQLite 数据库中。');
+    expect(settingsSrc).toContain('导出备份');
+    expect(settingsSrc).toContain('恢复备份');
+    expect(settingsSrc).toContain('关于');
+    expect(settingsSrc).toContain('销售CRM个人版 v{APP_VERSION}');
+    expect(settingsSrc).toContain('本地桌面 CRM，数据保存在当前电脑。');
+    expect(settingsSrc).toContain('AI 设置');
+    expect(settingsSrc).toContain('配置 AI 服务商与 API Key，用于分析、摘要和建议。');
   });
 });

@@ -21,6 +21,7 @@ import {
   buildLeadPastePreviewResult,
   copyLeadSearchKeyword,
   filterLeadWorkItemsByStatus,
+  formatLeadWorkStatusLabel,
   getCollectedLeadDraftDisplayValue,
   getCollectedLeadDraftHistoryEmptyMessage,
   getCollectedLeadDraftNoteSummary,
@@ -128,6 +129,16 @@ describe('lead workbench page operations', () => {
     } finally {
       db.close();
     }
+  });
+
+  it('maps workbench status values to Chinese display labels', () => {
+    expect(formatLeadWorkStatusLabel('TODO')).toBe('待处理');
+    expect(formatLeadWorkStatusLabel('SEARCHING')).toBe('查询中');
+    expect(formatLeadWorkStatusLabel('STAGED')).toBe('待整理');
+    expect(formatLeadWorkStatusLabel('COLLECTED')).toBe('已采集');
+    expect(formatLeadWorkStatusLabel('NO_PHONE')).toBe('无电话');
+    expect(formatLeadWorkStatusLabel('SKIPPED')).toBe('已跳过');
+    expect(formatLeadWorkStatusLabel('DONE')).toBe('已完成');
   });
 
   it('shows distinct empty states for no work items and an empty filtered status', () => {
@@ -295,7 +306,7 @@ describe('lead workbench page operations', () => {
   });
 
   it('shows a readable success message after status updates', () => {
-    expect(getLeadWorkItemStatusUpdateSuccessMessage('NO_PHONE')).toBe('任务状态已更新为 NO_PHONE');
+    expect(getLeadWorkItemStatusUpdateSuccessMessage('NO_PHONE')).toBe('任务状态已更新为 无电话');
   });
 
   it('builds a read-only paste preview with normalized mobile candidates', () => {

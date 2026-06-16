@@ -64,38 +64,38 @@ export function buildRestorePreviewFromText(text: string): RestorePreview {
       normalized,
       validation: {
         valid: false,
-        errors: [`Invalid JSON: ${message}`],
+        errors: [`JSON 解析失败：${message}`],
         missingTables: [],
       },
-      errorMessage: `Invalid JSON: ${message}`,
+      errorMessage: `JSON 解析失败：${message}`,
     };
   }
 }
 
 export function buildRestoreConfirmationMessage(preview: RestorePreview): string {
   const lines = [
-    'Restore will overwrite current local CRM data.',
-    'Please manually export a backup before restoring.',
-    'The system will automatically download a current data backup before restoring.',
-    'Please make sure downloads are not blocked by your browser.',
-    'If automatic backup fails, restore will not continue.',
-    'You can also manually click Export Backup first.',
-    'New-format backups restore all business tables.',
-    'Legacy backups may not include Lead Workbench data.',
-    'Restore failure will automatically roll back.',
-    'Current data should not be left in a half-restored state.',
+    '恢复会覆盖当前本地 CRM 数据。',
+    '恢复前请先手动导出备份。',
+    '系统将在恢复前自动下载当前数据备份。',
+    '请确认浏览器没有阻止下载。',
+    '如果自动备份失败，恢复不会继续。',
+    '你也可以先手动点击“导出备份”。',
+    '新格式备份会恢复完整业务表。',
+    '旧格式备份可能不包含获客作业台数据。',
+    '恢复失败会自动回滚。',
+    '当前数据不应处于半恢复状态。',
   ];
 
   if (preview.normalized.isLegacy) {
-    lines.push('Detected legacy backup.');
+    lines.push('检测到旧版备份。');
   }
 
   if (preview.normalized.missingTables.length > 0) {
-    lines.push(`Missing tables: ${preview.normalized.missingTables.join(', ')}`);
+    lines.push(`缺失表：${preview.normalized.missingTables.join(', ')}`);
   }
 
   if (!preview.validation.valid) {
-    lines.push(`Validation errors: ${preview.validation.errors.join(' ')}`);
+    lines.push(`校验错误：${preview.validation.errors.join(' ')}`);
   }
 
   return lines.join('\n');
@@ -105,13 +105,13 @@ export function formatRestoreSuccessMessage(result: RestoreBackupResult): string
   const counts = Object.entries(result.restoredCounts)
     .map(([table, count]) => `${table}: ${count}`)
     .join(', ');
-  const warnings = result.warnings.length > 0 ? ` Warnings: ${result.warnings.join(' ')}` : '';
-  return `Restore succeeded. Legacy backup: ${result.isLegacy ? 'yes' : 'no'}. Restored counts: ${counts}.${warnings} Refresh the page to view restored data.`;
+  const warnings = result.warnings.length > 0 ? ` 警告：${result.warnings.join(' ')}` : '';
+  return `恢复成功。旧版备份：${result.isLegacy ? '是' : '否'}。恢复数量：${counts}.${warnings} 请刷新页面查看恢复后的数据。`;
 }
 
 export function formatRestoreFailureMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
-  return `Restore failed: ${message}. The restore was rolled back, and current data is not left in a half-restored state.`;
+  return `恢复失败：${message}。本次恢复已回滚，当前数据不会处于半恢复状态。`;
 }
 
 export function buildBackupDownloadFileName(input: {
@@ -185,10 +185,13 @@ export default function SettingsPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    getDbPath().then(setDbPath).catch(() => setMsg('Unable to get database path'));
+    getDbPath().then(setDbPath).catch(() => setMsg('无法获取数据库路径'));
   }, []);
 
-  const isErrorMessage = msg.toLowerCase().includes('failed') || msg.toLowerCase().includes('unable');
+  const isErrorMessage = msg.toLowerCase().includes('failed')
+    || msg.toLowerCase().includes('unable')
+    || msg.includes('失败')
+    || msg.includes('无法');
 
   const handleBackup = async () => {
     try {
@@ -196,10 +199,10 @@ export default function SettingsPage() {
       const db = await getDb();
       const payload = await buildFullBackupPayload(db, { version: APP_VERSION });
       downloadBackupPayload(payload, 'manual');
-      setMsg(`Backup success: exported ${payload.counts.customers} customers, ${payload.counts.follow_up_records} follow-ups, ${payload.counts.visit_records} visits, ${payload.counts.tasks} tasks, and Lead Workbench data.`);
+      setMsg(`备份成功：已导出 ${payload.counts.customers} 个客户、${payload.counts.follow_up_records} 条跟进记录、${payload.counts.visit_records} 条面访记录、${payload.counts.tasks} 个任务，以及获客作业台数据。`);
     } catch (e) {
       const errMsg = e instanceof Error ? e.message : String(e);
-      setMsg(`Backup failed: ${errMsg}`);
+      setMsg(`备份失败：${errMsg}`);
     }
   };
 
@@ -218,7 +221,7 @@ export default function SettingsPage() {
       setRestoreFile(file);
       setRestorePreview(null);
       setRestoreWarning(true);
-      setMsg(`Restore preview failed: ${error instanceof Error ? error.message : String(error)}`);
+      setMsg(`恢复预览失败：${error instanceof Error ? error.message : String(error)}`);
     }
   };
 
@@ -227,7 +230,7 @@ export default function SettingsPage() {
     if (restoreStatus !== 'idle') return;
 
     if (!restorePreview.validation.valid) {
-      setMsg(`Restore validation failed: ${restorePreview.errorMessage}`);
+      setMsg(`恢复校验失败：${restorePreview.errorMessage}`);
       return;
     }
 
@@ -252,13 +255,13 @@ export default function SettingsPage() {
   return (
     <div>
       <div className="page-header">
-        <h2>Settings</h2>
+        <h2>设置</h2>
       </div>
       <div className="page-body">
         <div className="card" style={{ marginBottom: 20 }}>
-          <h3 className="section-title">Database</h3>
+          <h3 className="section-title">数据库</h3>
           <div style={{ marginBottom: 12, color: 'var(--text-secondary)' }}>
-            <p style={{ marginBottom: 8 }}>Data is stored in the local SQLite database.</p>
+            <p style={{ marginBottom: 8 }}>数据存储在本地 SQLite 数据库中。</p>
             {dbPath ? (
               <p style={{
                 fontSize: 13, fontFamily: 'monospace', background: 'var(--bg-secondary)',
@@ -268,15 +271,15 @@ export default function SettingsPage() {
                 {dbPath}
               </p>
             ) : (
-              <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>Loading database path...</p>
+              <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>正在加载数据库路径...</p>
             )}
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <button className="btn" onClick={handleBackup}>
-              <Database size={16} /> Export Backup
+              <Database size={16} /> 导出备份
             </button>
             <button className="btn" onClick={() => fileInputRef.current?.click()}>
-              <Upload size={16} /> Restore Backup
+              <Upload size={16} /> 恢复备份
             </button>
             <input
               ref={fileInputRef}
@@ -314,10 +317,10 @@ export default function SettingsPage() {
           }}>
             <div className="card" style={{ maxWidth: 480, width: '90%' }}>
               <h3 style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#f59e0b', marginBottom: 16 }}>
-                <AlertTriangle size={20} /> Confirm Restore
+                <AlertTriangle size={20} /> 确认恢复
               </h3>
               <p style={{ marginBottom: 12, color: 'var(--text-secondary)', fontSize: 14 }}>
-                Restore from backup file <strong>{restoreFile.name}</strong>.
+                从备份文件 <strong>{restoreFile.name}</strong> 恢复。
               </p>
               {restorePreview && (
                 <pre style={{
@@ -334,14 +337,14 @@ export default function SettingsPage() {
               )}
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                 <button className="btn" onClick={() => { setRestoreWarning(false); setRestoreFile(null); setRestorePreview(null); }}>
-                  Cancel
+                  取消
                 </button>
                 <button
                   className="btn btn-primary"
                   onClick={handleRestoreConfirm}
                   disabled={restoreStatus !== 'idle'}
                 >
-                  Confirm Restore
+                  确认恢复
                 </button>
               </div>
             </div>
@@ -349,20 +352,20 @@ export default function SettingsPage() {
         )}
 
         <div className="card" style={{ marginBottom: 20 }}>
-          <h3 className="section-title">About</h3>
+          <h3 className="section-title">关于</h3>
           <p style={{ color: 'var(--text-secondary)' }}>
-            Sales CRM personal edition v{APP_VERSION}<br />
-            Local desktop CRM with data stored on this machine.
+            销售CRM个人版 v{APP_VERSION}<br />
+            本地桌面 CRM，数据保存在当前电脑。
           </p>
         </div>
 
         <div className="card" style={{ cursor: 'pointer' }} onClick={() => navigate('/settings/ai')}>
           <h3 className="section-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span><Brain size={16} style={{ marginRight: 4, verticalAlign: 'middle' }} /> AI Settings</span>
+            <span><Brain size={16} style={{ marginRight: 4, verticalAlign: 'middle' }} /> AI 设置</span>
             <ArrowRight size={16} style={{ color: '#9ca3af' }} />
           </h3>
           <p style={{ color: 'var(--text-secondary)', marginBottom: 12 }}>
-            Configure AI providers and API keys for analysis, summaries, and suggestions.
+            配置 AI 服务商与 API Key，用于分析、摘要和建议。
           </p>
         </div>
       </div>

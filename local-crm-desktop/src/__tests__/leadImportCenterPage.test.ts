@@ -21,6 +21,8 @@ import {
   getLeadImportBatchExecutionState,
   LEAD_IMPORT_CENTER_ACTION_LABELS,
   LEAD_IMPORT_SAMPLE_JSON,
+  formatLeadBatchTypeLabel,
+  formatLeadDecisionLabel,
 } from '../pages/LeadImportCenterPage';
 
 function createSqliteDb(): DatabaseLike & { close(): void } {
@@ -78,6 +80,25 @@ describe('lead import center preview', () => {
     expect(preview.inputRows).toHaveLength(4);
   });
 
+  it('parses wrapped objects with records arrays and exposes a batch_name suggestion', () => {
+    const preview = buildLeadImportPreview(JSON.stringify({
+      batch_name: 'today_incremental_geo_export_leads',
+      date: '2026-06-16',
+      scope_note: 'real exported payload',
+      review_status: 'ready',
+      records: [
+        { company_name: 'Wrapped Phone Co', mobile: '13800138000', score: 10 },
+        { company_name: 'Wrapped Lookup Co', score: 81 },
+      ],
+    }));
+
+    expect(preview.error).toBeNull();
+    expect(preview.batchNameSuggestion).toBe('today_incremental_geo_export_leads');
+    expect(preview.rows.map(row => row.company_name)).toEqual(['Wrapped Phone Co', 'Wrapped Lookup Co']);
+    expect(preview.rows.map(row => row.decision)).toEqual(['DIRECT_TO_CRM', 'CRM_WITH_LOOKUP']);
+    expect(preview.inputRows).toHaveLength(2);
+  });
+
   it('returns a concrete parse error for invalid JSON', () => {
     const preview = buildLeadImportPreview('[not-json');
 
@@ -91,7 +112,7 @@ describe('lead import center preview', () => {
     const preview = buildLeadImportPreview(JSON.stringify({ company_name: 'Object Co' }));
 
     expect(preview.rows).toHaveLength(0);
-    expect(preview.error).toBe('必须是 JSON 数组。');
+    expect(preview.error).toBe('当前支持两种格式：纯 JSON 数组，或包含 records 数组的对象格式。');
   });
 
   it('returns a clear error for empty arrays', () => {
@@ -99,6 +120,13 @@ describe('lead import center preview', () => {
 
     expect(preview.rows).toHaveLength(0);
     expect(preview.error).toBe('至少需要一条数据。');
+  });
+
+  it('explains the two supported import JSON shapes for unsupported objects', () => {
+    const preview = buildLeadImportPreview(JSON.stringify({ batch_name: 'bad wrapped object', records: {} }));
+
+    expect(preview.rows).toHaveLength(0);
+    expect(preview.error).toBe('当前支持两种格式：纯 JSON 数组，或包含 records 数组的对象格式。');
   });
 
   it('marks blank company names with row numbers', () => {
@@ -185,12 +213,25 @@ describe('lead import center preview', () => {
     });
 
     expect(confirmation.message).toContain('Daily batch');
-    expect(confirmation.message).toContain('AI_DAILY');
-    expect(confirmation.message).toContain('总行数: 3');
-    expect(confirmation.message).toContain('DIRECT_TO_CRM: 1');
-    expect(confirmation.message).toContain('CRM_WITH_LOOKUP: 1');
-    expect(confirmation.message).toContain('LOOKUP_FIRST: 1');
-    expect(confirmation.message).toContain('保存只进入 lead_import_batches / lead_import_rows，不会创建 CRM 客户');
+    expect(confirmation.message).toContain('AI每日名单');
+    expect(confirmation.message).toContain('总行数：3');
+    expect(confirmation.message).toContain('直接入库: 1');
+    expect(confirmation.message).toContain('先查重后入库: 1');
+    expect(confirmation.message).toContain('先查询: 1');
+    expect(confirmation.message).toContain('保存只写入 lead_import_batches / lead_import_rows，不会创建 CRM 客户');
+  });
+
+  it('maps batch types and decision values to Chinese display labels', () => {
+    expect(formatLeadBatchTypeLabel('AI_DAILY')).toBe('AI每日名单');
+    expect(formatLeadBatchTypeLabel('MANUAL')).toBe('手动录入');
+    expect(formatLeadBatchTypeLabel('EXPO')).toBe('展会');
+    expect(formatLeadBatchTypeLabel('WECHAT')).toBe('微信');
+    expect(formatLeadBatchTypeLabel('OTHER')).toBe('其他');
+    expect(formatLeadDecisionLabel('DIRECT_TO_CRM')).toBe('直接入库');
+    expect(formatLeadDecisionLabel('CRM_WITH_LOOKUP')).toBe('先查重后入库');
+    expect(formatLeadDecisionLabel('LOOKUP_FIRST')).toBe('先查询');
+    expect(formatLeadDecisionLabel('RESERVE')).toBe('保留');
+    expect(formatLeadDecisionLabel('IGNORE')).toBe('忽略');
   });
 
   it('exposes only the allowed import center action labels', () => {
@@ -243,12 +284,12 @@ describe('lead import center preview', () => {
     const confirmation = buildLeadImportExecutionConfirmation(batch, rows);
 
     expect(confirmation.message).toContain('Confirm batch');
-    expect(confirmation.message).toContain('total_rows: 5');
-    expect(confirmation.message).toContain('DIRECT_TO_CRM: 1');
-    expect(confirmation.message).toContain('CRM_WITH_LOOKUP: 1');
-    expect(confirmation.message).toContain('LOOKUP_FIRST: 1');
-    expect(confirmation.message).toContain('RESERVE: 1');
-    expect(confirmation.message).toContain('IGNORE: 1');
+    expect(confirmation.message).toContain('总行数：5');
+    expect(confirmation.message).toContain('直接入库: 1');
+    expect(confirmation.message).toContain('先查重后入库: 1');
+    expect(confirmation.message).toContain('先查询: 1');
+    expect(confirmation.message).toContain('保留: 1');
+    expect(confirmation.message).toContain('忽略: 1');
     expect(confirmation.message).toContain('执行后可能创建 CRM 客户和获客任务');
   });
 
