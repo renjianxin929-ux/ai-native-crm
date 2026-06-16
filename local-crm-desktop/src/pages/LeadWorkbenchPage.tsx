@@ -216,7 +216,9 @@ export function shouldRunCollectedLeadCreateCustomer(
 export function getCollectedLeadCreateCustomerResultMessage(
   result: SyncCollectedLeadCreateCustomerResult,
 ): string {
-  if (result.status === 'SUCCESS') return 'CRM 客户创建成功';
+  if (result.status === 'SUCCESS') {
+    return `CRM 客户创建成功：${getCollectedLeadDraftDisplayValue(result.targetCustomerId ?? null)}`;
+  }
   if (result.status === 'DUPLICATE_PHONE' || result.status === 'DUPLICATE_NAME') {
     return `发现重复客户，未创建 CRM 客户：${result.message}`;
   }
@@ -231,7 +233,7 @@ export function getCollectedLeadEnrichCustomerConfirmationMessage(
   draft: Pick<CollectedLead, 'company_name' | 'customer_id' | 'contact_name' | 'mobile' | 'tel' | 'website' | 'email' | 'note'>,
 ): string {
   return [
-    '确认补充已有客户？',
+    '确认补充已有客户？将补充已有 CRM 客户。',
     `company_name: ${getCollectedLeadDraftDisplayValue(draft.company_name)}`,
     `customer_id: ${getCollectedLeadDraftDisplayValue(draft.customer_id)}`,
     `contact_name: ${getCollectedLeadDraftDisplayValue(draft.contact_name)}`,
@@ -239,7 +241,7 @@ export function getCollectedLeadEnrichCustomerConfirmationMessage(
     `website: ${getCollectedLeadDraftDisplayValue(draft.website)}`,
     `email: ${getCollectedLeadDraftDisplayValue(draft.email)}`,
     `note 摘要: ${getCollectedLeadDraftNoteSummary(draft.note)}`,
-    '只补充已有客户的空字段，不覆盖已有电话、联系人、等级、阶段、source。',
+    '只补充空字段。只补充已有客户的空字段，不覆盖已有电话、联系人、等级、阶段、source。',
   ].join('\n');
 }
 
@@ -254,7 +256,9 @@ export function shouldRunCollectedLeadEnrichCustomer(
 export function getCollectedLeadEnrichCustomerResultMessage(
   result: SyncCollectedLeadEnrichCustomerResult,
 ): string {
-  if (result.status === 'SUCCESS') return '已有客户补充成功';
+  if (result.status === 'SUCCESS') {
+    return `已有客户补充成功：${getCollectedLeadDraftDisplayValue(result.targetCustomerId ?? null)}`;
+  }
   return result.message;
 }
 
@@ -1083,7 +1087,7 @@ export default function LeadWorkbenchPage() {
                                     type="button"
                                     className="btn btn-sm btn-primary"
                                     onClick={() => { void handleSyncCollectedLeadCreateCustomer(draft); }}
-                                    disabled={Boolean(isSyncingCollectedLeadId)}
+                                    disabled={isCurrentDraftSyncing}
                                   >
                                     {isCurrentDraftSyncing ? '创建中' : createCustomerLabel}
                                   </button>
@@ -1092,7 +1096,7 @@ export default function LeadWorkbenchPage() {
                                     type="button"
                                     className="btn btn-sm btn-primary"
                                     onClick={() => { void handleSyncCollectedLeadEnrichCustomer(draft); }}
-                                    disabled={Boolean(isSyncingCollectedLeadId)}
+                                    disabled={isCurrentDraftSyncing}
                                   >
                                     {isCurrentDraftSyncing ? '补充中' : enrichCustomerLabel}
                                   </button>
