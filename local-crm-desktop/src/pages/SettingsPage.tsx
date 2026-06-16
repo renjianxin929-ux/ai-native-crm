@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Database, FolderOpen, Brain, ArrowRight, Upload, AlertTriangle } from 'lucide-react';
 import { getDbPath } from '../lib/db';
 import { APP_VERSION } from '../lib/version';
+import { buildFullBackupPayload } from '../lib/backupRestore';
 
 export default function SettingsPage() {
   const navigate = useNavigate();
@@ -20,36 +21,18 @@ export default function SettingsPage() {
     try {
       const { getDb } = await import('../lib/db');
       const db = await getDb();
-      const customers = await db.select('SELECT * FROM customers');
-      const followUps = await db.select('SELECT * FROM follow_up_records');
-      const visits = await db.select('SELECT * FROM visit_records');
-      const tasks = await db.select('SELECT * FROM tasks');
-
-      const now = new Date().toISOString();
-      const backup = JSON.stringify({
-        version: APP_VERSION,
-        exported_at: now,
-        counts: {
-          customers: customers.length,
-          follow_up_records: followUps.length,
-          visit_records: visits.length,
-          tasks: tasks.length,
-        },
-        customers,
-        followUps,
-        visits,
-        tasks,
-      }, null, 2);
+      const payload = await buildFullBackupPayload(db, { version: APP_VERSION });
+      const backup = JSON.stringify(payload, null, 2);
 
       const blob = new Blob([backup], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      const ts = now.replace(/[:.]/g, '-');
+      const ts = payload.exported_at.replace(/[:.]/g, '-');
       a.href = url;
       a.download = `crm-backup-v${APP_VERSION}-${ts}.json`;
       a.click();
       URL.revokeObjectURL(url);
-      setMsg(`备份成功！已导出 ${customers.length} 个客户、${followUps.length} 条跟进记录、${visits.length} 条面访记录、${tasks.length} 个任务`);
+      setMsg(`Backup success: exported ${payload.counts.customers} customers, ${payload.counts.follow_up_records} follow-ups, ${payload.counts.visit_records} visits, ${payload.counts.tasks} tasks, and Lead Workbench data.`);
     } catch (e) {
       const errMsg = e instanceof Error ? e.message : String(e);
       setMsg(`备份失败: ${errMsg}`);
