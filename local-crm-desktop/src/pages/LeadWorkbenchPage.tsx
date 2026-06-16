@@ -19,7 +19,9 @@ import {
 import { parseLeadContactText } from '../lib/leadWorkbench/parser';
 import {
   syncCollectedLeadCreateCustomer,
+  syncCollectedLeadEnrichCustomer,
   type SyncCollectedLeadCreateCustomerResult,
+  type SyncCollectedLeadEnrichCustomerResult,
 } from '../lib/leadWorkbench/syncAdapter';
 import { updateLeadWorkItemStatus } from '../lib/leadWorkbench/workItemActions';
 import type { LeadWorkItem, LeadWorkStatus } from '../lib/leadWorkbench/types';
@@ -165,7 +167,24 @@ export function getCollectedLeadCreateCustomerActionLabel(
 export function getCollectedLeadCreateCustomerStateLabel(
   draft: Pick<CollectedLead, 'customer_id' | 'sync_status'>,
 ): string | null {
-  if (draft.customer_id) return '已有客户补充待后续阶段支持';
+  if (draft.sync_status === 'SYNCED') return '已同步';
+  if (draft.sync_status === 'IGNORED') return '已忽略';
+  return null;
+}
+
+export function getCollectedLeadEnrichCustomerActionLabel(
+  draft: Pick<CollectedLead, 'customer_id' | 'sync_status'>,
+): string | null {
+  if (!draft.customer_id) return null;
+  if (draft.sync_status === 'UNSYNCED') return '补充已有客户';
+  if (draft.sync_status === 'FAILED') return '重试补充已有客户';
+  return null;
+}
+
+export function getCollectedLeadEnrichCustomerStateLabel(
+  draft: Pick<CollectedLead, 'customer_id' | 'sync_status'>,
+): string | null {
+  if (!draft.customer_id) return null;
   if (draft.sync_status === 'SYNCED') return '已同步';
   if (draft.sync_status === 'IGNORED') return '已忽略';
   return null;
@@ -205,6 +224,41 @@ export function getCollectedLeadCreateCustomerResultMessage(
 }
 
 export function getCollectedLeadCreateCustomerErrorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+export function getCollectedLeadEnrichCustomerConfirmationMessage(
+  draft: Pick<CollectedLead, 'company_name' | 'customer_id' | 'contact_name' | 'mobile' | 'tel' | 'website' | 'email' | 'note'>,
+): string {
+  return [
+    '确认补充已有客户？',
+    `company_name: ${getCollectedLeadDraftDisplayValue(draft.company_name)}`,
+    `customer_id: ${getCollectedLeadDraftDisplayValue(draft.customer_id)}`,
+    `contact_name: ${getCollectedLeadDraftDisplayValue(draft.contact_name)}`,
+    `mobile / tel: ${getCollectedLeadDraftDisplayValue(draft.mobile)} / ${getCollectedLeadDraftDisplayValue(draft.tel)}`,
+    `website: ${getCollectedLeadDraftDisplayValue(draft.website)}`,
+    `email: ${getCollectedLeadDraftDisplayValue(draft.email)}`,
+    `note 摘要: ${getCollectedLeadDraftNoteSummary(draft.note)}`,
+    '只补充已有客户的空字段，不覆盖已有电话、联系人、等级、阶段、source。',
+  ].join('\n');
+}
+
+export function shouldRunCollectedLeadEnrichCustomer(
+  draft: Pick<CollectedLead, 'customer_id' | 'sync_status' | 'company_name' | 'contact_name' | 'mobile' | 'tel' | 'website' | 'email' | 'note'>,
+  confirm: ConfirmFn,
+): boolean {
+  if (!getCollectedLeadEnrichCustomerActionLabel(draft)) return false;
+  return confirm(getCollectedLeadEnrichCustomerConfirmationMessage(draft));
+}
+
+export function getCollectedLeadEnrichCustomerResultMessage(
+  result: SyncCollectedLeadEnrichCustomerResult,
+): string {
+  if (result.status === 'SUCCESS') return '已有客户补充成功';
+  return result.message;
+}
+
+export function getCollectedLeadEnrichCustomerErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
@@ -686,6 +740,38 @@ export default function LeadWorkbenchPage() {
     }
   }, [loadCollectedLeadDrafts, selectedItemId]);
 
+  const handleSyncCollectedLeadEnrichCustomer = useCallback(async (draft: CollectedLead) => {
+    if (!shouldRunCollectedLeadEnrichCustomer(draft, messageToConfirm => window.confirm(messageToConfirm))) {
+      return;
+    }
+
+    setIsSyncingCollectedLeadId(draft.id);
+    setError(null);
+    setMessage(null);
+    try {
+      const db = await getDb();
+      const result = await syncCollectedLeadEnrichCustomer(db, draft.id);
+      const workItemId = draft.work_item_id ?? selectedItemId;
+      if (workItemId) {
+        await loadCollectedLeadDrafts(workItemId);
+      }
+      const resultMessage = getCollectedLeadEnrichCustomerResultMessage(result);
+      if (result.status === 'SUCCESS') {
+        setMessage(resultMessage);
+      } else {
+        setError(resultMessage);
+      }
+    } catch (err) {
+      setError(getCollectedLeadEnrichCustomerErrorMessage(err));
+      const workItemId = draft.work_item_id ?? selectedItemId;
+      if (workItemId) {
+        await loadCollectedLeadDrafts(workItemId).catch(() => undefined);
+      }
+    } finally {
+      setIsSyncingCollectedLeadId(null);
+    }
+  }, [loadCollectedLeadDrafts, selectedItemId]);
+
   const statusActions = selectedItem ? getLeadWorkItemStatusActions(selectedItem.status) : [];
   const searchKeyword = selectedItem ? getSuggestedTanjiSearchKeyword(selectedItem) : '';
   const searchKeywordFallback = Boolean(selectedItem && !hasConfiguredTanjiSearchKeyword(selectedItem));
@@ -965,7 +1051,10 @@ export default function LeadWorkbenchPage() {
                         {collectedLeadDrafts.map(draft => {
                           const createCustomerLabel = getCollectedLeadCreateCustomerActionLabel(draft);
                           const createCustomerStateLabel = getCollectedLeadCreateCustomerStateLabel(draft);
+                          const enrichCustomerLabel = getCollectedLeadEnrichCustomerActionLabel(draft);
+                          const enrichCustomerStateLabel = getCollectedLeadEnrichCustomerStateLabel(draft);
                           const isCurrentDraftSyncing = isSyncingCollectedLeadId === draft.id;
+                          const collectedLeadStateLabel = createCustomerStateLabel ?? enrichCustomerStateLabel;
 
                           return (
                             <details className="lead-workbench-history-item" key={draft.id}>
@@ -987,6 +1076,7 @@ export default function LeadWorkbenchPage() {
                               <PreviewText label="import_row_id" value={draft.import_row_id || ''} />
                               <PreviewText label="customer_id" value={draft.customer_id || ''} />
                               <PreviewText label="created_customer_id" value={draft.created_customer_id || ''} />
+                              <PreviewText label="updated_customer_id" value={draft.updated_customer_id || ''} />
                               <div className="lead-workbench-collected-actions">
                                 {createCustomerLabel ? (
                                   <button
@@ -997,9 +1087,18 @@ export default function LeadWorkbenchPage() {
                                   >
                                     {isCurrentDraftSyncing ? '创建中' : createCustomerLabel}
                                   </button>
+                                ) : enrichCustomerLabel ? (
+                                  <button
+                                    type="button"
+                                    className="btn btn-sm btn-primary"
+                                    onClick={() => { void handleSyncCollectedLeadEnrichCustomer(draft); }}
+                                    disabled={Boolean(isSyncingCollectedLeadId)}
+                                  >
+                                    {isCurrentDraftSyncing ? '补充中' : enrichCustomerLabel}
+                                  </button>
                                 ) : (
-                                  createCustomerStateLabel && (
-                                    <span className="lead-workbench-collected-state">{createCustomerStateLabel}</span>
+                                  collectedLeadStateLabel && (
+                                    <span className="lead-workbench-collected-state">{collectedLeadStateLabel}</span>
                                   )
                                 )}
                               </div>

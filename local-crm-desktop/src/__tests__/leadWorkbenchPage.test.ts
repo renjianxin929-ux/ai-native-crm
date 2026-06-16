@@ -29,6 +29,11 @@ import {
   getCollectedLeadCreateCustomerErrorMessage,
   getCollectedLeadCreateCustomerResultMessage,
   getCollectedLeadCreateCustomerStateLabel,
+  getCollectedLeadEnrichCustomerActionLabel,
+  getCollectedLeadEnrichCustomerConfirmationMessage,
+  getCollectedLeadEnrichCustomerErrorMessage,
+  getCollectedLeadEnrichCustomerResultMessage,
+  getCollectedLeadEnrichCustomerStateLabel,
   getCollectedLeadDraftSaveConfirmationMessage,
   getCollectedLeadDraftSaveErrorMessage,
   getCollectedLeadDraftSaveSuccessMessage,
@@ -54,6 +59,7 @@ import {
   LEAD_WORKBENCH_ACTION_LABELS,
   LEAD_WORKBENCH_STATUS_FILTERS,
   shouldRunCollectedLeadCreateCustomer,
+  shouldRunCollectedLeadEnrichCustomer,
   shouldEnableCollectedLeadDraftSave,
   shouldRunCollectedLeadDraftSave,
   shouldEnableLeadCaptureSave,
@@ -551,14 +557,41 @@ describe('lead workbench page operations', () => {
     }))).toBe('已忽略');
   });
 
-  it('does not expose ENRICH UI for collected lead drafts linked to customers', () => {
-    const draft = createCollectedLead({
+  it('shows ENRICH_CUSTOMER actions only for unsynced or failed collected lead drafts with customer_id', () => {
+    expect(getCollectedLeadEnrichCustomerActionLabel(createCollectedLead({
       customer_id: 'customer-existing',
+      sync_status: 'UNSYNCED',
+    }))).toBe('补充已有客户');
+    expect(getCollectedLeadEnrichCustomerActionLabel(createCollectedLead({
+      customer_id: 'customer-existing',
+      sync_status: 'FAILED',
+    }))).toBe('重试补充已有客户');
+    expect(getCollectedLeadEnrichCustomerActionLabel(createCollectedLead({
+      customer_id: 'customer-existing',
+      sync_status: 'SYNCED',
+    }))).toBeNull();
+    expect(getCollectedLeadEnrichCustomerStateLabel(createCollectedLead({
+      customer_id: 'customer-existing',
+      sync_status: 'SYNCED',
+    }))).toBe('已同步');
+    expect(getCollectedLeadEnrichCustomerActionLabel(createCollectedLead({
+      customer_id: 'customer-existing',
+      sync_status: 'IGNORED',
+    }))).toBeNull();
+    expect(getCollectedLeadEnrichCustomerStateLabel(createCollectedLead({
+      customer_id: 'customer-existing',
+      sync_status: 'IGNORED',
+    }))).toBe('已忽略');
+  });
+
+  it('keeps CREATE_CUSTOMER actions for collected lead drafts without customer_id and hides ENRICH actions', () => {
+    const draft = createCollectedLead({
+      customer_id: null,
       sync_status: 'UNSYNCED',
     });
 
-    expect(getCollectedLeadCreateCustomerActionLabel(draft)).toBeNull();
-    expect(getCollectedLeadCreateCustomerStateLabel(draft)).toBe('已有客户补充待后续阶段支持');
+    expect(getCollectedLeadCreateCustomerActionLabel(draft)).toBe('创建 CRM 客户');
+    expect(getCollectedLeadEnrichCustomerActionLabel(draft)).toBeNull();
   });
 
   it('requires confirmation before CREATE_CUSTOMER and includes collected lead details', () => {
@@ -619,6 +652,72 @@ describe('lead workbench page operations', () => {
     expect(getCollectedLeadCreateCustomerErrorMessage(new Error('sync failed'))).toBe('sync failed');
   });
 
+  it('requires confirmation before ENRICH_CUSTOMER and includes collected lead details', () => {
+    const draft = createCollectedLead({
+      customer_id: 'customer-existing',
+      company_name: 'Enrich Co',
+      contact_name: '李四',
+      mobile: '13900139000',
+      tel: '020-88889999',
+      website: 'https://enrich.example.com',
+      email: 'ops@example.com',
+      note: 'enrich collected note',
+      sync_status: 'UNSYNCED',
+    });
+    const confirm = vi.fn().mockReturnValue(true);
+
+    const confirmation = getCollectedLeadEnrichCustomerConfirmationMessage(draft);
+
+    expect(confirmation).toContain('Enrich Co');
+    expect(confirmation).toContain('customer-existing');
+    expect(confirmation).toContain('李四');
+    expect(confirmation).toContain('13900139000');
+    expect(confirmation).toContain('020-88889999');
+    expect(confirmation).toContain('https://enrich.example.com');
+    expect(confirmation).toContain('ops@example.com');
+    expect(confirmation).toContain('enrich collected note');
+    expect(confirmation).toContain('只补充已有客户的空字段，不覆盖已有电话、联系人、等级、阶段、source');
+    expect(shouldRunCollectedLeadEnrichCustomer(draft, confirm)).toBe(true);
+    expect(confirm).toHaveBeenCalledWith(confirmation);
+  });
+
+  it('does not run ENRICH_CUSTOMER when confirmation is cancelled or action is unavailable', () => {
+    const confirm = vi.fn().mockReturnValue(false);
+
+    expect(shouldRunCollectedLeadEnrichCustomer(createCollectedLead({
+      customer_id: 'customer-existing',
+      sync_status: 'UNSYNCED',
+    }), confirm)).toBe(false);
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(shouldRunCollectedLeadEnrichCustomer(createCollectedLead({
+      customer_id: 'customer-existing',
+      sync_status: 'SYNCED',
+    }), confirm)).toBe(false);
+    expect(confirm).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows readable ENRICH_CUSTOMER success and failure messages', () => {
+    expect(getCollectedLeadEnrichCustomerResultMessage({
+      collectedLeadId: 'draft-1',
+      targetCustomerId: 'customer-existing',
+      status: 'SUCCESS',
+      message: 'Enriched customer from collected lead',
+    })).toBe('已有客户补充成功');
+    expect(getCollectedLeadEnrichCustomerResultMessage({
+      collectedLeadId: 'draft-1',
+      targetCustomerId: 'missing-customer',
+      status: 'CUSTOMER_NOT_FOUND',
+      message: 'Customer not found: missing-customer',
+    })).toBe('Customer not found: missing-customer');
+    expect(getCollectedLeadEnrichCustomerResultMessage({
+      collectedLeadId: 'draft-1',
+      targetCustomerId: 'customer-existing',
+      status: 'NO_ENRICHABLE_FIELDS',
+      message: 'No enrichable fields for collected lead',
+    })).toBe('No enrichable fields for collected lead');
+    expect(getCollectedLeadEnrichCustomerErrorMessage(new Error('enrich failed'))).toBe('enrich failed');
+  });
+
   it('updates status and refreshes list, counts, and detail data through the shared action', async () => {
     const db = await createReadyDb();
     try {
@@ -674,12 +773,17 @@ describe('lead workbench page operations', () => {
     expect(pageSource).toContain('setCollectedLeadDrafts([])');
     expect(pageSource).toContain('syncCollectedLeadCreateCustomer');
     expect(pageSource).toContain('getCollectedLeadCreateCustomerConfirmationMessage');
+    expect(pageSource).toContain('syncCollectedLeadEnrichCustomer');
+    expect(pageSource).toContain('getCollectedLeadEnrichCustomerConfirmationMessage');
     expect(pageSource).toContain('CRM 客户创建成功');
+    expect(pageSource).toContain('已有客户补充成功');
     expect(pageSource).toContain('创建 CRM 客户');
     expect(pageSource).toContain('重试创建 CRM 客户');
-    expect(pageSource).toContain('已有客户补充待后续阶段支持');
+    expect(pageSource).toContain('补充已有客户');
+    expect(pageSource).toContain('重试补充已有客户');
     expect(pageSource).toContain('disabled={Boolean(isSyncingCollectedLeadId)}');
     expect(pageSource).toContain('created_customer_id');
+    expect(pageSource).toContain('updated_customer_id');
     expect(pageSource).toContain('sync_status');
     expect(pageSource).toContain('完整 raw_text');
     expect(pageSource).toContain('完整 note');
@@ -696,9 +800,6 @@ describe('lead workbench page operations', () => {
     expect(pageSource).not.toContain('保存线索');
     expect(pageSource).not.toContain('生成线索');
     expect(pageSource).not.toContain('保存 collected_lead');
-    expect(pageSource).not.toContain('syncCollectedLeadEnrichCustomer');
-    expect(pageSource).not.toContain('重试补充已有客户');
-    expect(pageSource).not.toContain('onClick={() => { void handleSyncCollectedLeadEnrichCustomer');
     expect(pageSource).not.toContain('编辑采集线索');
     expect(pageSource).not.toContain('删除采集线索');
     expect(pageSource).not.toContain('编辑捕获记录');
