@@ -17,6 +17,10 @@ import {
   listLeadWorkItemsByStatus,
 } from '../lib/leadWorkbench/db';
 import { parseLeadContactText } from '../lib/leadWorkbench/parser';
+import {
+  syncCollectedLeadCreateCustomer,
+  type SyncCollectedLeadCreateCustomerResult,
+} from '../lib/leadWorkbench/syncAdapter';
 import { updateLeadWorkItemStatus } from '../lib/leadWorkbench/workItemActions';
 import type { LeadWorkItem, LeadWorkStatus } from '../lib/leadWorkbench/types';
 
@@ -147,6 +151,61 @@ export function getCollectedLeadDraftNoteSummary(note: string | null): string {
   const value = note?.trim() || '';
   if (!value) return '-';
   return value.length > 120 ? `${value.slice(0, 120)}...` : value;
+}
+
+export function getCollectedLeadCreateCustomerActionLabel(
+  draft: Pick<CollectedLead, 'customer_id' | 'sync_status'>,
+): string | null {
+  if (draft.customer_id) return null;
+  if (draft.sync_status === 'UNSYNCED') return '创建 CRM 客户';
+  if (draft.sync_status === 'FAILED') return '重试创建 CRM 客户';
+  return null;
+}
+
+export function getCollectedLeadCreateCustomerStateLabel(
+  draft: Pick<CollectedLead, 'customer_id' | 'sync_status'>,
+): string | null {
+  if (draft.customer_id) return '已有客户补充待后续阶段支持';
+  if (draft.sync_status === 'SYNCED') return '已同步';
+  if (draft.sync_status === 'IGNORED') return '已忽略';
+  return null;
+}
+
+export function getCollectedLeadCreateCustomerConfirmationMessage(
+  draft: Pick<CollectedLead, 'company_name' | 'contact_name' | 'mobile' | 'tel' | 'website' | 'email' | 'note'>,
+): string {
+  return [
+    '确认创建 CRM 客户？',
+    `company_name: ${getCollectedLeadDraftDisplayValue(draft.company_name)}`,
+    `contact_name: ${getCollectedLeadDraftDisplayValue(draft.contact_name)}`,
+    `mobile / tel: ${getCollectedLeadDraftDisplayValue(draft.mobile)} / ${getCollectedLeadDraftDisplayValue(draft.tel)}`,
+    `website: ${getCollectedLeadDraftDisplayValue(draft.website)}`,
+    `email: ${getCollectedLeadDraftDisplayValue(draft.email)}`,
+    `note 摘要: ${getCollectedLeadDraftNoteSummary(draft.note)}`,
+    '将创建新的 CRM 客户，不会补充已有客户。',
+  ].join('\n');
+}
+
+export function shouldRunCollectedLeadCreateCustomer(
+  draft: Pick<CollectedLead, 'customer_id' | 'sync_status' | 'company_name' | 'contact_name' | 'mobile' | 'tel' | 'website' | 'email' | 'note'>,
+  confirm: ConfirmFn,
+): boolean {
+  if (!getCollectedLeadCreateCustomerActionLabel(draft)) return false;
+  return confirm(getCollectedLeadCreateCustomerConfirmationMessage(draft));
+}
+
+export function getCollectedLeadCreateCustomerResultMessage(
+  result: SyncCollectedLeadCreateCustomerResult,
+): string {
+  if (result.status === 'SUCCESS') return 'CRM 客户创建成功';
+  if (result.status === 'DUPLICATE_PHONE' || result.status === 'DUPLICATE_NAME') {
+    return `发现重复客户，未创建 CRM 客户：${result.message}`;
+  }
+  return result.message;
+}
+
+export function getCollectedLeadCreateCustomerErrorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
 
 export function isLeadCaptureHistoryVisible(item: LeadWorkItem | null): boolean {
@@ -403,6 +462,7 @@ export default function LeadWorkbenchPage() {
   const [isUpdating, setIsUpdating] = useState(false);
   const [isSavingCapture, setIsSavingCapture] = useState(false);
   const [isSavingCollectedLead, setIsSavingCollectedLead] = useState(false);
+  const [isSyncingCollectedLeadId, setIsSyncingCollectedLeadId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [pastePreviewState, setPastePreviewState] = useState<LeadPastePreviewState>(getEmptyLeadPastePreviewState);
@@ -593,6 +653,38 @@ export default function LeadWorkbenchPage() {
       setIsSavingCollectedLead(false);
     }
   }, [collectedLeadDraft, loadCollectedLeadDrafts, selectedItem]);
+
+  const handleSyncCollectedLeadCreateCustomer = useCallback(async (draft: CollectedLead) => {
+    if (!shouldRunCollectedLeadCreateCustomer(draft, messageToConfirm => window.confirm(messageToConfirm))) {
+      return;
+    }
+
+    setIsSyncingCollectedLeadId(draft.id);
+    setError(null);
+    setMessage(null);
+    try {
+      const db = await getDb();
+      const result = await syncCollectedLeadCreateCustomer(db, draft.id);
+      const workItemId = draft.work_item_id ?? selectedItemId;
+      if (workItemId) {
+        await loadCollectedLeadDrafts(workItemId);
+      }
+      const resultMessage = getCollectedLeadCreateCustomerResultMessage(result);
+      if (result.status === 'SUCCESS') {
+        setMessage(resultMessage);
+      } else {
+        setError(resultMessage);
+      }
+    } catch (err) {
+      setError(getCollectedLeadCreateCustomerErrorMessage(err));
+      const workItemId = draft.work_item_id ?? selectedItemId;
+      if (workItemId) {
+        await loadCollectedLeadDrafts(workItemId).catch(() => undefined);
+      }
+    } finally {
+      setIsSyncingCollectedLeadId(null);
+    }
+  }, [loadCollectedLeadDrafts, selectedItemId]);
 
   const statusActions = selectedItem ? getLeadWorkItemStatusActions(selectedItem.status) : [];
   const searchKeyword = selectedItem ? getSuggestedTanjiSearchKeyword(selectedItem) : '';
@@ -870,26 +962,50 @@ export default function LeadWorkbenchPage() {
                       <div className="empty-state lead-workbench-history-empty">{getCollectedLeadDraftHistoryEmptyMessage()}</div>
                     ) : (
                       <div className="lead-workbench-history-list">
-                        {collectedLeadDrafts.map(draft => (
-                          <details className="lead-workbench-history-item" key={draft.id}>
-                            <summary className="lead-workbench-collected-summary">
-                              <span>{draft.created_at}</span>
-                              <span className="badge badge-info">{draft.sync_status}</span>
-                              <span>{getCollectedLeadDraftDisplayValue(draft.contact_name)}</span>
-                              <span>{getCollectedLeadDraftDisplayValue(draft.position)}</span>
-                              <span>{getCollectedLeadDraftDisplayValue(draft.mobile)}</span>
-                              <span>{getCollectedLeadDraftDisplayValue(draft.tel)}</span>
-                              <span>{getCollectedLeadDraftDisplayValue(draft.website)}</span>
-                              <span>{getCollectedLeadDraftDisplayValue(draft.email)}</span>
-                              <span>{getCollectedLeadDraftNoteSummary(draft.note)}</span>
-                            </summary>
-                            <PreviewText label="完整 raw_text" value={draft.raw_text || ''} />
-                            <PreviewText label="完整 note" value={draft.note || ''} />
-                            <PreviewText label="work_item_id" value={draft.work_item_id || ''} />
-                            <PreviewText label="import_row_id" value={draft.import_row_id || ''} />
-                            <PreviewText label="customer_id" value={draft.customer_id || ''} />
-                          </details>
-                        ))}
+                        {collectedLeadDrafts.map(draft => {
+                          const createCustomerLabel = getCollectedLeadCreateCustomerActionLabel(draft);
+                          const createCustomerStateLabel = getCollectedLeadCreateCustomerStateLabel(draft);
+                          const isCurrentDraftSyncing = isSyncingCollectedLeadId === draft.id;
+
+                          return (
+                            <details className="lead-workbench-history-item" key={draft.id}>
+                              <summary className="lead-workbench-collected-summary">
+                                <span>{draft.created_at}</span>
+                                <span className="badge badge-info">{draft.sync_status}</span>
+                                <span>{getCollectedLeadDraftDisplayValue(draft.contact_name)}</span>
+                                <span>{getCollectedLeadDraftDisplayValue(draft.position)}</span>
+                                <span>{getCollectedLeadDraftDisplayValue(draft.mobile)}</span>
+                                <span>{getCollectedLeadDraftDisplayValue(draft.tel)}</span>
+                                <span>{getCollectedLeadDraftDisplayValue(draft.website)}</span>
+                                <span>{getCollectedLeadDraftDisplayValue(draft.email)}</span>
+                                <span>{getCollectedLeadDraftNoteSummary(draft.note)}</span>
+                              </summary>
+                              <PreviewText label="company_name" value={draft.company_name || ''} />
+                              <PreviewText label="完整 raw_text" value={draft.raw_text || ''} />
+                              <PreviewText label="完整 note" value={draft.note || ''} />
+                              <PreviewText label="work_item_id" value={draft.work_item_id || ''} />
+                              <PreviewText label="import_row_id" value={draft.import_row_id || ''} />
+                              <PreviewText label="customer_id" value={draft.customer_id || ''} />
+                              <PreviewText label="created_customer_id" value={draft.created_customer_id || ''} />
+                              <div className="lead-workbench-collected-actions">
+                                {createCustomerLabel ? (
+                                  <button
+                                    type="button"
+                                    className="btn btn-sm btn-primary"
+                                    onClick={() => { void handleSyncCollectedLeadCreateCustomer(draft); }}
+                                    disabled={Boolean(isSyncingCollectedLeadId)}
+                                  >
+                                    {isCurrentDraftSyncing ? '创建中' : createCustomerLabel}
+                                  </button>
+                                ) : (
+                                  createCustomerStateLabel && (
+                                    <span className="lead-workbench-collected-state">{createCustomerStateLabel}</span>
+                                  )
+                                )}
+                              </div>
+                            </details>
+                          );
+                        })}
                       </div>
                     )}
                   </section>

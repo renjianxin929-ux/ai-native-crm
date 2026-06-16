@@ -1071,6 +1071,22 @@ tr.clickable {
   overflow-wrap: anywhere;
 }
 
+.lead-workbench-collected-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.lead-workbench-collected-state {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
 .lead-workbench-detail-grid {
   display: grid;
   grid-template-columns: 1fr;
