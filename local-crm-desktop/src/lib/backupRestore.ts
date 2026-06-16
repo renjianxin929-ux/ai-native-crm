@@ -45,6 +45,13 @@ export type BackupValidationResult = {
   missingTables: BackupTableName[];
 };
 
+export type RestoreBackupResult = {
+  ok: true;
+  isLegacy: boolean;
+  restoredCounts: Record<BackupTableName, number>;
+  warnings: string[];
+};
+
 export async function buildFullBackupPayload(
   db: Pick<DatabaseLike, 'select'>,
   options: {
@@ -171,6 +178,56 @@ export function getRestoreDeleteOrder(): BackupTableName[] {
   return [...getRestoreTableOrder()].reverse();
 }
 
+export async function restoreBackupPayloadWithDb(
+  db: Pick<DatabaseLike, 'execute'>,
+  rawPayload: unknown,
+): Promise<RestoreBackupResult> {
+  const normalized = normalizeBackupPayload(rawPayload);
+  const validation = validateBackupPayload(normalized);
+  if (!validation.valid) {
+    throw new Error(`Invalid backup payload: ${validation.errors.join(' ')}`);
+  }
+
+  validateRestoreRows(normalized.tables);
+
+  const restoredCounts = Object.fromEntries(
+    BACKUP_TABLES.map((table) => [table, normalized.tables[table].length]),
+  ) as Record<BackupTableName, number>;
+  const warnings = normalized.isLegacy
+    ? normalized.missingTables.map((table) => `Legacy backup missing table ${table}; restored as empty array.`)
+    : [];
+
+  await db.execute('BEGIN');
+  try {
+    for (const table of getRestoreDeleteOrder()) {
+      await db.execute(`DELETE FROM ${table}`);
+    }
+
+    for (const table of getRestoreTableOrder()) {
+      for (const row of normalized.tables[table]) {
+        await db.execute(buildInsertSql(table, row), Object.values(row));
+      }
+    }
+
+    await db.execute('COMMIT');
+  } catch (error) {
+    try {
+      await db.execute('ROLLBACK');
+    } catch {
+      // Preserve the original restore failure for callers.
+    }
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Restore failed and rolled back: ${message}`, { cause: error });
+  }
+
+  return {
+    ok: true,
+    isLegacy: normalized.isLegacy,
+    restoredCounts,
+    warnings,
+  };
+}
+
 function createEmptyBackupTables(): BackupTablesPayload {
   return Object.fromEntries(
     BACKUP_TABLES.map((table) => [table, []]),
@@ -186,6 +243,34 @@ function getLegacyTableValue(raw: Record<string, unknown>, table: BackupTableNam
     default:
       return raw[table];
   }
+}
+
+function validateRestoreRows(tables: BackupTablesPayload): void {
+  for (const table of BACKUP_TABLES) {
+    for (const row of tables[table]) {
+      if (!isRecord(row)) {
+        throw new Error(`Row in ${table} must be an object.`);
+      }
+      if (Object.keys(row).length === 0) {
+        throw new Error(`Row in ${table} must not be empty.`);
+      }
+      for (const column of Object.keys(row)) {
+        if (!isSafeSqlIdentifier(column)) {
+          throw new Error(`Column ${column} in ${table} is not a safe SQL identifier.`);
+        }
+      }
+    }
+  }
+}
+
+function buildInsertSql(table: BackupTableName, row: Record<string, unknown>): string {
+  const columns = Object.keys(row);
+  const placeholders = columns.map(() => '?').join(', ');
+  return `INSERT OR REPLACE INTO ${table} (${columns.join(', ')}) VALUES (${placeholders})`;
+}
+
+function isSafeSqlIdentifier(value: string): boolean {
+  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(value);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

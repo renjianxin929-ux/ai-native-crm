@@ -283,9 +283,6 @@ describe('backup restore payload normalization', () => {
     const settingsSrc = readFileSync(new URL('../../src/pages/SettingsPage.tsx', import.meta.url), 'utf8');
 
     expect(backupRestoreSrc).not.toContain('getDb(');
-    expect(backupRestoreSrc).not.toContain('BEGIN');
-    expect(backupRestoreSrc).not.toContain('COMMIT');
-    expect(backupRestoreSrc).not.toContain('ROLLBACK');
     expect(settingsSrc).toContain('const handleRestoreConfirm = async () => {');
     expect(settingsSrc).toContain('INSERT OR REPLACE INTO customers');
     expect(settingsSrc).not.toContain('normalizeBackupPayload');
