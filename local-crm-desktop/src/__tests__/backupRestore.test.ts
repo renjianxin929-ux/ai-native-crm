@@ -86,14 +86,15 @@ describe('backup export payload', () => {
     expect(executes).toEqual([]);
   });
 
-  it('keeps SettingsPage restore logic in place while delegating only backup export', () => {
+  it('keeps SettingsPage backup export delegated while restore uses the complete restore entrypoint', () => {
     const src = readFileSync(new URL('../../src/pages/SettingsPage.tsx', import.meta.url), 'utf8');
 
-    expect(src).toContain("import { buildFullBackupPayload } from '../lib/backupRestore'");
+    expect(src).toContain('buildFullBackupPayload');
     expect(src).toContain('const handleRestoreConfirm = async () => {');
-    expect(src).toContain('INSERT OR REPLACE INTO customers');
-    expect(src).toContain('INSERT OR REPLACE INTO follow_up_records');
-    expect(src).toContain('INSERT OR REPLACE INTO visit_records');
+    expect(src).toContain('restoreBackupPayloadWithDb');
+    expect(src).not.toContain('INSERT OR REPLACE INTO customers');
+    expect(src).not.toContain('INSERT OR REPLACE INTO follow_up_records');
+    expect(src).not.toContain('INSERT OR REPLACE INTO visit_records');
   });
 
   it('does not modify protected import surfaces during backup work', () => {
@@ -278,14 +279,14 @@ describe('backup restore payload normalization', () => {
     ]);
   });
 
-  it('keeps restore helpers pure and leaves SettingsPage restore execution unchanged', () => {
+  it('keeps restore helpers free of getDb while SettingsPage uses restore validation helpers', () => {
     const backupRestoreSrc = readFileSync(new URL('../../src/lib/backupRestore.ts', import.meta.url), 'utf8');
     const settingsSrc = readFileSync(new URL('../../src/pages/SettingsPage.tsx', import.meta.url), 'utf8');
 
     expect(backupRestoreSrc).not.toContain('getDb(');
     expect(settingsSrc).toContain('const handleRestoreConfirm = async () => {');
-    expect(settingsSrc).toContain('INSERT OR REPLACE INTO customers');
-    expect(settingsSrc).not.toContain('normalizeBackupPayload');
-    expect(settingsSrc).not.toContain('validateBackupPayload');
+    expect(settingsSrc).toContain('normalizeBackupPayload');
+    expect(settingsSrc).toContain('validateBackupPayload');
+    expect(settingsSrc).toContain('restoreBackupPayloadWithDb');
   });
 });

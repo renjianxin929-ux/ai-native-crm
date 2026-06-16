@@ -230,7 +230,8 @@ describe('restoreBackupPayloadWithDb', () => {
 
     expect(backupRestoreSrc).not.toContain('getDb(');
     expect(settingsSrc).toContain('const handleRestoreConfirm = async () => {');
-    expect(settingsSrc).not.toContain('restoreBackupPayloadWithDb');
+    expect(settingsSrc).toContain('restoreBackupPayloadWithDb');
+    expect(settingsSrc).not.toContain('INSERT OR REPLACE INTO customers');
     expect(dataImportPage.length).toBeGreaterThan(0);
     expect(importer.length).toBeGreaterThan(0);
   });

@@ -3,7 +3,87 @@ import { useNavigate } from 'react-router-dom';
 import { Database, FolderOpen, Brain, ArrowRight, Upload, AlertTriangle } from 'lucide-react';
 import { getDbPath } from '../lib/db';
 import { APP_VERSION } from '../lib/version';
-import { buildFullBackupPayload } from '../lib/backupRestore';
+import {
+  buildFullBackupPayload,
+  normalizeBackupPayload,
+  restoreBackupPayloadWithDb,
+  validateBackupPayload,
+  type BackupValidationResult,
+  type NormalizedBackupPayload,
+  type RestoreBackupResult,
+} from '../lib/backupRestore';
+
+export type RestorePreview = {
+  rawPayload: unknown;
+  normalized: NormalizedBackupPayload;
+  validation: BackupValidationResult;
+  errorMessage: string;
+};
+
+export function buildRestorePreviewFromText(text: string): RestorePreview {
+  try {
+    const rawPayload = JSON.parse(text);
+    const normalized = normalizeBackupPayload(rawPayload);
+    const validation = validateBackupPayload(normalized);
+    return {
+      rawPayload,
+      normalized,
+      validation,
+      errorMessage: validation.errors.join(' '),
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const normalized = normalizeBackupPayload(null);
+    return {
+      rawPayload: null,
+      normalized,
+      validation: {
+        valid: false,
+        errors: [`Invalid JSON: ${message}`],
+        missingTables: [],
+      },
+      errorMessage: `Invalid JSON: ${message}`,
+    };
+  }
+}
+
+export function buildRestoreConfirmationMessage(preview: RestorePreview): string {
+  const lines = [
+    'Restore will overwrite current local CRM data.',
+    'Please manually export a backup before restoring.',
+    'New-format backups restore all business tables.',
+    'Legacy backups may not include Lead Workbench data.',
+    'Restore failure will automatically roll back.',
+    'Current data should not be left in a half-restored state.',
+  ];
+
+  if (preview.normalized.isLegacy) {
+    lines.push('Detected legacy backup.');
+  }
+
+  if (preview.normalized.missingTables.length > 0) {
+    lines.push(`Missing tables: ${preview.normalized.missingTables.join(', ')}`);
+  }
+
+  if (!preview.validation.valid) {
+    lines.push(`Validation errors: ${preview.validation.errors.join(' ')}`);
+  }
+
+  return lines.join('\n');
+}
+
+export function formatRestoreSuccessMessage(result: RestoreBackupResult): string {
+  const counts = Object.entries(result.restoredCounts)
+    .map(([table, count]) => `${table}: ${count}`)
+    .join(', ');
+  const warnings = result.warnings.length > 0 ? ` Warnings: ${result.warnings.join(' ')}` : '';
+  return `Restore succeeded. Legacy backup: ${result.isLegacy ? 'yes' : 'no'}. Restored counts: ${counts}.${warnings} Refresh the page to view restored data.`;
+}
+
+export function formatRestoreFailureMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return `Restore failed: ${message}. The restore was rolled back, and current data is not left in a half-restored state.`;
+}
 
 export default function SettingsPage() {
   const navigate = useNavigate();
@@ -11,11 +91,14 @@ export default function SettingsPage() {
   const [dbPath, setDbPath] = useState<string>('');
   const [restoreWarning, setRestoreWarning] = useState(false);
   const [restoreFile, setRestoreFile] = useState<File | null>(null);
+  const [restorePreview, setRestorePreview] = useState<RestorePreview | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    getDbPath().then(setDbPath).catch(() => setMsg('无法获取数据库路径'));
+    getDbPath().then(setDbPath).catch(() => setMsg('Unable to get database path'));
   }, []);
+
+  const isErrorMessage = msg.toLowerCase().includes('failed') || msg.toLowerCase().includes('unable');
 
   const handleBackup = async () => {
     try {
@@ -35,117 +118,59 @@ export default function SettingsPage() {
       setMsg(`Backup success: exported ${payload.counts.customers} customers, ${payload.counts.follow_up_records} follow-ups, ${payload.counts.visit_records} visits, ${payload.counts.tasks} tasks, and Lead Workbench data.`);
     } catch (e) {
       const errMsg = e instanceof Error ? e.message : String(e);
-      setMsg(`备份失败: ${errMsg}`);
+      setMsg(`Backup failed: ${errMsg}`);
     }
   };
 
-  const handleRestoreSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleRestoreSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    setRestoreFile(file);
-    setRestoreWarning(true);
     e.target.value = '';
+
+    try {
+      const text = await file.text();
+      const preview = buildRestorePreviewFromText(text);
+      setRestoreFile(file);
+      setRestorePreview(preview);
+      setRestoreWarning(true);
+    } catch (error) {
+      setRestoreFile(file);
+      setRestorePreview(null);
+      setRestoreWarning(true);
+      setMsg(`Restore preview failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
   };
 
   const handleRestoreConfirm = async () => {
-    if (!restoreFile) return;
+    if (!restoreFile || !restorePreview) return;
+
+    if (!restorePreview.validation.valid) {
+      setMsg(`Restore validation failed: ${restorePreview.errorMessage}`);
+      return;
+    }
+
     try {
-      const text = await restoreFile.text();
-      const backup = JSON.parse(text);
-
-      if (!backup.version || !backup.customers) {
-        setMsg('恢复失败: 无效的备份文件格式');
-        setRestoreWarning(false);
-        return;
-      }
-
-      const confirmed = confirm(
-        `⚠️ 即将恢复备份数据:\n` +
-        `- 备份版本: ${backup.version}\n` +
-        `- 导出时间: ${backup.exported_at || '未知'}\n` +
-        `- 客户: ${backup.counts?.customers || backup.customers.length} 条\n` +
-        `- 跟进记录: ${backup.counts?.follow_up_records || (backup.followUps?.length || 0)} 条\n\n` +
-        `恢复操作将覆盖当前数据库中的同名数据，是否继续？`
-      );
-
-      if (!confirmed) {
-        setRestoreWarning(false);
-        return;
-      }
-
       const { getDb } = await import('../lib/db');
       const db = await getDb();
-
-      for (const c of backup.customers) {
-        await db.execute(
-          `INSERT OR REPLACE INTO customers (id, name, customer_grade, stage, contact_method, wechat_id,
-           phone_number, wechat_search_status, is_key_decision_maker, wechat_add_status, has_replied,
-           intent_level, phone_feedback, can_schedule_visit, visit_scheduled_at,
-           rough_visit_time_text, parsed_visit_reminder_at, time_parse_status,
-           time_parse_note, next_follow_up_at, last_contacted_at, last_feedback_type,
-           next_action, no_show_count, lost_reason, payment_status, deal_amount,
-           paid_at, closed_at, website, region, industry,
-           contact_person, email, address, pitch_angle, qualification_reason, source,
-           notes, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [c.id, c.name, c.customer_grade, c.stage, c.contact_method, c.wechat_id,
-           c.phone_number, c.wechat_search_status, c.is_key_decision_maker, c.wechat_add_status, c.has_replied,
-           c.intent_level, c.phone_feedback, c.can_schedule_visit, c.visit_scheduled_at,
-           c.rough_visit_time_text, c.parsed_visit_reminder_at, c.time_parse_status,
-           c.time_parse_note, c.next_follow_up_at, c.last_contacted_at, c.last_feedback_type,
-           c.next_action, c.no_show_count, c.lost_reason, c.payment_status, c.deal_amount,
-           c.paid_at, c.closed_at, c.website, c.region, c.industry,
-           c.contact_person, c.email, c.address, c.pitch_angle, c.qualification_reason, c.source,
-           c.notes, c.created_at, c.updated_at],
-        );
-      }
-
-      if (backup.followUps) {
-        for (const f of backup.followUps) {
-          await db.execute(
-            `INSERT OR REPLACE INTO follow_up_records (id, customer_id, title, contact_channel,
-             contact_result, feedback_notes, intent_assessment, suggested_grade, next_action,
-             next_follow_up_at, is_completed, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [f.id, f.customer_id, f.title, f.contact_channel,
-             f.contact_result, f.feedback_notes, f.intent_assessment, f.suggested_grade, f.next_action,
-             f.next_follow_up_at, f.is_completed, f.created_at, f.updated_at],
-          );
-        }
-      }
-
-      if (backup.visits) {
-        for (const v of backup.visits) {
-          await db.execute(
-            `INSERT OR REPLACE INTO visit_records (id, customer_id, title, visited_at, visit_notes,
-             customer_concerns, intent_after_visit, visit_outcome, next_action,
-             expected_contract_at, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [v.id, v.customer_id, v.title, v.visited_at, v.visit_notes,
-             v.customer_concerns, v.intent_after_visit, v.visit_outcome, v.next_action,
-             v.expected_contract_at, v.created_at, v.updated_at],
-          );
-        }
-      }
-
-      setMsg(`恢复成功! 已恢复 ${backup.customers.length} 个客户及相关记录。请刷新页面查看。`);
+      const result = await restoreBackupPayloadWithDb(db, restorePreview.rawPayload);
+      setMsg(formatRestoreSuccessMessage(result));
+      setRestoreWarning(false);
+      setRestoreFile(null);
+      setRestorePreview(null);
     } catch (e) {
-      setMsg(`恢复失败: ${e instanceof Error ? e.message : String(e)}`);
+      setMsg(formatRestoreFailureMessage(e));
     }
-    setRestoreWarning(false);
-    setRestoreFile(null);
   };
-
   return (
     <div>
       <div className="page-header">
-        <h2>设置</h2>
+        <h2>Settings</h2>
       </div>
       <div className="page-body">
         <div className="card" style={{ marginBottom: 20 }}>
-          <h3 className="section-title">数据库</h3>
+          <h3 className="section-title">Database</h3>
           <div style={{ marginBottom: 12, color: 'var(--text-secondary)' }}>
-            <p style={{ marginBottom: 8 }}>数据存储在本地 SQLite 数据库中</p>
+            <p style={{ marginBottom: 8 }}>Data is stored in the local SQLite database.</p>
             {dbPath ? (
               <p style={{
                 fontSize: 13, fontFamily: 'monospace', background: 'var(--bg-secondary)',
@@ -155,15 +180,15 @@ export default function SettingsPage() {
                 {dbPath}
               </p>
             ) : (
-              <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>正在获取数据库路径...</p>
+              <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>Loading database path...</p>
             )}
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <button className="btn" onClick={handleBackup}>
-              <Database size={16} /> 导出备份
+              <Database size={16} /> Export Backup
             </button>
             <button className="btn" onClick={() => fileInputRef.current?.click()}>
-              <Upload size={16} /> 恢复备份
+              <Upload size={16} /> Restore Backup
             </button>
             <input
               ref={fileInputRef}
@@ -176,8 +201,8 @@ export default function SettingsPage() {
           {msg && (
             <p style={{
               marginTop: 12, padding: '8px 12px', borderRadius: 4, fontSize: 14,
-              background: msg.includes('失败') ? '#fef2f2' : '#f0fdf4',
-              color: msg.includes('失败') ? '#dc2626' : '#16a34a',
+              background: isErrorMessage ? '#fef2f2' : '#f0fdf4',
+              color: isErrorMessage ? '#dc2626' : '#16a34a',
             }}>
               {msg}
             </p>
@@ -191,18 +216,30 @@ export default function SettingsPage() {
           }}>
             <div className="card" style={{ maxWidth: 480, width: '90%' }}>
               <h3 style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#f59e0b', marginBottom: 16 }}>
-                <AlertTriangle size={20} /> 确认恢复备份
+                <AlertTriangle size={20} /> Confirm Restore
               </h3>
               <p style={{ marginBottom: 12, color: 'var(--text-secondary)', fontSize: 14 }}>
-                即将从备份文件 <strong>{restoreFile.name}</strong> 恢复数据。
-                恢复操作将覆盖当前数据库中的同名数据。
+                Restore from backup file <strong>{restoreFile.name}</strong>.
               </p>
+              {restorePreview && (
+                <pre style={{
+                  marginBottom: 12,
+                  whiteSpace: 'pre-wrap',
+                  fontSize: 13,
+                  color: restorePreview.validation.valid ? 'var(--text-secondary)' : '#dc2626',
+                  background: 'var(--bg-secondary)',
+                  padding: '8px 10px',
+                  borderRadius: 4,
+                }}>
+                  {buildRestoreConfirmationMessage(restorePreview)}
+                </pre>
+              )}
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                <button className="btn" onClick={() => { setRestoreWarning(false); setRestoreFile(null); }}>
-                  取消
+                <button className="btn" onClick={() => { setRestoreWarning(false); setRestoreFile(null); setRestorePreview(null); }}>
+                  Cancel
                 </button>
                 <button className="btn btn-primary" onClick={handleRestoreConfirm}>
-                  确认恢复
+                  Confirm Restore
                 </button>
               </div>
             </div>
@@ -210,20 +247,20 @@ export default function SettingsPage() {
         )}
 
         <div className="card" style={{ marginBottom: 20 }}>
-          <h3 className="section-title">关于</h3>
+          <h3 className="section-title">About</h3>
           <p style={{ color: 'var(--text-secondary)' }}>
-            销售CRM 个人版 v{APP_VERSION}<br />
-            本地桌面CRM，数据完全存储在本机
+            Sales CRM personal edition v{APP_VERSION}<br />
+            Local desktop CRM with data stored on this machine.
           </p>
         </div>
 
         <div className="card" style={{ cursor: 'pointer' }} onClick={() => navigate('/settings/ai')}>
           <h3 className="section-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span><Brain size={16} style={{ marginRight: 4, verticalAlign: 'middle' }} /> AI 设置</span>
+            <span><Brain size={16} style={{ marginRight: 4, verticalAlign: 'middle' }} /> AI Settings</span>
             <ArrowRight size={16} style={{ color: '#9ca3af' }} />
           </h3>
           <p style={{ color: 'var(--text-secondary)', marginBottom: 12 }}>
-            配置 AI 服务商和 API Key，启用智能分析、总结和建议功能。
+            Configure AI providers and API keys for analysis, summaries, and suggestions.
           </p>
         </div>
       </div>
