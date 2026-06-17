@@ -22,6 +22,7 @@ import {
   buildLeadImportSaveConfirmation,
   executeLeadImportBatchFromCenter,
   getLeadImportBatchExecutionState,
+  refreshLeadImportBatchBrowser,
   LEAD_IMPORT_CENTER_ACTION_LABELS,
   LEAD_IMPORT_SAMPLE_JSON,
   formatLeadBatchTypeLabel,
@@ -286,6 +287,38 @@ describe('lead import center preview', () => {
       expect(selectedRows.map(row => row.company_name)).toEqual(['Second Lookup Co', 'Second Reserve Co']);
       expect(await db.select('SELECT * FROM customers')).toHaveLength(0);
       expect(await db.select('SELECT * FROM lead_work_items')).toHaveLength(0);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('refreshes the selected batch rows when the batch browser refreshes', async () => {
+    const db = await createReadyDb();
+    try {
+      const imported = await importLeadRowsToBatch(
+        db,
+        { batch_name: 'Refresh selected rows batch', batch_type: 'AI_DAILY', source_label: null },
+        [
+          { company_name: 'Refresh Phone Co', mobile: '13800138000', score: 10 },
+          { company_name: 'Refresh Lookup Co', score: 85 },
+        ],
+      );
+
+      const refreshed = await refreshLeadImportBatchBrowser({
+        db,
+        selectedBatchId: imported.batch.id,
+      });
+      const stats = buildLeadImportBatchStats(refreshed.selectedRows);
+
+      expect(refreshed.batches[0].id).toBe(imported.batch.id);
+      expect(refreshed.selectedRows).toHaveLength(2);
+      expect(stats.decisionCounts.DIRECT_TO_CRM).toBe(1);
+      expect(stats.decisionCounts.CRM_WITH_LOOKUP).toBe(1);
+      expect(stats.statusCounts.PENDING).toBe(2);
+      expect(getLeadImportBatchExecutionState(refreshed.selectedRows, imported.batch.total_rows)).toMatchObject({
+        canExecute: true,
+        executableRows: 2,
+      });
     } finally {
       db.close();
     }

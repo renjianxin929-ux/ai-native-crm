@@ -36,6 +36,10 @@ type CustomerAiResult = {
   analysis?: CustomerActionAnalysis;
 };
 
+export function formatAIDraftsButtonLabel(count: number): string {
+  return count > 0 ? `查看 AI 草稿（${count}）` : '查看 AI 草稿';
+}
+
 export function buildCustomerActionAnalysis(
   customer: Customer,
   followUps: FollowUpRecord[],
@@ -230,6 +234,9 @@ export default function CustomerDetail({ onRefresh }: Props) {
     if (c) {
       setFollowUps(await listFollowUps(id));
       setVisits(await listVisits(id));
+      setDrafts(await listAIDrafts(id));
+    } else {
+      setDrafts([]);
     }
   }, [id]);
 
@@ -654,7 +661,7 @@ export default function CustomerDetail({ onRefresh }: Props) {
                   <Brain size={14} /> AI 分析
                 </button>
                 <button className="btn" onClick={handleLoadDrafts}>
-                  查看 AI 草稿
+                  {formatAIDraftsButtonLabel(drafts.length)}
                 </button>
               </div>
             </div>

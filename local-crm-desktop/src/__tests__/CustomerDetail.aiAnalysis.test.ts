@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildCustomerActionAnalysis,
   formatCustomerAnalysisTextForDraft,
+  formatAIDraftsButtonLabel,
 } from '../pages/CustomerDetail';
 import type { Customer, FollowUpRecord } from '../lib/types';
 
@@ -130,6 +131,10 @@ describe('CustomerDetail AI action analysis', () => {
     expect(formatCustomerAnalysisTextForDraft(strong)).toContain('优先跟进');
     expect(strong.nextActions.some(action => action.includes('确认需求'))).toBe(true);
     expect(weak.nextActions.some(action => action.includes('5 分钟'))).toBe(true);
+  });
+  it('shows a visible AI draft count on the customer detail page', () => {
+    expect(formatAIDraftsButtonLabel(0)).toBe('查看 AI 草稿');
+    expect(formatAIDraftsButtonLabel(2)).toBe('查看 AI 草稿（2）');
   });
 });
 

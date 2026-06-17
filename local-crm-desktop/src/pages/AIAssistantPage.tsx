@@ -4,9 +4,15 @@ import { Image, FileText, Mic, Upload, RefreshCw, CheckCircle2, XCircle, AlertTr
 import { getDb, getCustomer } from '../lib/db';
 import { getDefaultDeepSeekConfig } from '../lib/textAIProvider';
 import { getDefaultQwenMultimodalConfig } from '../lib/multimodalProvider';
-import { analyzeWechatScreenshot, analyzeCallTranscript, imageFileToBase64 } from '../lib/aiDraft';
+import {
+  analyzeWechatScreenshot,
+  analyzeCallTranscript,
+  createDraftFromCallAnalysis,
+  createDraftFromScreenshotAnalysis,
+  imageFileToBase64,
+} from '../lib/aiDraft';
 import { createAIDraft } from '../lib/db';
-import type { TextAIConfig, MultimodalConfig, ScreenshotAnalysis, CallAnalysis, Customer } from '../lib/types';
+import type { TextAIConfig, MultimodalConfig, ScreenshotAnalysis, CallAnalysis, Customer, AIDraftInput } from '../lib/types';
 
 async function loadTextConfig(): Promise<TextAIConfig> {
   try {
@@ -36,6 +42,27 @@ const TABS: { key: TabType; label: string; icon: typeof Image; disabled?: boolea
   { key: 'call', label: '通话文本分析', icon: FileText },
   { key: 'audio', label: '音频识别', icon: Mic, disabled: true },
 ];
+
+function requireLinkedCustomerId(customer: Customer | null): string {
+  if (!customer?.id) {
+    throw new Error('请先从客户详情页进入 AI 助手，确保草稿关联当前客户。');
+  }
+  return customer.id;
+}
+
+export function buildScreenshotDraftInputForLinkedCustomer(
+  result: ScreenshotAnalysis,
+  customer: Customer | null,
+): AIDraftInput {
+  return createDraftFromScreenshotAnalysis(result, requireLinkedCustomerId(customer));
+}
+
+export function buildCallDraftInputForLinkedCustomer(
+  result: CallAnalysis,
+  customer: Customer | null,
+): AIDraftInput {
+  return createDraftFromCallAnalysis(result, requireLinkedCustomerId(customer));
+}
 
 export default function AIAssistantPage() {
   const [searchParams] = useSearchParams();
@@ -139,7 +166,7 @@ export default function AIAssistantPage() {
     try {
       await createAIDraft({
         source_type: 'SCREENSHOT',
-        customer_id: customerId || null,
+        customer_id: requireLinkedCustomerId(linkedCustomer),
         raw_input_summary: `截图识别: ${screenshotResult.customer_name || '未识别客户名'}`,
         ai_result_json: JSON.stringify(screenshotResult),
         confidence: screenshotResult.confidence,
@@ -171,7 +198,7 @@ export default function AIAssistantPage() {
     try {
       await createAIDraft({
         source_type: 'CALL_TEXT',
-        customer_id: customerId || null,
+        customer_id: requireLinkedCustomerId(linkedCustomer),
         raw_input_summary: `通话文本分析: ${callResult.summary.slice(0, 100)}`,
         ai_result_json: JSON.stringify(callResult),
         confidence: callResult.confidence,

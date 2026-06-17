@@ -336,6 +336,22 @@ export async function executeLeadImportBatchFromCenter(input: {
   };
 }
 
+export async function refreshLeadImportBatchBrowser(input: {
+  db: DatabaseLike;
+  selectedBatchId: string | null;
+  loadBatches?: (db: DatabaseLike) => Promise<LeadImportBatch[]>;
+  loadRows?: (db: DatabaseLike, batchId: string) => Promise<LeadImportRow[]>;
+}): Promise<{ batches: LeadImportBatch[]; selectedRows: LeadImportRow[] }> {
+  const loadBatches = input.loadBatches ?? listLeadImportBatches;
+  const loadRows = input.loadRows ?? listLeadImportRowsByBatchId;
+  const batches = await loadBatches(input.db);
+  const selectedRows = input.selectedBatchId
+    ? await loadRows(input.db, input.selectedBatchId)
+    : [];
+
+  return { batches, selectedRows };
+}
+
 export default function LeadImportCenterPage() {
   const [batchName, setBatchName] = useState('');
   const [batchType, setBatchType] = useState<LeadBatchType>('AI_DAILY');
@@ -367,13 +383,20 @@ export default function LeadImportCenterPage() {
     setBatchListError(null);
     try {
       const db = await getDb();
-      setBatches(await listLeadImportBatches(db));
+      const refreshed = await refreshLeadImportBatchBrowser({
+        db,
+        selectedBatchId,
+      });
+      setBatches(refreshed.batches);
+      if (selectedBatchId) {
+        setSelectedRows(refreshed.selectedRows);
+      }
     } catch (error) {
       setBatchListError(error instanceof Error ? error.message : String(error));
     } finally {
       setIsLoadingBatches(false);
     }
-  }, []);
+  }, [selectedBatchId]);
 
   const handleSelectBatch = useCallback(async (batchId: string) => {
     setSelectedBatchId(batchId);
@@ -460,6 +483,18 @@ export default function LeadImportCenterPage() {
       setSaveError(error instanceof Error ? error.message : String(error));
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleRefreshSelectedRows = async () => {
+    if (!selectedBatchId) return;
+    setBatchListError(null);
+    try {
+      const db = await getDb();
+      setSelectedRows(await listLeadImportRowsByBatchId(db, selectedBatchId));
+    } catch (error) {
+      setSelectedRows([]);
+      setBatchListError(error instanceof Error ? error.message : String(error));
     }
   };
 
@@ -665,8 +700,8 @@ export default function LeadImportCenterPage() {
                 <button
                   type="button"
                   className="btn btn-primary btn-sm"
-                  onClick={() => { void handleExecuteBatch(); }}
-                  disabled={!executionState.canExecute || isExecuting}
+                  onClick={() => { void (executionState.missingRows ? handleRefreshSelectedRows() : handleExecuteBatch()); }}
+                  disabled={isExecuting || (!executionState.canExecute && !executionState.missingRows)}
                 >
                   <Play size={14} />
                   {isExecuting ? '执行中' : executionState.label}
