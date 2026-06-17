@@ -322,6 +322,45 @@ tr.clickable {
   font-weight: 500;
 }
 
+.analysis-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.analysis-card {
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.analysis-card h4 {
+  margin: 0 0 8px;
+  color: var(--text-heading);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.analysis-card p,
+.analysis-card ul,
+.analysis-card ol {
+  margin: 0;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.analysis-card ul,
+.analysis-card ol {
+  padding-left: 18px;
+}
+
+.analysis-card li + li {
+  margin-top: 5px;
+}
+
 /* Summary cards row */
 .summary-cards {
   display: grid;

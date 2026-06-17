@@ -284,14 +284,30 @@ export async function suggestNextActionWithDeepSeek(
 意向度: ${customer.intent_level}
 电话反馈: ${customer.phone_feedback || '无'}
 微信添加状态: ${customer.wechat_add_status}
+手机号: ${customer.phone_number || '无'}
+微信号: ${customer.wechat_id || '无'}
+联系人: ${customer.contact_person || '无'}
+官网: ${customer.website || '无'}
+行业: ${customer.industry || '无'}
+来源: ${customer.source || '无'}
+备注: ${customer.notes || '无'}
 最近备注: ${recentNotes.join('; ') || '无'}
 `;
 
   try {
     const req = buildDeepSeekChatRequest(
       config,
-      '你是一个资深销售教练。根据客户信息给出具体、可执行的下一步跟进建议。',
-      `请分析这个客户并给出下一步建议：\n${context}\n\n给出 2-3 条具体可执行的建议。`,
+      '你是 CRM 日常使用助手。输出必须短、保守、可执行，不要使用 Markdown，不要把推测写成事实。',
+      [
+        '请基于以下 CRM 字段给出短行动建议。',
+        context,
+        '要求：',
+        '1. 如果客户联系方式、联系人、官网、行业信息不足，先提示“信息不足”，只建议补全信息和低投入验证。',
+        '2. C 类客户不要给复杂销售打法，不要承诺 48 小时、一周内等确定性结果。',
+        '3. CRM 字段没有的内容只能写“可能/可检查/基于公司名推测”，不能写成事实。',
+        '4. 不要输出 ###、**、Markdown 列表符号或长篇销售培训文。',
+        '5. 只输出 2-4 条短建议。',
+      ].join('\n'),
     );
     const res = await fetch(req.url, {
       method: 'POST',

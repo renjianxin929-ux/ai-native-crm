@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import type { ReactNode } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Edit3, MessageSquare, MapPin, Trash2, Brain } from 'lucide-react';
 import { getCustomer, deleteCustomer, createFollowUp, createVisit, updateCustomer, createAIDraft, listAIDrafts, applyAIDraftToCustomer, discardAIDraft } from '../lib/db';
@@ -20,6 +21,193 @@ interface Props {
   onRefresh: () => void;
 }
 
+type CustomerActionAnalysis = {
+  leadJudgement: string;
+  facts: string[];
+  gaps: string[];
+  nextActions: string[];
+  risks: string[];
+};
+
+type CustomerAiResult = {
+  suggestion: string | null;
+  rawResponse: string;
+  error?: string;
+  analysis?: CustomerActionAnalysis;
+};
+
+export function buildCustomerActionAnalysis(
+  customer: Customer,
+  followUps: FollowUpRecord[],
+): CustomerActionAnalysis {
+  const hasContact = Boolean(customer.phone_number || customer.wechat_id || customer.contact_person);
+  const hasContactMethod = Boolean(customer.phone_number || customer.wechat_id);
+  const hasWebsite = Boolean(customer.website);
+  const hasIndustry = Boolean(customer.industry);
+  const hasSourceEvidence = Boolean(customer.source);
+  const isWeakInfo = !hasContactMethod && !customer.contact_person && !hasWebsite && !hasIndustry;
+  const isLowPriority = customer.customer_grade === 'C' || customer.customer_grade === 'D';
+  const isHighPriority = customer.customer_grade === 'A' || customer.customer_grade === 'B';
+  const latestFollowUp = followUps[0] ?? null;
+  const inferredIndustry = inferIndustryFromCustomerName(customer.name);
+
+  const facts = [
+    `客户等级：${GRADE_LABELS[customer.customer_grade]}`,
+    `当前阶段：${STAGE_LABELS[customer.stage]}`,
+  ];
+  if (customer.region) facts.push(`城市/区域：${customer.region}`);
+  facts.push(`联系方式：${formatContactFact(customer)}`);
+  if (latestFollowUp) {
+    facts.push(`最近跟进：${formatFollowUpFact(latestFollowUp)}`);
+  }
+  if (customer.notes) {
+    facts.push(`备注：${summarizeText(customer.notes, 80)}`);
+  }
+  if (customer.industry) {
+    facts.push(`行业/主营产品：${customer.industry}`);
+  } else if (inferredIndustry) {
+    facts.push(`行业推测：${inferredIndustry}`);
+  }
+  if (customer.website) facts.push(`官网：${customer.website}`);
+  if (customer.source) facts.push(`来源：${customer.source}`);
+
+  const gaps = [
+    !customer.contact_person ? '缺联系人' : null,
+    !hasContactMethod ? '缺手机号/微信' : null,
+    !customer.website ? '缺官网' : null,
+    !customer.industry ? '缺行业/主营产品' : null,
+    !hasSourceEvidence ? '缺有效来源证据' : null,
+  ].filter(Boolean) as string[];
+
+  const leadJudgement = buildLeadJudgement(customer, { hasContact, hasWebsite, hasIndustry, isWeakInfo });
+  const nextActions = buildNextActions({ hasContactMethod, hasWebsite, hasIndustry, isWeakInfo, isLowPriority, isHighPriority });
+  const risks = buildRisks(customer, { isWeakInfo, isLowPriority, inferredIndustry });
+
+  return {
+    leadJudgement,
+    facts,
+    gaps: gaps.length > 0 ? gaps : ['关键字段基本完整'],
+    nextActions,
+    risks,
+  };
+}
+
+export function formatCustomerAnalysisTextForDraft(analysis: CustomerActionAnalysis): string {
+  return [
+    '线索判断',
+    analysis.leadJudgement,
+    '',
+    '已知事实',
+    ...analysis.facts.map(item => `- ${item}`),
+    '',
+    '信息缺口',
+    ...analysis.gaps.map(item => `- ${item}`),
+    '',
+    '下一步动作',
+    ...analysis.nextActions.map((item, index) => `${index + 1}. ${item}`),
+    '',
+    '风险提醒',
+    ...analysis.risks.map(item => `- ${item}`),
+  ].join('\n');
+}
+
+function buildLeadJudgement(
+  customer: Customer,
+  flags: { hasContact: boolean; hasWebsite: boolean; hasIndustry: boolean; isWeakInfo: boolean },
+): string {
+  if (flags.isWeakInfo || customer.customer_grade === 'C' || customer.customer_grade === 'D') {
+    return `${GRADE_LABELS[customer.customer_grade]}冷线索，当前联系人、电话、微信、官网和行业信息不足，不建议直接销售推进。当前首要任务是验证企业真实性并补全联系方式。`;
+  }
+  if (flags.hasContact && (customer.customer_grade === 'A' || customer.customer_grade === 'B')) {
+    return `${GRADE_LABELS[customer.customer_grade]}信息相对完整，可短触达并确认需求，但仍要保持保守，不承诺结果。`;
+  }
+  return '当前线索可继续跟进，但仍需要补齐关键信息后再决定投入强度。';
+}
+
+function buildNextActions(flags: {
+    hasContactMethod: boolean;
+    hasWebsite: boolean;
+    hasIndustry: boolean;
+    isWeakInfo: boolean;
+    isLowPriority: boolean;
+    isHighPriority: boolean;
+}): string[] {
+  if (flags.isWeakInfo || flags.isLowPriority) {
+    return [
+      '先做低投入验证：用公司名反查官网、工商信息和公开联系方式。',
+      '补充主营产品、官网、联系人和电话后，再判断是否值得继续跟进。',
+      '如果 5 分钟内找不到电话或联系人，先标记为“无电话/待二次查询”。',
+      '暂不做复杂销售推进，避免在 C 类弱信息线索上投入过多时间。',
+    ];
+  }
+
+  const actions: string[] = [];
+  if (flags.hasContactMethod) {
+    actions.push('围绕已有联系方式做一次轻量触达，确认联系人角色、主营产品和当前需求。');
+  }
+  if (flags.hasWebsite) {
+    actions.push('可检查官网的英文站、产品页、询盘入口和内容薄弱点，形成 1 条具体切入点。');
+  }
+  if (flags.isHighPriority) {
+    actions.push('优先跟进，确认需求、预算、时间和决策流程。');
+  }
+  if (!flags.hasIndustry) {
+    actions.push('补充行业/主营产品，避免话术过宽。');
+  }
+  return actions.slice(0, 4);
+}
+
+function buildRisks(
+  customer: Customer,
+  flags: { isWeakInfo: boolean; isLowPriority: boolean; inferredIndustry: string | null },
+): string[] {
+  const risks = [
+    'CRM 字段不足时，不能确认真实决策人。',
+    '不要把行业、采购角色或官网问题推测当成事实。',
+  ];
+  if (flags.inferredIndustry) {
+    risks.push('公司名里的行业词只能作为检索方向，不能直接当成客户主营业务。');
+  }
+  if (flags.isWeakInfo || flags.isLowPriority) {
+    risks.push('不建议直接强销售；如果补不到联系方式，应降低优先级。');
+  }
+  if (customer.website) {
+    risks.push('官网问题需要实际查看后再判断，只能写“可检查”。');
+  }
+  return risks;
+}
+
+function inferIndustryFromCustomerName(name: string): string | null {
+  const normalized = name.toLowerCase();
+  if (normalized.includes('hydraulic')) return '基于公司名推测：可能与液压相关';
+  if (normalized.includes('packing') || normalized.includes('packaging')) return '基于公司名推测：可能与包装相关';
+  if (normalized.includes('lighting')) return '基于公司名推测：可能与照明相关';
+  return null;
+}
+
+function formatContactFact(customer: Customer): string {
+  const values = [
+    customer.phone_number ? `手机号 ${customer.phone_number}` : null,
+    customer.wechat_id ? `微信 ${customer.wechat_id}` : null,
+    customer.contact_person ? `联系人 ${customer.contact_person}` : null,
+  ].filter(Boolean);
+  return values.length > 0 ? values.join('；') : '暂无手机号/微信';
+}
+
+function formatFollowUpFact(followUp: FollowUpRecord): string {
+  const values = [
+    followUp.contact_channel ? CHANNEL_LABELS[followUp.contact_channel] || followUp.contact_channel : null,
+    followUp.contact_result ? CONTACT_RESULT_LABELS[followUp.contact_result] || followUp.contact_result : null,
+    followUp.intent_assessment ? INTENT_LABELS[followUp.intent_assessment] : null,
+  ].filter(Boolean);
+  return values.length > 0 ? values.join('，') : followUp.feedback_notes || '已有跟进记录';
+}
+
+function summarizeText(value: string, maxLength: number): string {
+  const normalized = value.trim().replace(/\s+/g, ' ');
+  return normalized.length > maxLength ? `${normalized.slice(0, maxLength)}...` : normalized;
+}
+
 export default function CustomerDetail({ onRefresh }: Props) {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -29,7 +217,7 @@ export default function CustomerDetail({ onRefresh }: Props) {
   const [showEdit, setShowEdit] = useState(false);
   const [showFollowUp, setShowFollowUp] = useState(false);
   const [showVisit, setShowVisit] = useState(false);
-  const [aiResult, setAiResult] = useState<{ suggestion: string | null; rawResponse: string; error?: string } | null>(null);
+  const [aiResult, setAiResult] = useState<CustomerAiResult | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
   const [showDrafts, setShowDrafts] = useState(false);
@@ -152,14 +340,17 @@ export default function CustomerDetail({ onRefresh }: Props) {
       if (result.error) {
         setAiError(result.error);
       } else {
-        setAiResult(result);
+        const analysis = buildCustomerActionAnalysis(customer, followUps);
+        const suggestion = formatCustomerAnalysisTextForDraft(analysis);
+        setAiResult({ ...result, suggestion, analysis });
         // Bug 3: 同时创建 ai_drafts 草稿，不直接改客户字段
         await createAIDraft({
           source_type: 'MANUAL',
           customer_id: customer.id,
           raw_input_summary: `跟进建议: ${customer.name}`,
           ai_result_json: JSON.stringify({
-            suggestion: result.suggestion,
+            suggestion,
+            structuredAnalysis: analysis,
             rawResponse: result.rawResponse,
             source: 'deepseek_next_action',
             created_from: 'customer_detail',
@@ -442,10 +633,8 @@ export default function CustomerDetail({ onRefresh }: Props) {
           <h3 className="section-title">AI 分析</h3>
           {aiResult ? (
             <div style={{ padding: '8px 0' }}>
-              {aiResult.suggestion ? (
-                <div style={{ color: 'var(--text)', fontSize: 14, whiteSpace: 'pre-wrap', lineHeight: 1.6, marginBottom: 12 }}>
-                  {aiResult.suggestion}
-                </div>
+              {aiResult.analysis ? (
+                <CustomerAnalysisCards analysis={aiResult.analysis} />
               ) : (
                 <div style={{ color: '#dc2626', fontSize: 14 }}>分析失败: {aiResult.error}</div>
               )}
@@ -547,5 +736,44 @@ export default function CustomerDetail({ onRefresh }: Props) {
         />
       )}
     </div>
+  );
+}
+
+function CustomerAnalysisCards({ analysis }: { analysis: CustomerActionAnalysis }) {
+  return (
+    <div className="analysis-card-grid">
+      <AnalysisCard title="线索判断">
+        <p>{analysis.leadJudgement}</p>
+      </AnalysisCard>
+      <AnalysisCard title="已知事实">
+        <ul>
+          {analysis.facts.map(item => <li key={item}>{item}</li>)}
+        </ul>
+      </AnalysisCard>
+      <AnalysisCard title="信息缺口">
+        <ul>
+          {analysis.gaps.map(item => <li key={item}>{item}</li>)}
+        </ul>
+      </AnalysisCard>
+      <AnalysisCard title="下一步动作">
+        <ol>
+          {analysis.nextActions.map(item => <li key={item}>{item}</li>)}
+        </ol>
+      </AnalysisCard>
+      <AnalysisCard title="风险提醒">
+        <ul>
+          {analysis.risks.map(item => <li key={item}>{item}</li>)}
+        </ul>
+      </AnalysisCard>
+    </div>
+  );
+}
+
+function AnalysisCard({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="analysis-card">
+      <h4>{title}</h4>
+      {children}
+    </section>
   );
 }
