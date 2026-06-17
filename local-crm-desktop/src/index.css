@@ -1,22 +1,132 @@
 :root {
-  --bg: #f8f9fa;
-  --surface: #ffffff;
-  --border: #e2e5e9;
-  --text: #374151;
-  --text-secondary: #6b7280;
-  --text-heading: #111827;
-  --primary: #3b82f6;
-  --primary-hover: #2563eb;
-  --primary-light: #dbeafe;
-  --success: #10b981;
-  --warning: #f59e0b;
-  --danger: #ef4444;
-  --grade-a: #ef4444;
-  --grade-b: #f59e0b;
-  --grade-c: #3b82f6;
-  --grade-d: #9ca3af;
+  /* Layout */
   --sidebar-width: 220px;
-  --font: -apple-system, 'Microsoft YaHei', 'PingFang SC', sans-serif;
+  --page-header-padding-y: 20px;
+  --page-header-padding-x: 28px;
+  --page-body-padding-y: 24px;
+  --page-body-padding-x: 28px;
+
+  /* Color: base */
+  --color-bg: #f8f9fa;
+  --color-surface: #ffffff;
+  --color-surface-muted: #f8fafc;
+  --color-border: #e2e5e9;
+  --color-border-strong: #d1d5db;
+
+  /* Color: text */
+  --color-text: #374151;
+  --color-text-secondary: #6b7280;
+  --color-text-muted: #9ca3af;
+  --color-text-heading: #111827;
+  --color-text-inverse: #ffffff;
+
+  /* Color: brand */
+  --color-primary: #3b82f6;
+  --color-primary-hover: #2563eb;
+  --color-primary-light: #dbeafe;
+  --color-primary-soft: #eff6ff;
+
+  /* Color: semantic */
+  --color-success: #10b981;
+  --color-success-text: #059669;
+  --color-success-bg: #ecfdf5;
+
+  --color-warning: #f59e0b;
+  --color-warning-text: #d97706;
+  --color-warning-bg: #fffbeb;
+
+  --color-danger: #ef4444;
+  --color-danger-text: #dc2626;
+  --color-danger-bg: #fef2f2;
+
+  --color-info-text: #2563eb;
+  --color-info-bg: #eff6ff;
+
+  /* Customer grade */
+  --color-grade-a: #ef4444;
+  --color-grade-a-bg: #fef2f2;
+  --color-grade-b: #f59e0b;
+  --color-grade-b-bg: #fffbeb;
+  --color-grade-c: #3b82f6;
+  --color-grade-c-bg: #eff6ff;
+  --color-grade-d: #6b7280;
+  --color-grade-d-bg: #f3f4f6;
+
+  /* Typography */
+  --font-sans: -apple-system, "Microsoft YaHei", "PingFang SC", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --font-size-xs: 12px;
+  --font-size-sm: 13px;
+  --font-size-base: 14px;
+  --font-size-md: 16px;
+  --font-size-lg: 18px;
+  --font-size-xl: 20px;
+  --font-size-stat: 28px;
+
+  --line-height-tight: 1.35;
+  --line-height-base: 1.5;
+  --line-height-readable: 1.55;
+
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  /* Spacing */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 28px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  /* Radius */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-pill: 999px;
+
+  /* Border */
+  --border-width: 1px;
+  --border-default: 1px solid var(--color-border);
+  --border-active: 1px solid var(--color-primary);
+
+  /* Shadow */
+  --shadow-none: none;
+  --shadow-focus: 0 0 0 3px var(--color-primary-light);
+  --shadow-modal: 0 20px 60px rgba(0, 0, 0, 0.15);
+
+  /* Component sizing */
+  --button-height-sm: 28px;
+  --button-height-md: 36px;
+  --input-height-md: 36px;
+  --table-cell-padding-y: 10px;
+  --table-cell-padding-x: 16px;
+  --card-padding: 20px;
+
+  /* Legacy aliases */
+  --bg: var(--color-bg);
+  --surface: var(--color-surface);
+  --border: var(--color-border);
+  --text: var(--color-text);
+  --text-secondary: var(--color-text-secondary);
+  --text-heading: var(--color-text-heading);
+  --primary: var(--color-primary);
+  --primary-hover: var(--color-primary-hover);
+  --primary-light: var(--color-primary-light);
+  --success: var(--color-success);
+  --warning: var(--color-warning);
+  --danger: var(--color-danger);
+  --grade-a: var(--color-grade-a);
+  --grade-b: var(--color-grade-b);
+  --grade-c: var(--color-grade-c);
+  --grade-d: var(--color-grade-d);
+  --font: var(--font-sans);
 }
 
 * {
@@ -26,11 +136,11 @@
 }
 
 body {
-  font-family: var(--font);
-  font-size: 14px;
-  color: var(--text);
-  background: var(--bg);
-  line-height: 1.5;
+  font-family: var(--font-sans);
+  font-size: var(--font-size-base);
+  color: var(--color-text);
+  background: var(--color-bg);
+  line-height: var(--line-height-base);
 }
 
 #root {
