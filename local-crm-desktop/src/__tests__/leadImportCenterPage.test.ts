@@ -417,12 +417,46 @@ describe('lead import center preview', () => {
     });
   });
 
-  it('does not label a non-empty batch as completed while its rows are missing from the detail view', () => {
-    expect(getLeadImportBatchExecutionState([], 20)).toEqual({
+  it('offers detail loading only before database rows have been queried', () => {
+    expect(getLeadImportBatchExecutionState([], 20, false)).toEqual({
       canExecute: false,
-      label: '明细未加载，请刷新批次明细',
+      label: '加载批次明细',
       executableRows: 0,
-      missingRows: true,
+      needsLoad: true,
+    });
+  });
+
+  it('marks a historical batch as incomplete when database rows load as zero', () => {
+    expect(getLeadImportBatchExecutionState([], 80, true)).toEqual({
+      canExecute: false,
+      label: '批次数据不完整',
+      executableRows: 0,
+      dataError: '批次数据不完整：批次记录显示 80 行，但明细数据为 0。请重新导入原始 JSON。',
+    });
+  });
+
+  it('marks a batch as inconsistent when database row count differs from total_rows', () => {
+    expect(getLeadImportBatchExecutionState(
+      [createLeadRow({ decision_status: 'PENDING' })],
+      80,
+      true,
+    )).toEqual({
+      canExecute: false,
+      label: '批次数据不一致',
+      executableRows: 0,
+      dataError: '批次数据不一致：批次记录显示 80 行，实际明细 1 行。请重新导入原始 JSON。',
+    });
+  });
+
+  it('keeps a fully loaded consistent batch executable', () => {
+    const rows = [
+      createLeadRow({ id: 'row-1', decision_status: 'PENDING' }),
+      createLeadRow({ id: 'row-2', decision_status: 'PENDING' }),
+    ];
+
+    expect(getLeadImportBatchExecutionState(rows, 2, true)).toMatchObject({
+      canExecute: true,
+      executableRows: 2,
     });
   });
 
@@ -591,8 +625,41 @@ describe('lead import center preview', () => {
     }
   });
 
+  it('blocks execution when a non-empty batch has zero database rows', async () => {
+    const db = await createReadyDb();
+    let confirmCalls = 0;
+    let executeCalls = 0;
+    try {
+      const batch = createBatch({ total_rows: 80 });
+
+      await expect(executeLeadImportBatchFromCenter({
+        db,
+        batch,
+        rows: [],
+        confirm: () => {
+          confirmCalls += 1;
+          return true;
+        },
+        execute: async () => {
+          executeCalls += 1;
+          return [];
+        },
+        loadRows: async () => [],
+      })).rejects.toThrow(
+        '批次数据不完整：批次记录显示 80 行，但明细数据为 0。请重新导入原始 JSON。',
+      );
+
+      expect(confirmCalls).toBe(0);
+      expect(executeCalls).toBe(0);
+    } finally {
+      db.close();
+    }
+  });
+
   it('blocks execution when batch total_rows and database row count are inconsistent', async () => {
     const db = await createReadyDb();
+    let confirmCalls = 0;
+    let executeCalls = 0;
     try {
       const batch = createBatch({ total_rows: 80 });
       const databaseRows = [createLeadRow({ id: 'only-row', decision_status: 'PENDING' })];
@@ -601,10 +668,21 @@ describe('lead import center preview', () => {
         db,
         batch,
         rows: databaseRows,
-        confirm: () => true,
-        execute: async () => [],
+        confirm: () => {
+          confirmCalls += 1;
+          return true;
+        },
+        execute: async () => {
+          executeCalls += 1;
+          return [];
+        },
         loadRows: async () => databaseRows,
-      })).rejects.toThrow('批次数据不一致');
+      })).rejects.toThrow(
+        '批次数据不一致：批次记录显示 80 行，实际明细 1 行。请重新导入原始 JSON。',
+      );
+
+      expect(confirmCalls).toBe(0);
+      expect(executeCalls).toBe(0);
     } finally {
       db.close();
     }
@@ -655,6 +733,14 @@ describe('lead import center preview', () => {
     expect(pageSource).not.toContain('insertLeadWorkItem');
     expect(pageSource).not.toContain('collected_leads');
     expect(pageSource).not.toContain('navigator.clipboard');
+    expect(pageSource).not.toContain('明细未加载，请刷新批次明细');
+    expect(pageSource).toContain('executionState.dataError');
+    expect(pageSource).toContain('请重新导入原始 JSON');
+    expect(pageSource).toContain('listLeadImportRowsByBatchId(db, imported.batch.id)');
+    expect(pageSource).toContain('databaseRows.length !== preview.rows.length');
+    expect(pageSource.indexOf('setSavedSummary({')).toBeGreaterThan(
+      pageSource.indexOf('databaseRows.length !== preview.rows.length'),
+    );
   });
 });
 

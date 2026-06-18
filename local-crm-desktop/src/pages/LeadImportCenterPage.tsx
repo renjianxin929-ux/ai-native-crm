@@ -63,6 +63,14 @@ type LeadImportExecutionResult =
   | { status: 'CANCELLED' }
   | { status: 'EXECUTED'; rows: LeadImportRow[]; summary: LeadImportExecutionSummary };
 
+type LeadImportBatchExecutionState = {
+  canExecute: boolean;
+  label: string;
+  executableRows: number;
+  needsLoad?: boolean;
+  dataError?: string;
+};
+
 const BATCH_TYPES: LeadBatchType[] = ['AI_DAILY', 'MANUAL', 'EXPO', 'WECHAT', 'OTHER'];
 const DECISIONS: LeadImportDecision[] = ['DIRECT_TO_CRM', 'CRM_WITH_LOOKUP', 'LOOKUP_FIRST', 'RESERVE', 'IGNORE'];
 const DECISION_STATUSES: LeadDecisionStatus[] = ['PENDING', 'EXECUTING', 'DONE', 'FAILED'];
@@ -246,13 +254,32 @@ export function buildLeadImportSaveConfirmation(input: {
 export function getLeadImportBatchExecutionState(
   rows: Pick<LeadImportRow, 'decision_status'>[],
   expectedTotalRows = rows.length,
-) {
-  if (rows.length === 0 && expectedTotalRows > 0) {
+  rowsLoaded = true,
+): LeadImportBatchExecutionState {
+  if (!rowsLoaded) {
     return {
       canExecute: false,
-      label: '明细未加载，请刷新批次明细',
+      label: '加载批次明细',
       executableRows: 0,
-      missingRows: true,
+      needsLoad: true,
+    };
+  }
+
+  if (expectedTotalRows > 0 && rows.length === 0) {
+    return {
+      canExecute: false,
+      label: '批次数据不完整',
+      executableRows: 0,
+      dataError: `批次数据不完整：批次记录显示 ${expectedTotalRows} 行，但明细数据为 0。请重新导入原始 JSON。`,
+    };
+  }
+
+  if (rows.length !== expectedTotalRows) {
+    return {
+      canExecute: false,
+      label: '批次数据不一致',
+      executableRows: 0,
+      dataError: `批次数据不一致：批次记录显示 ${expectedTotalRows} 行，实际明细 ${rows.length} 行。请重新导入原始 JSON。`,
     };
   }
 
@@ -322,8 +349,16 @@ export async function executeLeadImportBatchFromCenter(input: {
 }): Promise<LeadImportExecutionResult> {
   const loadRows = input.loadRows ?? listLeadImportRowsByBatchId;
   const databaseRows = await loadRows(input.db, input.batch.id);
-  if (databaseRows.length !== input.batch.total_rows) {
-    throw new Error(`批次数据不一致：批次记录 ${input.batch.total_rows} 行，但数据库明细 ${databaseRows.length} 行，请重新保存后再执行分流。`);
+  const databaseExecutionState = getLeadImportBatchExecutionState(
+    databaseRows,
+    input.batch.total_rows,
+    true,
+  );
+  if (databaseExecutionState.dataError) {
+    throw new Error(databaseExecutionState.dataError);
+  }
+  if (databaseRows.length === 0) {
+    throw new Error('批次没有可执行明细，请重新导入原始 JSON。');
   }
 
   const confirmation = buildLeadImportExecutionConfirmation(input.batch, databaseRows);
@@ -368,6 +403,7 @@ export default function LeadImportCenterPage() {
   const [batches, setBatches] = useState<LeadImportBatch[]>([]);
   const [selectedBatchId, setSelectedBatchId] = useState<string | null>(null);
   const [selectedRows, setSelectedRows] = useState<LeadImportRow[]>([]);
+  const [loadedRowsBatchId, setLoadedRowsBatchId] = useState<string | null>(null);
   const [batchListError, setBatchListError] = useState<string | null>(null);
   const [isLoadingBatches, setIsLoadingBatches] = useState(false);
   const [isExecuting, setIsExecuting] = useState(false);
@@ -379,8 +415,12 @@ export default function LeadImportCenterPage() {
   const selectedBatch = batches.find(batch => batch.id === selectedBatchId) ?? null;
   const selectedBatchStats = useMemo(() => buildLeadImportBatchStats(selectedRows), [selectedRows]);
   const executionState = useMemo(
-    () => getLeadImportBatchExecutionState(selectedRows, selectedBatch?.total_rows ?? selectedRows.length),
-    [selectedBatch?.total_rows, selectedRows],
+    () => getLeadImportBatchExecutionState(
+      selectedRows,
+      selectedBatch?.total_rows ?? selectedRows.length,
+      Boolean(selectedBatch && loadedRowsBatchId === selectedBatch.id),
+    ),
+    [loadedRowsBatchId, selectedBatch, selectedRows],
   );
 
   const loadBatches = useCallback(async () => {
@@ -395,6 +435,7 @@ export default function LeadImportCenterPage() {
       setBatches(refreshed.batches);
       if (selectedBatchId) {
         setSelectedRows(refreshed.selectedRows);
+        setLoadedRowsBatchId(selectedBatchId);
       }
     } catch (error) {
       setBatchListError(error instanceof Error ? error.message : String(error));
@@ -408,11 +449,16 @@ export default function LeadImportCenterPage() {
     setBatchListError(null);
     setExecutionError(null);
     setExecutionSummary(null);
+    setSelectedRows([]);
+    setLoadedRowsBatchId(null);
     try {
       const db = await getDb();
-      setSelectedRows(await listLeadImportRowsByBatchId(db, batchId));
+      const rows = await listLeadImportRowsByBatchId(db, batchId);
+      setSelectedRows(rows);
+      setLoadedRowsBatchId(batchId);
     } catch (error) {
       setSelectedRows([]);
+      setLoadedRowsBatchId(null);
       setBatchListError(error instanceof Error ? error.message : String(error));
     }
   }, []);
@@ -469,24 +515,23 @@ export default function LeadImportCenterPage() {
         { batch_name: batchName.trim(), batch_type: batchType, source_label: null },
         preview.inputRows,
       );
-      if (imported.rows.length !== preview.rows.length) {
-        throw new Error(`保存失败：预览 ${preview.rows.length} 行，但数据库仅保存 ${imported.rows.length} 行，请勿执行分流。`);
+      const databaseRows = await listLeadImportRowsByBatchId(db, imported.batch.id);
+      if (databaseRows.length !== preview.rows.length) {
+        throw new Error(`保存失败：预览 ${preview.rows.length} 行，但数据库实际明细 ${databaseRows.length} 行。请重新导入原始 JSON。`);
       }
+      const refreshedBatches = await listLeadImportBatches(db);
+      setBatches(refreshedBatches);
+      setSelectedBatchId(imported.batch.id);
+      setSelectedRows(databaseRows);
+      setLoadedRowsBatchId(imported.batch.id);
       setSavedSummary({
         batchId: imported.batch.id,
-        totalRows: imported.rows.length,
-        decisionCounts: imported.rows.reduce<Record<string, number>>((counts, row) => {
+        totalRows: databaseRows.length,
+        decisionCounts: databaseRows.reduce<Record<string, number>>((counts, row) => {
           counts[row.decision] = (counts[row.decision] ?? 0) + 1;
           return counts;
         }, {}),
       });
-      const refreshed = await refreshLeadImportBatchBrowser({
-        db,
-        selectedBatchId: imported.batch.id,
-      });
-      setBatches(refreshed.batches);
-      setSelectedBatchId(imported.batch.id);
-      setSelectedRows(refreshed.selectedRows);
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -497,11 +542,15 @@ export default function LeadImportCenterPage() {
   const handleRefreshSelectedRows = async () => {
     if (!selectedBatchId) return;
     setBatchListError(null);
+    setLoadedRowsBatchId(null);
     try {
       const db = await getDb();
-      setSelectedRows(await listLeadImportRowsByBatchId(db, selectedBatchId));
+      const rows = await listLeadImportRowsByBatchId(db, selectedBatchId);
+      setSelectedRows(rows);
+      setLoadedRowsBatchId(selectedBatchId);
     } catch (error) {
       setSelectedRows([]);
+      setLoadedRowsBatchId(null);
       setBatchListError(error instanceof Error ? error.message : String(error));
     }
   };
@@ -523,6 +572,7 @@ export default function LeadImportCenterPage() {
       });
       if (result.status === 'EXECUTED') {
         setSelectedRows(result.rows);
+        setLoadedRowsBatchId(selectedBatch.id);
         setExecutionSummary(result.summary);
       }
     } catch (error) {
@@ -708,8 +758,8 @@ export default function LeadImportCenterPage() {
                 <button
                   type="button"
                   className="btn btn-primary btn-sm"
-                  onClick={() => { void (executionState.missingRows ? handleRefreshSelectedRows() : handleExecuteBatch()); }}
-                  disabled={isExecuting || (!executionState.canExecute && !executionState.missingRows)}
+                  onClick={() => { void (executionState.needsLoad ? handleRefreshSelectedRows() : handleExecuteBatch()); }}
+                  disabled={isExecuting || (!executionState.canExecute && !executionState.needsLoad)}
                 >
                   <Play size={14} />
                   {isExecuting ? '执行中' : executionState.label}
@@ -729,6 +779,12 @@ export default function LeadImportCenterPage() {
                 </div>
                 <StatsStrip title="分流判断统计" counts={selectedBatchStats.decisionCounts} formatter={formatLeadDecisionLabel} />
                 <StatsStrip title="执行状态统计" counts={selectedBatchStats.statusCounts} formatter={formatLeadDecisionStatusLabel} />
+                {executionState.dataError && (
+                  <div className="lead-alert lead-alert-danger">
+                    <AlertCircle size={16} />
+                    <span>{executionState.dataError}</span>
+                  </div>
+                )}
                 {executionError && (
                   <div className="lead-alert lead-alert-danger">
                     <AlertCircle size={16} />
