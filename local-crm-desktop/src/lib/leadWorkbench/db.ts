@@ -1,5 +1,9 @@
 import type { DatabaseLike } from '../db';
-import { LEAD_WORKBENCH_INDEX_SQL, LEAD_WORKBENCH_TABLE_SQL } from './schema';
+import {
+  LEAD_WORKBENCH_INDEX_SQL,
+  LEAD_WORKBENCH_TABLE_SQL,
+  LEAD_WORKBENCH_TRIGGER_SQL,
+} from './schema';
 import type { LeadDecisionStatus, LeadImportBatch, LeadImportRow, LeadWorkItem, LeadWorkStatus } from './types';
 
 export async function ensureLeadWorkbenchSchema(db: DatabaseLike): Promise<void> {
@@ -7,7 +11,16 @@ export async function ensureLeadWorkbenchSchema(db: DatabaseLike): Promise<void>
     await db.execute(sql);
   }
 
+  const collectedLeadColumns = await db.select<{ name?: string }>('PRAGMA table_info(collected_leads)');
+  if (!collectedLeadColumns.some(column => column.name === 'capture_event_id')) {
+    await db.execute('ALTER TABLE collected_leads ADD COLUMN capture_event_id TEXT');
+  }
+
   for (const sql of LEAD_WORKBENCH_INDEX_SQL) {
+    await db.execute(sql);
+  }
+
+  for (const sql of LEAD_WORKBENCH_TRIGGER_SQL) {
     await db.execute(sql);
   }
 }

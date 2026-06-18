@@ -76,4 +76,49 @@ describe('lead workbench schema', () => {
       db.close();
     }
   });
+
+  it('adds nullable capture_event_id to an existing collected_leads table without losing rows', async () => {
+    const db = createSqliteDb();
+    try {
+      await db.execute(`
+        CREATE TABLE collected_leads (
+          id TEXT PRIMARY KEY,
+          work_item_id TEXT,
+          import_row_id TEXT,
+          customer_id TEXT,
+          company_name TEXT,
+          contact_name TEXT,
+          position TEXT,
+          mobile TEXT,
+          tel TEXT,
+          website TEXT,
+          email TEXT,
+          raw_text TEXT,
+          note TEXT,
+          sync_status TEXT NOT NULL DEFAULT 'UNSYNCED',
+          created_customer_id TEXT,
+          updated_customer_id TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        )
+      `);
+      await db.execute(
+        `INSERT INTO collected_leads (
+          id, work_item_id, company_name, mobile, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?)`,
+        ['legacy-draft', 'legacy-work', 'Legacy Co', '13800138000', '2026-06-18T00:00:00.000Z', '2026-06-18T00:00:00.000Z'],
+      );
+
+      await ensureLeadWorkbenchSchema(db);
+
+      const columns = await db.select<{ name: string }>('PRAGMA table_info(collected_leads)');
+      const rows = await db.select<{ id: string; capture_event_id: string | null }>(
+        'SELECT id, capture_event_id FROM collected_leads',
+      );
+      expect(columns.map(column => column.name)).toContain('capture_event_id');
+      expect(rows).toEqual([{ id: 'legacy-draft', capture_event_id: null }]);
+    } finally {
+      db.close();
+    }
+  });
 });

@@ -27,7 +27,12 @@ export type LeadWorkStatus =
   | 'SKIPPED'
   | 'DONE';
 
-export type LeadCaptureAction = 'PASTED' | 'PARSED' | 'IGNORED' | 'SAVED_TO_COLLECTED';
+export type LeadCaptureAction =
+  | 'PASTED'
+  | 'PARSED'
+  | 'CAPTURE_SAVED'
+  | 'IGNORED'
+  | 'SAVED_TO_COLLECTED';
 
 export type CollectedLeadSyncStatus = 'UNSYNCED' | 'SYNCED' | 'FAILED' | 'IGNORED';
 

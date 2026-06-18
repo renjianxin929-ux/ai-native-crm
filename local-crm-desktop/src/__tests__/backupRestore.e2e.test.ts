@@ -266,6 +266,7 @@ async function seedCompleteDailyData(db: DatabaseLike) {
 
   const collectedLead = await insertCollectedLeadDraft(db, {
     work_item_id: workItem.id,
+    capture_event_id: captureEvent.id,
     import_row_id: row.id,
     customer_id: null,
     company_name: workItem.company_name,

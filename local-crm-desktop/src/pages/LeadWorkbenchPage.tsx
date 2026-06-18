@@ -3,12 +3,10 @@ import { AlertCircle, Clipboard, PhoneOff, RefreshCw, Search, SkipForward } from
 
 import { getDb } from '../lib/db';
 import {
-  insertLeadCaptureEvent,
   listLeadCaptureEventsByWorkItemId,
   type LeadCaptureEvent,
 } from '../lib/leadWorkbench/captureEvents';
 import {
-  insertCollectedLeadDraft,
   listCollectedLeadsByWorkItemId,
   type CollectedLead,
 } from '../lib/leadWorkbench/collectedLeads';
@@ -17,6 +15,14 @@ import {
   listLeadWorkItemsByStatus,
 } from '../lib/leadWorkbench/db';
 import { parseLeadContactText } from '../lib/leadWorkbench/parser';
+import {
+  readLeadClipboard,
+  saveCollectedLeadWorkflow,
+  saveLeadCaptureWorkflow,
+  startLeadQueryWorkflow,
+  type CollectedLeadSaveEvidence,
+  type LeadCaptureSaveEvidence,
+} from '../lib/leadWorkbench/workflow';
 import {
   syncCollectedLeadCreateCustomer,
   syncCollectedLeadEnrichCustomer,
@@ -37,7 +43,7 @@ export const LEAD_WORKBENCH_STATUS_FILTERS: LeadWorkStatus[] = [
 ];
 
 const LEAD_WORK_STATUS_LABELS: Record<LeadWorkStatus, string> = {
-  TODO: '待处理',
+  TODO: '待查询',
   SEARCHING: '查询中',
   STAGED: '待整理',
   COLLECTED: '已采集',
@@ -405,7 +411,12 @@ export function shouldEnableLeadCaptureSave(
   rawText: string,
   previewResult: LeadPastePreviewResult | null,
 ): boolean {
-  return Boolean(item && rawText.trim() && previewResult);
+  return Boolean(
+    item
+    && rawText.trim()
+    && previewResult
+    && (previewResult.mobiles.length > 0 || previewResult.emails.length > 0),
+  );
 }
 
 export function getLeadCaptureSaveConfirmationMessage(
@@ -547,6 +558,7 @@ export default function LeadWorkbenchPage() {
   const [isUpdating, setIsUpdating] = useState(false);
   const [isSavingCapture, setIsSavingCapture] = useState(false);
   const [isSavingCollectedLead, setIsSavingCollectedLead] = useState(false);
+  const [isReadingClipboard, setIsReadingClipboard] = useState(false);
   const [isSyncingCollectedLeadId, setIsSyncingCollectedLeadId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -554,6 +566,8 @@ export default function LeadWorkbenchPage() {
   const [collectedLeadDraft, setCollectedLeadDraft] = useState<CollectedLeadDraftForm | null>(null);
   const [captureEvents, setCaptureEvents] = useState<LeadCaptureEvent[]>([]);
   const [collectedLeadDrafts, setCollectedLeadDrafts] = useState<CollectedLead[]>([]);
+  const [captureSaveEvidence, setCaptureSaveEvidence] = useState<LeadCaptureSaveEvidence | null>(null);
+  const [collectedLeadSaveEvidence, setCollectedLeadSaveEvidence] = useState<CollectedLeadSaveEvidence | null>(null);
 
   const selectedItem = useMemo(
     () => items.find(item => item.id === selectedItemId) || null,
@@ -595,6 +609,8 @@ export default function LeadWorkbenchPage() {
   useEffect(() => {
     setPastePreviewState(getEmptyLeadPastePreviewState());
     setCollectedLeadDraft(null);
+    setCaptureSaveEvidence(null);
+    setCollectedLeadSaveEvidence(null);
   }, [selectedItemId]);
 
   const loadCaptureEvents = useCallback(async (workItemId: string) => {
@@ -663,6 +679,21 @@ export default function LeadWorkbenchPage() {
     setMessage(null);
     try {
       const db = await getDb();
+      if (nextStatus === 'SEARCHING') {
+        const clipboard = typeof navigator !== 'undefined' && navigator.clipboard?.writeText
+          ? { writeText: (text: string) => navigator.clipboard.writeText(text) }
+          : { writeText: async () => { throw new Error('Clipboard unavailable'); } };
+        const result = await startLeadQueryWorkflow(db, selectedItem.id, clipboard);
+        if (!result.ok) {
+          setError(result.message);
+          return;
+        }
+        setMessage(result.message);
+        setStatusFilter('SEARCHING');
+        await loadItems('SEARCHING');
+        setSelectedItemId(selectedItem.id);
+        return;
+      }
       await updateLeadWorkItemStatus(db, selectedItem.id, nextStatus);
       setMessage(getLeadWorkItemStatusUpdateSuccessMessage(nextStatus));
       await loadItems(statusFilter);
@@ -672,6 +703,28 @@ export default function LeadWorkbenchPage() {
       setIsUpdating(false);
     }
   }, [loadItems, selectedItem, statusFilter]);
+
+  const handleReadClipboard = useCallback(async () => {
+    if (!selectedItem) return;
+    setIsReadingClipboard(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const clipboard = typeof navigator !== 'undefined' && navigator.clipboard?.readText
+        ? { readText: () => navigator.clipboard.readText() }
+        : { readText: async () => { throw new Error('Clipboard unavailable'); } };
+      const result = await readLeadClipboard(clipboard);
+      setPastePreviewState({ text: result.text, result: result.preview });
+      setCollectedLeadDraft(buildCollectedLeadDraftForm(selectedItem, result.text, result.preview));
+      if (result.ok) {
+        setMessage(result.message);
+      } else {
+        setError(result.message);
+      }
+    } finally {
+      setIsReadingClipboard(false);
+    }
+  }, [selectedItem]);
 
   const handleParsePastePreview = useCallback(() => {
     if (!selectedItem) return;
@@ -701,24 +754,30 @@ export default function LeadWorkbenchPage() {
     setMessage(null);
     try {
       const db = await getDb();
-      await insertLeadCaptureEvent(db, {
-        work_item_id: selectedItem.id,
-        raw_text: pastePreviewState.text,
-        parsed_json: pastePreviewState.result,
-        confidence_json: {},
-        action: 'PARSED',
+      const evidence = await saveLeadCaptureWorkflow(db, {
+        workItemId: selectedItem.id,
+        rawText: pastePreviewState.text,
       });
+      setCaptureSaveEvidence(evidence);
       await loadCaptureEvents(selectedItem.id);
-      setMessage(getLeadCaptureSaveSuccessMessage());
+      setMessage(`捕获记录已保存，任务已进入待整理（${evidence.capture_event_id}）`);
+      setStatusFilter('STAGED');
+      await loadItems('STAGED');
+      setSelectedItemId(selectedItem.id);
     } catch (err) {
       setError(getLeadCaptureSaveErrorMessage(err));
     } finally {
       setIsSavingCapture(false);
     }
-  }, [loadCaptureEvents, pastePreviewState.result, pastePreviewState.text, selectedItem]);
+  }, [loadCaptureEvents, loadItems, pastePreviewState.result, pastePreviewState.text, selectedItem]);
 
   const handleSaveCollectedLeadDraft = useCallback(async () => {
     if (!selectedItem || !collectedLeadDraft) return;
+    const captureEventId = captureSaveEvidence?.capture_event_id ?? captureEvents[0]?.id;
+    if (!captureEventId) {
+      setError('请先保存捕获记录，再保存为采集线索草稿');
+      return;
+    }
     if (!shouldRunCollectedLeadDraftSave(selectedItem, messageToConfirm => window.confirm(messageToConfirm))) {
       return;
     }
@@ -727,17 +786,33 @@ export default function LeadWorkbenchPage() {
     setError(null);
     setMessage(null);
     try {
-      const { contactNameSuggestion: _contactNameSuggestion, ...input } = collectedLeadDraft;
       const db = await getDb();
-      await insertCollectedLeadDraft(db, input);
+      const evidence = await saveCollectedLeadWorkflow(db, {
+        workItemId: selectedItem.id,
+        captureEventId,
+        draft: collectedLeadDraft,
+      });
+      setCollectedLeadSaveEvidence(evidence);
       await loadCollectedLeadDrafts(selectedItem.id);
-      setMessage(getCollectedLeadDraftSaveSuccessMessage());
+      setMessage(evidence.existing
+        ? `采集线索草稿已存在，已复用 ${evidence.collected_lead_id}`
+        : `采集线索草稿已保存，任务已进入已采集（${evidence.collected_lead_id}）`);
+      setStatusFilter('COLLECTED');
+      await loadItems('COLLECTED');
+      setSelectedItemId(selectedItem.id);
     } catch (err) {
       setError(getCollectedLeadDraftSaveErrorMessage(err));
     } finally {
       setIsSavingCollectedLead(false);
     }
-  }, [collectedLeadDraft, loadCollectedLeadDrafts, selectedItem]);
+  }, [
+    captureEvents,
+    captureSaveEvidence,
+    collectedLeadDraft,
+    loadCollectedLeadDrafts,
+    loadItems,
+    selectedItem,
+  ]);
 
   const handleSyncCollectedLeadCreateCustomer = useCallback(async (draft: CollectedLead) => {
     if (!shouldRunCollectedLeadCreateCustomer(draft, messageToConfirm => window.confirm(messageToConfirm))) {
@@ -964,14 +1039,25 @@ export default function LeadWorkbenchPage() {
                   <section className="lead-workbench-paste-preview">
                     <div className="lead-section-header">
                       <div className="section-title">粘贴解析预览</div>
-                      <button
-                        type="button"
-                        className="btn btn-sm"
-                        onClick={handleClearPastePreview}
-                        disabled={!pastePreviewState.text && !pastePreviewState.result}
-                      >
-                        清空粘贴内容
-                      </button>
+                      <div className="lead-workbench-action-row">
+                        <button
+                          type="button"
+                          className="btn btn-sm"
+                          onClick={() => { void handleReadClipboard(); }}
+                          disabled={isReadingClipboard}
+                        >
+                          <Clipboard size={14} />
+                          {isReadingClipboard ? '读取中' : '读取剪贴板'}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-sm"
+                          onClick={handleClearPastePreview}
+                          disabled={!pastePreviewState.text && !pastePreviewState.result}
+                        >
+                          清空粘贴内容
+                        </button>
+                      </div>
                     </div>
                     <textarea
                       className="lead-workbench-paste-input"
@@ -1004,7 +1090,11 @@ export default function LeadWorkbenchPage() {
                         type="button"
                         className="btn btn-sm"
                         onClick={() => { void handleSaveCollectedLeadDraft(); }}
-                        disabled={!canSaveCollectedLeadDraft || isSavingCollectedLead}
+                        disabled={
+                          !canSaveCollectedLeadDraft
+                          || isSavingCollectedLead
+                          || (!captureSaveEvidence && captureEvents.length === 0)
+                        }
                       >
                         {isSavingCollectedLead ? '保存中' : '保存为采集线索草稿'}
                       </button>
@@ -1043,6 +1133,30 @@ export default function LeadWorkbenchPage() {
                         <DraftInput label="备注" field="note" draft={collectedLeadDraft} onChange={setCollectedLeadDraft} multiline />
                       </div>
                     )}
+
+                    {captureSaveEvidence && (
+                      <div className="lead-workbench-paste-result">
+                        <div className="section-title">捕获记录入库证据</div>
+                        <PreviewText label="capture_event_id" value={captureSaveEvidence.capture_event_id} />
+                        <PreviewText label="saved_to" value={captureSaveEvidence.saved_to} />
+                        <PreviewText label="work_item_id" value={captureSaveEvidence.work_item_id} />
+                        <PreviewText label="company_name" value={captureSaveEvidence.company_name} />
+                        <PreviewText label="phone / email" value={[captureSaveEvidence.phone, captureSaveEvidence.email].filter(Boolean).join(' / ')} />
+                        <PreviewText label="new_status" value={captureSaveEvidence.new_status} />
+                        <PreviewText label="next_actions" value={captureSaveEvidence.next_actions.join(' / ')} />
+                      </div>
+                    )}
+
+                    {collectedLeadSaveEvidence && (
+                      <div className="lead-workbench-paste-result">
+                        <div className="section-title">采集线索草稿入库证据</div>
+                        <PreviewText label="collected_lead_id" value={collectedLeadSaveEvidence.collected_lead_id} />
+                        <PreviewText label="capture_event_id" value={collectedLeadSaveEvidence.capture_event_id} />
+                        <PreviewText label="saved_to" value={collectedLeadSaveEvidence.saved_to} />
+                        <PreviewText label="new_status" value={collectedLeadSaveEvidence.new_status} />
+                        <PreviewText label="existing" value={String(collectedLeadSaveEvidence.existing)} />
+                      </div>
+                    )}
                   </section>
                 )}
 
@@ -1060,11 +1174,15 @@ export default function LeadWorkbenchPage() {
                               <span className="badge badge-info">{event.action}</span>
                               <span>{getLeadCaptureRawTextSummary(event.raw_text)}</span>
                             </summary>
-                            <div className="lead-workbench-history-summary">
-                              {getLeadCaptureParsedSummary(event.parsed_json)}
-                            </div>
-                            <PreviewText label="完整 raw_text" value={event.raw_text} />
-                            <PreviewText label="完整 parsed_json" value={event.parsed_json} />
+                             <div className="lead-workbench-history-summary">
+                               {getLeadCaptureParsedSummary(event.parsed_json)}
+                             </div>
+                             <PreviewText label="capture_event_id" value={event.id} />
+                             <PreviewText label="saved_to" value="lead_capture_events" />
+                             <PreviewText label="work_item_id" value={event.work_item_id} />
+                             <PreviewText label="company_name" value={selectedItem.company_name || ''} />
+                             <PreviewText label="完整 raw_text" value={event.raw_text} />
+                             <PreviewText label="完整 parsed_json" value={event.parsed_json} />
                           </details>
                         ))}
                       </div>
@@ -1100,11 +1218,14 @@ export default function LeadWorkbenchPage() {
                                 <span>{getCollectedLeadDraftDisplayValue(draft.email)}</span>
                                 <span>{getCollectedLeadDraftNoteSummary(draft.note)}</span>
                               </summary>
-                              <PreviewText label="公司名称" value={draft.company_name || ''} />
-                              <PreviewText label="完整 raw_text" value={draft.raw_text || ''} />
+                               <PreviewText label="公司名称" value={draft.company_name || ''} />
+                               <PreviewText label="collected_lead_id" value={draft.id} />
+                               <PreviewText label="saved_to" value="collected_leads" />
+                               <PreviewText label="完整 raw_text" value={draft.raw_text || ''} />
                               <PreviewText label="完整 note" value={draft.note || ''} />
-                              <PreviewText label="work_item_id" value={draft.work_item_id || ''} />
-                              <PreviewText label="import_row_id" value={draft.import_row_id || ''} />
+                               <PreviewText label="work_item_id" value={draft.work_item_id || ''} />
+                               <PreviewText label="capture_event_id" value={draft.capture_event_id || ''} />
+                               <PreviewText label="import_row_id" value={draft.import_row_id || ''} />
                               <PreviewText label="customer_id" value={draft.customer_id || ''} />
                               <PreviewText label="created_customer_id" value={draft.created_customer_id || ''} />
                               <PreviewText label="updated_customer_id" value={draft.updated_customer_id || ''} />

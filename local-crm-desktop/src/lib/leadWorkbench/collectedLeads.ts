@@ -7,6 +7,7 @@ import type { CollectedLeadSyncStatus } from './types';
 export interface CollectedLead {
   id: string;
   work_item_id: string | null;
+  capture_event_id?: string | null;
   import_row_id: string | null;
   customer_id: string | null;
   company_name: string | null;
@@ -27,6 +28,7 @@ export interface CollectedLead {
 
 export interface InsertCollectedLeadDraftInput {
   work_item_id: string;
+  capture_event_id?: string | null;
   import_row_id: string | null;
   customer_id: string | null;
   company_name: string | null;
@@ -54,7 +56,7 @@ export interface UpdateCollectedLeadSyncStateInput {
 export async function insertCollectedLeadDraft(
   db: DatabaseLike,
   input: InsertCollectedLeadDraftInput,
-): Promise<CollectedLead> {
+): Promise<CollectedLead & { existing: boolean }> {
   const workItemId = input.work_item_id.trim();
   const companyName = input.company_name?.trim() || '';
   const rawText = input.raw_text.trim();
@@ -83,22 +85,22 @@ export async function insertCollectedLeadDraft(
   }
 
   if (mobile) {
-    const duplicates = await db.select<{ id: string }>(
-      'SELECT id FROM collected_leads WHERE work_item_id = ? AND mobile = ? LIMIT 1',
+    const duplicates = await db.select<CollectedLead>(
+      'SELECT * FROM collected_leads WHERE work_item_id = ? AND mobile = ? LIMIT 1',
       [workItemId, mobile],
     );
     if (duplicates.length > 0) {
-      throw new Error('Duplicate collected lead mobile for this work item');
+      return { ...duplicates[0], existing: true };
     }
   } else if (tel) {
-    const duplicates = await db.select<{ id: string }>(
-      `SELECT id FROM collected_leads
+    const duplicates = await db.select<CollectedLead>(
+      `SELECT * FROM collected_leads
        WHERE work_item_id = ? AND tel = ? AND (mobile IS NULL OR mobile = '')
        LIMIT 1`,
       [workItemId, tel],
     );
     if (duplicates.length > 0) {
-      throw new Error('Duplicate collected lead tel for this work item');
+      return { ...duplicates[0], existing: true };
     }
   }
 
@@ -106,6 +108,7 @@ export async function insertCollectedLeadDraft(
   const draft: CollectedLead = {
     id: uuidv4(),
     work_item_id: workItemId,
+    capture_event_id: normalizeOptional(input.capture_event_id),
     import_row_id: input.import_row_id,
     customer_id: input.customer_id,
     company_name: companyName,
@@ -126,13 +129,14 @@ export async function insertCollectedLeadDraft(
 
   await db.execute(
     `INSERT INTO collected_leads (
-      id, work_item_id, import_row_id, customer_id, company_name, contact_name,
+      id, work_item_id, capture_event_id, import_row_id, customer_id, company_name, contact_name,
       position, mobile, tel, website, email, raw_text, note, sync_status,
       created_customer_id, updated_customer_id, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       draft.id,
       draft.work_item_id,
+      draft.capture_event_id,
       draft.import_row_id,
       draft.customer_id,
       draft.company_name,
@@ -152,7 +156,7 @@ export async function insertCollectedLeadDraft(
     ],
   );
 
-  return draft;
+  return { ...draft, existing: false };
 }
 
 export async function getCollectedLeadById(

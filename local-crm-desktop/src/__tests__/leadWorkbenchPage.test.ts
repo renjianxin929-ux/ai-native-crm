@@ -132,7 +132,7 @@ describe('lead workbench page operations', () => {
   });
 
   it('maps workbench status values to Chinese display labels', () => {
-    expect(formatLeadWorkStatusLabel('TODO')).toBe('待处理');
+    expect(formatLeadWorkStatusLabel('TODO')).toBe('待查询');
     expect(formatLeadWorkStatusLabel('SEARCHING')).toBe('查询中');
     expect(formatLeadWorkStatusLabel('STAGED')).toBe('待整理');
     expect(formatLeadWorkStatusLabel('COLLECTED')).toBe('已采集');
@@ -808,7 +808,7 @@ describe('lead workbench page operations', () => {
     }
   });
 
-  it('does not expose customer, work-item creation, collected lead, paste, listener, or automation logic', () => {
+  it('uses the bounded workbench workflows without raw SQL or clipboard listeners', () => {
     const pageSource = readFileSync(resolve(__dirname, '../pages/LeadWorkbenchPage.tsx'), 'utf8');
 
     expect(pageSource).toContain('navigator.clipboard.writeText');
@@ -820,7 +820,7 @@ describe('lead workbench page operations', () => {
     expect(pageSource).toContain('保存捕获记录');
     expect(pageSource).toContain('保存为采集线索草稿');
     expect(pageSource).toContain('采集线索草稿已保存');
-    expect(pageSource).toContain('insertCollectedLeadDraft');
+    expect(pageSource).toContain('saveCollectedLeadWorkflow');
     expect(pageSource).toContain('采集线索草稿');
     expect(pageSource).toContain('暂无采集线索草稿。');
     expect(pageSource).toContain('listCollectedLeadsByWorkItemId');
@@ -850,7 +850,9 @@ describe('lead workbench page operations', () => {
     expect(pageSource).toContain('暂无捕获记录。');
     expect(pageSource).toContain('listLeadCaptureEventsByWorkItemId');
     expect(pageSource).toContain('捕获记录已保存');
-    expect(pageSource).toContain('insertLeadCaptureEvent');
+    expect(pageSource).toContain('saveLeadCaptureWorkflow');
+    expect(pageSource).toContain('startLeadQueryWorkflow');
+    expect(pageSource).toContain('readLeadClipboard');
     expect(pageSource).toContain('parseLeadContactText');
     expect(pageSource).toContain('disabled={isLoading || isUpdating}');
     expect(pageSource).toContain('await loadCollectedLeadDrafts(workItemId)');
@@ -876,13 +878,10 @@ describe('lead workbench page operations', () => {
     expect(pageSource).not.toContain('批量同步');
     expect(pageSource).not.toContain('批量创建');
     expect(pageSource).not.toContain('批量补充');
-    expect(pageSource).not.toContain('collected_leads');
-    expect(pageSource).not.toContain('lead_capture_events');
-    expect(pageSource).not.toContain('lead_sync_logs');
     expect(pageSource).not.toContain('importLeadRowsToBatch');
     expect(pageSource).not.toContain('executeLeadImportBatchDecisions');
     expect(pageSource).not.toContain('addEventListener');
-    expect(pageSource).not.toContain('readText');
+    expect(pageSource).toContain('navigator.clipboard.readText');
     expect(pageSource).not.toContain('DataImportPage');
     expect(pageSource).not.toContain('../lib/importer');
   });

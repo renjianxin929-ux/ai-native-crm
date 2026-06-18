@@ -93,34 +93,44 @@ describe('lead workbench collected lead drafts', () => {
     }
   });
 
-  it('rejects duplicate mobile within the same work item', async () => {
+  it('returns the existing draft for duplicate mobile within the same work item', async () => {
     const db = await createReadyDb();
     try {
       await insertLeadWorkItem(db, createWorkItem({ id: 'work-1' }));
-      await insertCollectedLeadDraft(db, createDraftInput({ work_item_id: 'work-1', mobile: '13800138000' }));
+      const first = await insertCollectedLeadDraft(
+        db,
+        createDraftInput({ work_item_id: 'work-1', mobile: '13800138000' }),
+      );
 
-      await expect(insertCollectedLeadDraft(db, createDraftInput({
+      const duplicate = await insertCollectedLeadDraft(db, createDraftInput({
         work_item_id: 'work-1',
         mobile: '13800138000',
         email: 'other@example.com',
-      }))).rejects.toThrow('Duplicate collected lead mobile for this work item');
+      }));
+      expect(duplicate).toMatchObject({ id: first.id, existing: true });
+      expect(await db.select('SELECT * FROM collected_leads')).toHaveLength(1);
     } finally {
       db.close();
     }
   });
 
-  it('rejects duplicate tel within the same work item when mobile is empty', async () => {
+  it('returns the existing draft for duplicate tel within the same work item when mobile is empty', async () => {
     const db = await createReadyDb();
     try {
       await insertLeadWorkItem(db, createWorkItem({ id: 'work-1' }));
-      await insertCollectedLeadDraft(db, createDraftInput({ work_item_id: 'work-1', mobile: '', tel: '0757-88889999' }));
+      const first = await insertCollectedLeadDraft(
+        db,
+        createDraftInput({ work_item_id: 'work-1', mobile: '', tel: '0757-88889999' }),
+      );
 
-      await expect(insertCollectedLeadDraft(db, createDraftInput({
+      const duplicate = await insertCollectedLeadDraft(db, createDraftInput({
         work_item_id: 'work-1',
         mobile: '',
         tel: '0757-88889999',
         note: 'duplicate tel',
-      }))).rejects.toThrow('Duplicate collected lead tel for this work item');
+      }));
+      expect(duplicate).toMatchObject({ id: first.id, existing: true });
+      expect(await db.select('SELECT * FROM collected_leads')).toHaveLength(1);
     } finally {
       db.close();
     }

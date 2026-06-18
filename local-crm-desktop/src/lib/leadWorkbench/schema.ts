@@ -67,6 +67,7 @@ export const LEAD_WORKBENCH_TABLE_SQL = [
   `CREATE TABLE IF NOT EXISTS collected_leads (
     id TEXT PRIMARY KEY,
     work_item_id TEXT,
+    capture_event_id TEXT,
     import_row_id TEXT,
     customer_id TEXT,
     company_name TEXT,
@@ -84,6 +85,7 @@ export const LEAD_WORKBENCH_TABLE_SQL = [
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     FOREIGN KEY (work_item_id) REFERENCES lead_work_items(id),
+    FOREIGN KEY (capture_event_id) REFERENCES lead_capture_events(id),
     FOREIGN KEY (import_row_id) REFERENCES lead_import_rows(id),
     FOREIGN KEY (customer_id) REFERENCES customers(id)
   )`,
@@ -109,9 +111,29 @@ export const LEAD_WORKBENCH_INDEX_SQL = [
   'CREATE INDEX IF NOT EXISTS idx_lead_work_items_status ON lead_work_items(status)',
   'CREATE INDEX IF NOT EXISTS idx_lead_capture_events_work_item_id ON lead_capture_events(work_item_id)',
   'CREATE INDEX IF NOT EXISTS idx_collected_leads_work_item_id ON collected_leads(work_item_id)',
+  'CREATE INDEX IF NOT EXISTS idx_collected_leads_capture_event_id ON collected_leads(capture_event_id)',
   'CREATE INDEX IF NOT EXISTS idx_collected_leads_import_row_id ON collected_leads(import_row_id)',
   'CREATE INDEX IF NOT EXISTS idx_collected_leads_customer_id ON collected_leads(customer_id)',
   'CREATE INDEX IF NOT EXISTS idx_collected_leads_sync_status ON collected_leads(sync_status)',
   'CREATE INDEX IF NOT EXISTS idx_lead_sync_logs_collected_lead_id ON lead_sync_logs(collected_lead_id)',
   'CREATE INDEX IF NOT EXISTS idx_lead_sync_logs_target_customer_id ON lead_sync_logs(target_customer_id)',
+];
+
+export const LEAD_WORKBENCH_TRIGGER_SQL = [
+  `CREATE TRIGGER IF NOT EXISTS trg_lead_capture_event_stage_work_item
+   AFTER INSERT ON lead_capture_events
+   WHEN NEW.action = 'CAPTURE_SAVED'
+   BEGIN
+     UPDATE lead_work_items
+     SET status = 'STAGED', updated_at = NEW.created_at
+     WHERE id = NEW.work_item_id AND status = 'SEARCHING';
+   END`,
+  `CREATE TRIGGER IF NOT EXISTS trg_collected_lead_collect_work_item
+   AFTER INSERT ON collected_leads
+   WHEN NEW.capture_event_id IS NOT NULL
+   BEGIN
+     UPDATE lead_work_items
+     SET status = 'COLLECTED', updated_at = NEW.updated_at
+     WHERE id = NEW.work_item_id AND status IN ('SEARCHING', 'STAGED');
+   END`,
 ];
