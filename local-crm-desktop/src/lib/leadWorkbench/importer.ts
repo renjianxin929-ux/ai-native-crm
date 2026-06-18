@@ -109,6 +109,7 @@ export async function importLeadRowsToBatch(
 ): Promise<ImportedLeadBatch> {
   const normalizedRows = normalizeLeadImportRows(rows);
   let batch: LeadImportBatch | null = null;
+  let savedRows: LeadImportRow[] = [];
 
   await db.execute('BEGIN');
   try {
@@ -119,6 +120,10 @@ export async function importLeadRowsToBatch(
     const rowsWithBatchId = normalizedRows.map(row => ({ ...row, batch_id: batch!.id }));
 
     await insertLeadImportRows(db, rowsWithBatchId);
+    savedRows = await listLeadImportRowsByBatchId(db, batch.id);
+    if (savedRows.length !== normalizedRows.length) {
+      throw new Error(`保存失败：预览 ${normalizedRows.length} 行，但数据库仅保存 ${savedRows.length} 行，请勿执行分流。`);
+    }
     await db.execute('COMMIT');
   } catch (error) {
     await db.execute('ROLLBACK');
@@ -127,7 +132,7 @@ export async function importLeadRowsToBatch(
 
   return {
     batch,
-    rows: await listLeadImportRowsByBatchId(db, batch.id),
+    rows: savedRows,
   };
 }
 

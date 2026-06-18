@@ -479,7 +479,7 @@ describe('lead import center preview', () => {
     let executeCalls = 0;
     let loadRowsCalls = 0;
     try {
-      const batch = createBatch();
+      const batch = createBatch({ total_rows: 2 });
       const beforeRows = [
         createLeadRow({ id: 'row-1', decision: 'DIRECT_TO_CRM', decision_status: 'PENDING' }),
         createLeadRow({ id: 'row-2', decision: 'LOOKUP_FIRST', decision_status: 'PENDING' }),
@@ -499,6 +499,7 @@ describe('lead import center preview', () => {
         }),
       ];
 
+      let hasExecuted = false;
       const result = await executeLeadImportBatchFromCenter({
         db,
         batch,
@@ -506,6 +507,7 @@ describe('lead import center preview', () => {
         confirm: () => true,
         execute: async (_db, batchId) => {
           executeCalls += 1;
+          hasExecuted = true;
           expect(batchId).toBe(batch.id);
           return [
             { status: 'DONE', importRowId: 'row-1' },
@@ -515,13 +517,13 @@ describe('lead import center preview', () => {
         loadRows: async (_db, batchId) => {
           loadRowsCalls += 1;
           expect(batchId).toBe(batch.id);
-          return afterRows;
+          return hasExecuted ? afterRows : beforeRows;
         },
       });
 
       expect(result.status).toBe('EXECUTED');
       expect(executeCalls).toBe(1);
-      expect(loadRowsCalls).toBe(1);
+      expect(loadRowsCalls).toBe(2);
       expect(result.rows).toBe(afterRows);
       expect(result.summary).toEqual({
         doneCount: 2,
@@ -530,6 +532,79 @@ describe('lead import center preview', () => {
         createdWorkItemCount: 1,
         failures: [],
       });
+    } finally {
+      db.close();
+    }
+  });
+
+  it('reloads database rows before execution so stale selectedRows cannot execute only one row', async () => {
+    const db = await createReadyDb();
+    let confirmationMessage = '';
+    try {
+      const batch = createBatch({ total_rows: 80 });
+      const staleRows = [
+        createLeadRow({ id: 'stale-row', decision: 'DIRECT_TO_CRM', decision_status: 'PENDING' }),
+      ];
+      const databaseRows = [
+        ...Array.from({ length: 59 }, (_, index) => createLeadRow({
+          id: `crm-lookup-${index}`,
+          decision: 'CRM_WITH_LOOKUP',
+          decision_status: 'PENDING',
+        })),
+        ...Array.from({ length: 21 }, (_, index) => createLeadRow({
+          id: `lookup-first-${index}`,
+          decision: 'LOOKUP_FIRST',
+          decision_status: 'PENDING',
+        })),
+      ];
+      const executedRows = databaseRows.map(row => ({
+        ...row,
+        decision_status: 'DONE' as const,
+      }));
+      let hasExecuted = false;
+      const result = await executeLeadImportBatchFromCenter({
+        db,
+        batch,
+        rows: staleRows,
+        confirm: message => {
+          confirmationMessage = message;
+          return true;
+        },
+        execute: async () => {
+          hasExecuted = true;
+          return databaseRows.map(row => ({ status: 'DONE' as const, importRowId: row.id }));
+        },
+        loadRows: async () => (hasExecuted ? executedRows : databaseRows),
+      });
+
+      expect(result.status).toBe('EXECUTED');
+      expect(confirmationMessage).toContain('80');
+      expect(confirmationMessage).toContain(`${formatLeadDecisionLabel('CRM_WITH_LOOKUP')}: 59`);
+      expect(confirmationMessage).toContain(`${formatLeadDecisionLabel('LOOKUP_FIRST')}: 21`);
+      expect(confirmationMessage).not.toContain(`${formatLeadDecisionLabel('DIRECT_TO_CRM')}: 1`);
+      if (result.status === 'EXECUTED') {
+        expect(result.rows).toHaveLength(80);
+        expect(result.summary.doneCount).toBe(80);
+      }
+    } finally {
+      db.close();
+    }
+  });
+
+  it('blocks execution when batch total_rows and database row count are inconsistent', async () => {
+    const db = await createReadyDb();
+    try {
+      const batch = createBatch({ total_rows: 80 });
+      const databaseRows = [createLeadRow({ id: 'only-row', decision_status: 'PENDING' })];
+
+      await expect(executeLeadImportBatchFromCenter({
+        db,
+        batch,
+        rows: databaseRows,
+        confirm: () => true,
+        execute: async () => [],
+        loadRows: async () => databaseRows,
+      })).rejects.toThrow('批次数据不一致');
     } finally {
       db.close();
     }

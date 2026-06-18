@@ -320,19 +320,24 @@ export async function executeLeadImportBatchFromCenter(input: {
   execute?: (db: DatabaseLike, batchId: string) => Promise<LeadDecisionExecutionResult[]>;
   loadRows?: (db: DatabaseLike, batchId: string) => Promise<LeadImportRow[]>;
 }): Promise<LeadImportExecutionResult> {
-  const confirmation = buildLeadImportExecutionConfirmation(input.batch, input.rows);
+  const loadRows = input.loadRows ?? listLeadImportRowsByBatchId;
+  const databaseRows = await loadRows(input.db, input.batch.id);
+  if (databaseRows.length !== input.batch.total_rows) {
+    throw new Error(`批次数据不一致：批次记录 ${input.batch.total_rows} 行，但数据库明细 ${databaseRows.length} 行，请重新保存后再执行分流。`);
+  }
+
+  const confirmation = buildLeadImportExecutionConfirmation(input.batch, databaseRows);
   if (!input.confirm(confirmation.message)) {
     return { status: 'CANCELLED' };
   }
 
   const execute = input.execute ?? executeLeadImportBatchDecisions;
-  const loadRows = input.loadRows ?? listLeadImportRowsByBatchId;
   await execute(input.db, input.batch.id);
   const refreshedRows = await loadRows(input.db, input.batch.id);
   return {
     status: 'EXECUTED',
     rows: refreshedRows,
-    summary: buildLeadImportExecutionSummary(input.rows, refreshedRows),
+    summary: buildLeadImportExecutionSummary(databaseRows, refreshedRows),
   };
 }
 
@@ -464,6 +469,9 @@ export default function LeadImportCenterPage() {
         { batch_name: batchName.trim(), batch_type: batchType, source_label: null },
         preview.inputRows,
       );
+      if (imported.rows.length !== preview.rows.length) {
+        throw new Error(`保存失败：预览 ${preview.rows.length} 行，但数据库仅保存 ${imported.rows.length} 行，请勿执行分流。`);
+      }
       setSavedSummary({
         batchId: imported.batch.id,
         totalRows: imported.rows.length,
@@ -472,13 +480,13 @@ export default function LeadImportCenterPage() {
           return counts;
         }, {}),
       });
-      setBatches(previous => [
-        imported.batch,
-        ...previous.filter(batch => batch.id !== imported.batch.id),
-      ]);
+      const refreshed = await refreshLeadImportBatchBrowser({
+        db,
+        selectedBatchId: imported.batch.id,
+      });
+      setBatches(refreshed.batches);
       setSelectedBatchId(imported.batch.id);
-      setSelectedRows(imported.rows);
-      await loadBatches();
+      setSelectedRows(refreshed.selectedRows);
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -733,6 +741,9 @@ export default function LeadImportCenterPage() {
                     <span className="badge badge-danger">失败: {executionSummary.failedCount}</span>
                     <span className="badge badge-info">新建客户: {executionSummary.createdCustomerCount}</span>
                     <span className="badge badge-info">新建任务: {executionSummary.createdWorkItemCount}</span>
+                    {executionSummary.createdWorkItemCount > 0 && (
+                      <span className="badge badge-info">请到获客作业台刷新查看</span>
+                    )}
                   </div>
                 )}
                 {executionSummary && executionSummary.failures.length > 0 && (
