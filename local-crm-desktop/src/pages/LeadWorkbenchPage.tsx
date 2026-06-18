@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertCircle, Clipboard, PhoneOff, RefreshCw, Search, SkipForward } from 'lucide-react';
 
+import {
+  createSystemClipboardAdapter,
+  type ClipboardWriter,
+} from '../lib/clipboard';
 import { getDb } from '../lib/db';
 import {
   listLeadCaptureEventsByWorkItemId,
@@ -80,10 +84,6 @@ export type LeadWorkItemStatusAction = {
   label: string;
   nextStatus: LeadWorkStatus;
   icon: 'search' | 'phone-off' | 'skip';
-};
-
-type ClipboardWriter = {
-  writeText(text: string): Promise<void>;
 };
 
 type ConfirmFn = (message: string) => boolean;
@@ -656,10 +656,7 @@ export default function LeadWorkbenchPage() {
 
   const handleCopySearchKeyword = useCallback(async () => {
     if (!selectedItem) return;
-    const clipboard = typeof navigator !== 'undefined' && navigator.clipboard?.writeText
-      ? { writeText: (text: string) => navigator.clipboard.writeText(text) }
-      : undefined;
-    const result = await copyLeadSearchKeyword(selectedItem, clipboard);
+    const result = await copyLeadSearchKeyword(selectedItem, createSystemClipboardAdapter());
     setMessage(result.message);
     if (!result.ok) {
       setError(result.message);
@@ -680,10 +677,11 @@ export default function LeadWorkbenchPage() {
     try {
       const db = await getDb();
       if (nextStatus === 'SEARCHING') {
-        const clipboard = typeof navigator !== 'undefined' && navigator.clipboard?.writeText
-          ? { writeText: (text: string) => navigator.clipboard.writeText(text) }
-          : { writeText: async () => { throw new Error('Clipboard unavailable'); } };
-        const result = await startLeadQueryWorkflow(db, selectedItem.id, clipboard);
+        const result = await startLeadQueryWorkflow(
+          db,
+          selectedItem.id,
+          createSystemClipboardAdapter(),
+        );
         if (!result.ok) {
           setError(result.message);
           return;
@@ -710,10 +708,7 @@ export default function LeadWorkbenchPage() {
     setError(null);
     setMessage(null);
     try {
-      const clipboard = typeof navigator !== 'undefined' && navigator.clipboard?.readText
-        ? { readText: () => navigator.clipboard.readText() }
-        : { readText: async () => { throw new Error('Clipboard unavailable'); } };
-      const result = await readLeadClipboard(clipboard);
+      const result = await readLeadClipboard(createSystemClipboardAdapter());
       setPastePreviewState({ text: result.text, result: result.preview });
       setCollectedLeadDraft(buildCollectedLeadDraftForm(selectedItem, result.text, result.preview));
       if (result.ok) {

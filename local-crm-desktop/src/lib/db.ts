@@ -18,11 +18,10 @@ async function getDb(): Promise<DatabaseLike> {
 
   try {
     const { default: Database } = await import('@tauri-apps/plugin-sql');
-    dbInstance = await Database.load('sqlite:personal-crm.db');
-    await ensureBaseSchema(dbInstance);
-    await ensureCustomerSchema(dbInstance);
-    await ensureLeadWorkbenchSchema(dbInstance);
-    return dbInstance;
+    const loadedDb = await Database.load('sqlite:personal-crm.db');
+    await initializeDatabaseSchema(loadedDb);
+    dbInstance = loadedDb;
+    return loadedDb;
   } catch (e: unknown) {
     const errMsg = e instanceof Error ? e.message : String(e);
 
@@ -36,6 +35,12 @@ async function getDb(): Promise<DatabaseLike> {
     dbInitError = `数据库初始化失败: ${errMsg}`;
     throw new Error(dbInitError, { cause: e });
   }
+}
+
+export async function initializeDatabaseSchema(db: DatabaseLike): Promise<void> {
+  await ensureBaseSchema(db);
+  await ensureCustomerSchema(db);
+  await ensureLeadWorkbenchSchema(db);
 }
 
 const BASE_SCHEMA_SQL = [

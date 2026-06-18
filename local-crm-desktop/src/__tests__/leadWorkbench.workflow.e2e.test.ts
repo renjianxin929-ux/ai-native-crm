@@ -236,6 +236,29 @@ describe('Phase 6M lead workbench workflow', () => {
     }
   });
 
+  it('reports clipboard read failure without saving or changing the work item', async () => {
+    const fixture = await createDiskFixture();
+    try {
+      const item = createWorkItem({ id: 'clipboard-read-fail', status: 'SEARCHING' });
+      await insertLeadWorkItem(fixture.db, item);
+
+      const result = await readLeadClipboard({
+        readText: vi.fn().mockRejectedValue(new Error('read denied')),
+      });
+
+      expect(result).toMatchObject({
+        ok: false,
+        text: '',
+      });
+      expect(result.message).not.toBe('');
+      expect((await getLeadWorkItemById(fixture.db, item.id))?.status).toBe('SEARCHING');
+      expect(await fixture.db.select('SELECT * FROM lead_capture_events')).toHaveLength(0);
+      expect(await fixture.db.select('SELECT * FROM collected_leads')).toHaveLength(0);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
   it('keeps persisted status and counts consistent after closing and reopening the on-disk DB', async () => {
     const fixture = await createDiskFixture();
     try {

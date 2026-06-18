@@ -811,7 +811,7 @@ describe('lead workbench page operations', () => {
   it('uses the bounded workbench workflows without raw SQL or clipboard listeners', () => {
     const pageSource = readFileSync(resolve(__dirname, '../pages/LeadWorkbenchPage.tsx'), 'utf8');
 
-    expect(pageSource).toContain('navigator.clipboard.writeText');
+    expect(pageSource).toContain('createSystemClipboardAdapter');
     expect(pageSource).toContain('window.confirm');
     expect(pageSource).toContain('刷新任务');
     expect(pageSource).toContain('粘贴解析预览');
@@ -881,9 +881,22 @@ describe('lead workbench page operations', () => {
     expect(pageSource).not.toContain('importLeadRowsToBatch');
     expect(pageSource).not.toContain('executeLeadImportBatchDecisions');
     expect(pageSource).not.toContain('addEventListener');
-    expect(pageSource).toContain('navigator.clipboard.readText');
+    expect(pageSource).toContain('readLeadClipboard(createSystemClipboardAdapter())');
     expect(pageSource).not.toContain('DataImportPage');
     expect(pageSource).not.toContain('../lib/importer');
+  });
+
+  it('binds the manual clipboard button to the shared system clipboard adapter', () => {
+    const pageSource = readFileSync(
+      new URL('../pages/LeadWorkbenchPage.tsx', import.meta.url),
+      'utf8',
+    );
+
+    expect(pageSource).toContain('createSystemClipboardAdapter');
+    expect(pageSource).toContain('onClick={() => { void handleReadClipboard(); }}');
+    expect(pageSource).toContain('readLeadClipboard(createSystemClipboardAdapter())');
+    expect(pageSource).not.toContain('navigator.clipboard?.readText');
+    expect(pageSource).not.toContain('navigator.clipboard?.writeText');
   });
 
   it('does not modify importer or data import page from lead workbench code', () => {

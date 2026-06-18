@@ -1,18 +1,11 @@
 import type { DatabaseLike } from '../db';
+import type { ClipboardReader, ClipboardWriter } from '../clipboard';
 import { insertLeadCaptureEvent, type LeadCaptureEvent } from './captureEvents';
 import { insertCollectedLeadDraft } from './collectedLeads';
 import { getLeadWorkItemById } from './db';
 import { parseLeadContactText } from './parser';
 import type { LeadWorkStatus } from './types';
 import { updateLeadWorkItemStatus } from './workItemActions';
-
-export type ClipboardWriter = {
-  writeText(text: string): Promise<void>;
-};
-
-export type ClipboardReader = {
-  readText(): Promise<string>;
-};
 
 export type LeadClipboardPreview = {
   mobiles: string[];
