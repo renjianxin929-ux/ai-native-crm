@@ -179,7 +179,7 @@ export function getRestoreDeleteOrder(): BackupTableName[] {
 }
 
 export async function restoreBackupPayloadWithDb(
-  db: Pick<DatabaseLike, 'execute'>,
+  db: Pick<DatabaseLike, 'execute' | 'select'>,
   rawPayload: unknown,
 ): Promise<RestoreBackupResult> {
   const normalized = normalizeBackupPayload(rawPayload);
@@ -196,28 +196,32 @@ export async function restoreBackupPayloadWithDb(
   const warnings = normalized.isLegacy
     ? normalized.missingTables.map((table) => `Legacy backup missing table ${table}; restored as empty array.`)
     : [];
+  const rollbackSnapshot = await buildFullBackupPayload(db, {
+    version: 'PRE_RESTORE_ROLLBACK',
+  });
 
-  await db.execute('BEGIN');
   try {
-    for (const table of getRestoreDeleteOrder()) {
-      await db.execute(`DELETE FROM ${table}`);
-    }
-
-    for (const table of getRestoreTableOrder()) {
-      for (const row of normalized.tables[table]) {
-        await db.execute(buildInsertSql(table, row), Object.values(row));
+    await replaceDatabaseTables(db, normalized.tables);
+    const actualCounts = await getDatabaseTableCounts(db);
+    for (const table of BACKUP_TABLES) {
+      if (actualCounts[table] !== restoredCounts[table]) {
+        throw new Error(
+          `Restore count mismatch for ${table}: expected ${restoredCounts[table]}, got ${actualCounts[table]}`,
+        );
       }
     }
-
-    await db.execute('COMMIT');
   } catch (error) {
+    let rollbackError: unknown = null;
     try {
-      await db.execute('ROLLBACK');
-    } catch {
-      // Preserve the original restore failure for callers.
+      await replaceDatabaseTables(db, rollbackSnapshot.tables);
+    } catch (restoreError) {
+      rollbackError = restoreError;
     }
     const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`Restore failed and rolled back: ${message}`, { cause: error });
+    const rollbackSuffix = rollbackError
+      ? `; rollback snapshot restore failed: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`
+      : '';
+    throw new Error(`Restore failed and rolled back: ${message}${rollbackSuffix}`, { cause: error });
   }
 
   return {
@@ -226,6 +230,32 @@ export async function restoreBackupPayloadWithDb(
     restoredCounts,
     warnings,
   };
+}
+
+async function replaceDatabaseTables(
+  db: Pick<DatabaseLike, 'execute'>,
+  tables: BackupTablesPayload,
+): Promise<void> {
+  for (const table of getRestoreDeleteOrder()) {
+    await db.execute(`DELETE FROM ${table}`);
+  }
+
+  for (const table of getRestoreTableOrder()) {
+    for (const row of tables[table]) {
+      await db.execute(buildInsertSql(table, row), Object.values(row));
+    }
+  }
+}
+
+async function getDatabaseTableCounts(
+  db: Pick<DatabaseLike, 'select'>,
+): Promise<Record<BackupTableName, number>> {
+  const entries: Array<[BackupTableName, number]> = [];
+  for (const table of BACKUP_TABLES) {
+    const rows = await db.select<{ count: number | string }>(`SELECT COUNT(*) as count FROM ${table}`);
+    entries.push([table, Number(rows[0]?.count ?? 0)]);
+  }
+  return Object.fromEntries(entries) as Record<BackupTableName, number>;
 }
 
 function createEmptyBackupTables(): BackupTablesPayload {

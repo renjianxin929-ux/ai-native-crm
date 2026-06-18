@@ -13,61 +13,119 @@ export async function ensureLeadWorkbenchSchema(db: DatabaseLike): Promise<void>
 }
 
 export async function insertLeadImportBatch(db: DatabaseLike, batch: LeadImportBatch): Promise<void> {
+  const params = [
+    batch.id,
+    batch.batch_name,
+    batch.batch_type,
+    batch.source_label,
+    batch.total_rows,
+    batch.created_at,
+    batch.updated_at,
+  ].map(sanitizeSqlParam);
+  assertNoUndefinedSqlParams(params, `lead_import_batches batch_id=${batch.id}`);
+
   await db.execute(
     `INSERT INTO lead_import_batches (
       id, batch_name, batch_type, source_label, total_rows, created_at, updated_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [
-      batch.id,
-      batch.batch_name,
-      batch.batch_type,
-      batch.source_label,
-      batch.total_rows,
-      batch.created_at,
-      batch.updated_at,
-    ],
+    params,
   );
 }
 
 export async function insertLeadImportRows(db: DatabaseLike, rows: LeadImportRow[]): Promise<void> {
   for (const row of rows) {
-    await db.execute(
-      `INSERT INTO lead_import_rows (
-        id, batch_id, row_index, raw_data_json, company_name, city, industry, website,
-        contact_name, mobile, tel, email, score, grade, tanji_search_keyword,
-        matching_reason, priority_contact_role, source_evidence, decision,
-        decision_status, created_customer_id, created_work_item_id, error_message,
-        created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        row.id,
-        row.batch_id,
-        row.row_index,
-        row.raw_data_json,
-        row.company_name,
-        row.city,
-        row.industry,
-        row.website,
-        row.contact_name,
-        row.mobile,
-        row.tel,
-        row.email,
-        row.score,
-        row.grade,
-        row.tanji_search_keyword,
-        row.matching_reason,
-        row.priority_contact_role,
-        row.source_evidence,
-        row.decision,
-        row.decision_status,
-        row.created_customer_id,
-        row.created_work_item_id,
-        row.error_message,
-        row.created_at,
-        row.updated_at,
-      ],
-    );
+    const params = sanitizeLeadImportRowForInsert(row);
+    const context = `lead_import_rows batch_id=${row.batch_id} row_index=${row.row_index} company_name=${row.company_name}`;
+    assertNoUndefinedSqlParams(params, context);
+
+    try {
+      await db.execute(
+        `INSERT INTO lead_import_rows (
+          id, batch_id, row_index, raw_data_json, company_name, city, industry, website,
+          contact_name, mobile, tel, email, score, grade, tanji_search_keyword,
+          matching_reason, priority_contact_role, source_evidence, decision,
+          decision_status, created_customer_id, created_work_item_id, error_message,
+          created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        params,
+      );
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      throw new Error(
+        `保存第 ${row.row_index + 1} 行失败（${row.company_name}，batch_id=${row.batch_id}）：${reason}`,
+        { cause: error },
+      );
+    }
   }
+}
+
+export function sanitizeSqlParam(value: unknown): unknown {
+  if (value === undefined || value === null) return null;
+  if (typeof value === 'boolean') return value ? 1 : 0;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  return value;
+}
+
+export function sanitizeLeadImportRowForInsert(row: LeadImportRow): unknown[] {
+  return [
+    row.id,
+    row.batch_id,
+    row.row_index,
+    row.raw_data_json,
+    row.company_name,
+    row.city,
+    row.industry,
+    row.website,
+    row.contact_name,
+    row.mobile,
+    row.tel,
+    row.email,
+    row.score,
+    row.grade,
+    row.tanji_search_keyword,
+    row.matching_reason,
+    row.priority_contact_role,
+    row.source_evidence,
+    row.decision,
+    row.decision_status,
+    row.created_customer_id,
+    row.created_work_item_id,
+    row.error_message,
+    row.created_at,
+    row.updated_at,
+  ].map(sanitizeSqlParam);
+}
+
+export function assertNoUndefinedSqlParams(params: unknown[], context: string): void {
+  const undefinedIndex = params.findIndex(value => value === undefined);
+  if (undefinedIndex >= 0) {
+    throw new Error(`SQL 参数包含 undefined：${context}，参数索引 ${undefinedIndex}`);
+  }
+}
+
+export async function countLeadImportRowsByBatchId(
+  db: DatabaseLike,
+  batchId: string,
+): Promise<number> {
+  const rows = await db.select<{ count: number | string }>(
+    'SELECT COUNT(*) as count FROM lead_import_rows WHERE batch_id = ?',
+    [batchId],
+  );
+  return Number(rows[0]?.count ?? 0);
+}
+
+export async function deleteLeadImportRowsByBatchId(
+  db: DatabaseLike,
+  batchId: string,
+): Promise<void> {
+  await db.execute('DELETE FROM lead_import_rows WHERE batch_id = ?', [batchId]);
+}
+
+export async function deleteLeadImportBatchById(
+  db: DatabaseLike,
+  batchId: string,
+): Promise<void> {
+  await db.execute('DELETE FROM lead_import_batches WHERE id = ?', [batchId]);
 }
 
 export async function getLeadImportBatchById(

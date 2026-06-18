@@ -49,14 +49,23 @@ class TransactionalRestoreDb implements DatabaseLike {
   public store: Store;
   public statements: string[] = [];
   public failOnSql?: (sql: string) => boolean;
-  private snapshot: Store | null = null;
 
   constructor(initialStore: Store) {
     this.store = cloneStore(initialStore);
   }
 
-  async select<T>(): Promise<T[]> {
-    return [];
+  async select<T>(sql: string): Promise<T[]> {
+    const countTable = sql.match(/^SELECT COUNT\(\*\) as count FROM (\w+)$/)?.[1] as BackupTableName | undefined;
+    if (countTable) {
+      return [{ count: this.store[countTable].length }] as T[];
+    }
+
+    const table = sql.match(/^SELECT \* FROM (\w+)$/)?.[1] as BackupTableName | undefined;
+    if (table) {
+      return this.store[table].map(row => ({ ...row })) as T[];
+    }
+
+    throw new Error(`unexpected select sql: ${sql}`);
   }
 
   async execute(sql: string, bindings: unknown[] = []): Promise<{ rowsAffected: number }> {
@@ -64,24 +73,6 @@ class TransactionalRestoreDb implements DatabaseLike {
 
     if (this.failOnSql?.(sql)) {
       throw new Error(`forced failure for ${sql}`);
-    }
-
-    if (sql === 'BEGIN') {
-      this.snapshot = cloneStore(this.store);
-      return { rowsAffected: 0 };
-    }
-
-    if (sql === 'COMMIT') {
-      this.snapshot = null;
-      return { rowsAffected: 0 };
-    }
-
-    if (sql === 'ROLLBACK') {
-      if (this.snapshot) {
-        this.store = cloneStore(this.snapshot);
-      }
-      this.snapshot = null;
-      return { rowsAffected: 0 };
     }
 
     const deleteTable = sql.match(/^DELETE FROM (\w+)$/)?.[1] as BackupTableName | undefined;
@@ -133,19 +124,20 @@ describe('restoreBackupPayloadWithDb', () => {
     expect(result.restoredCounts.lead_sync_logs).toBe(1);
   });
 
-  it('uses delete order and insert order inside one transaction', async () => {
+  it('uses delete and insert order without unsafe cross-connection transaction statements', async () => {
     const db = new TransactionalRestoreDb(createStore('old'));
 
     await restoreBackupPayloadWithDb(db, createCompletePayload());
 
-    expect(db.statements[0]).toBe('BEGIN');
-    expect(db.statements.slice(1, 13)).toEqual(
+    expect(db.statements.slice(0, 12)).toEqual(
       getRestoreDeleteOrder().map((table) => `DELETE FROM ${table}`),
     );
-    expect(db.statements.slice(13, 25).map((sql) => sql.match(/^INSERT OR REPLACE INTO (\w+)/)?.[1])).toEqual(
+    expect(db.statements.slice(12, 24).map((sql) => sql.match(/^INSERT OR REPLACE INTO (\w+)/)?.[1])).toEqual(
       getRestoreTableOrder(),
     );
-    expect(db.statements.at(-1)).toBe('COMMIT');
+    expect(db.statements).not.toContain('BEGIN');
+    expect(db.statements).not.toContain('COMMIT');
+    expect(db.statements).not.toContain('ROLLBACK');
   });
 
   it('restores legacy backups and treats missing new tables as empty arrays', async () => {
@@ -214,11 +206,18 @@ describe('restoreBackupPayloadWithDb', () => {
   it('rolls back and preserves previous data when an insert fails', async () => {
     const before = createStore('old');
     const db = new TransactionalRestoreDb(before);
-    db.failOnSql = (sql) => sql.startsWith('INSERT OR REPLACE INTO lead_work_items');
+    let hasFailed = false;
+    db.failOnSql = (sql) => {
+      if (!hasFailed && sql.startsWith('INSERT OR REPLACE INTO lead_work_items')) {
+        hasFailed = true;
+        return true;
+      }
+      return false;
+    };
 
     await expect(restoreBackupPayloadWithDb(db, createCompletePayload())).rejects.toThrow('Restore failed and rolled back');
 
-    expect(db.statements).toContain('ROLLBACK');
+    expect(db.statements).not.toContain('ROLLBACK');
     expect(db.store).toEqual(before);
   });
 

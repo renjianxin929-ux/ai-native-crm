@@ -79,7 +79,7 @@ async function executeDirectToCrm(
     return { status: 'ALREADY_DONE', importRowId: row.id, customerId: row.created_customer_id };
   }
 
-  await db.execute('BEGIN');
+  let createdCustomerId: string | null = null;
   try {
     await updateLeadImportRowDecisionStatus(db, row.id, 'EXECUTING');
 
@@ -88,7 +88,6 @@ async function executeDirectToCrm(
     if (duplicatePhoneCustomer) {
       const errorMessage = `Duplicate customer phone_number: ${customerInput.phone_number}`;
       await updateLeadImportRowDecisionStatus(db, row.id, 'FAILED', { errorMessage });
-      await db.execute('COMMIT');
       return { status: 'FAILED', importRowId: row.id, errorMessage };
     }
 
@@ -96,21 +95,20 @@ async function executeDirectToCrm(
     if (duplicateNameCustomers.length > 0) {
       const errorMessage = `Duplicate customer name: ${customerInput.name}`;
       await updateLeadImportRowDecisionStatus(db, row.id, 'FAILED', { errorMessage });
-      await db.execute('COMMIT');
       return { status: 'FAILED', importRowId: row.id, errorMessage };
     }
 
-    const customerId = await insertCustomerWithDb(db, customerInput);
+    createdCustomerId = await insertCustomerWithDb(db, customerInput);
     await updateLeadImportRowDecisionStatus(db, row.id, 'DONE', {
-      createdCustomerId: customerId,
+      createdCustomerId,
       errorMessage: null,
     });
-    await db.execute('COMMIT');
 
     return { status: 'DONE', importRowId: row.id };
   } catch (error) {
-    await db.execute('ROLLBACK');
-    throw error;
+    throw await compensateDecisionFailure(db, row, error, {
+      customerId: createdCustomerId,
+    });
   }
 }
 
@@ -127,7 +125,8 @@ async function executeCrmWithLookup(
     };
   }
 
-  await db.execute('BEGIN');
+  let createdCustomerId: string | null = null;
+  let createdWorkItemId: string | null = null;
   try {
     await updateLeadImportRowDecisionStatus(db, row.id, 'EXECUTING');
 
@@ -136,7 +135,6 @@ async function executeCrmWithLookup(
     if (duplicatePhoneCustomer) {
       const errorMessage = `Duplicate customer phone_number: ${customerInput.phone_number}`;
       await updateLeadImportRowDecisionStatus(db, row.id, 'FAILED', { errorMessage });
-      await db.execute('COMMIT');
       return { status: 'FAILED', importRowId: row.id, errorMessage };
     }
 
@@ -144,24 +142,25 @@ async function executeCrmWithLookup(
     if (duplicateNameCustomers.length > 0) {
       const errorMessage = `Duplicate customer name: ${customerInput.name}`;
       await updateLeadImportRowDecisionStatus(db, row.id, 'FAILED', { errorMessage });
-      await db.execute('COMMIT');
       return { status: 'FAILED', importRowId: row.id, errorMessage };
     }
 
-    const customerId = await insertCustomerWithDb(db, customerInput);
-    const workItem = createCrmWithLookupWorkItem(row, customerId);
+    createdCustomerId = await insertCustomerWithDb(db, customerInput);
+    const workItem = createCrmWithLookupWorkItem(row, createdCustomerId);
     await insertLeadWorkItem(db, workItem);
+    createdWorkItemId = workItem.id;
     await updateLeadImportRowDecisionStatus(db, row.id, 'DONE', {
-      createdCustomerId: customerId,
+      createdCustomerId,
       createdWorkItemId: workItem.id,
       errorMessage: null,
     });
-    await db.execute('COMMIT');
 
     return { status: 'DONE', importRowId: row.id, workItemId: workItem.id };
   } catch (error) {
-    await db.execute('ROLLBACK');
-    throw error;
+    throw await compensateDecisionFailure(db, row, error, {
+      customerId: createdCustomerId,
+      workItemId: createdWorkItemId,
+    });
   }
 }
 
@@ -169,7 +168,7 @@ async function executeLookupFirst(
   db: DatabaseLike,
   row: LeadImportRow,
 ): Promise<LeadDecisionExecutionResult> {
-  await db.execute('BEGIN');
+  let createdWorkItemId: string | null = null;
   try {
     await updateLeadImportRowDecisionStatus(db, row.id, 'EXECUTING');
 
@@ -178,7 +177,6 @@ async function executeLookupFirst(
       await updateLeadImportRowDecisionStatus(db, row.id, 'DONE', {
         createdWorkItemId: row.created_work_item_id ?? existingWorkItems[0].id,
       });
-      await db.execute('COMMIT');
       return {
         status: 'ALREADY_DONE',
         importRowId: row.id,
@@ -188,15 +186,16 @@ async function executeLookupFirst(
 
     const workItem = createLookupFirstWorkItem(row);
     await insertLeadWorkItem(db, workItem);
+    createdWorkItemId = workItem.id;
     await updateLeadImportRowDecisionStatus(db, row.id, 'DONE', {
       createdWorkItemId: workItem.id,
     });
-    await db.execute('COMMIT');
 
     return { status: 'DONE', importRowId: row.id, workItemId: workItem.id };
   } catch (error) {
-    await db.execute('ROLLBACK');
-    throw error;
+    throw await compensateDecisionFailure(db, row, error, {
+      workItemId: createdWorkItemId,
+    });
   }
 }
 
@@ -204,16 +203,64 @@ async function executeNoopDecision(
   db: DatabaseLike,
   row: LeadImportRow,
 ): Promise<LeadDecisionExecutionResult> {
-  await db.execute('BEGIN');
   try {
     await updateLeadImportRowDecisionStatus(db, row.id, 'EXECUTING');
     await updateLeadImportRowDecisionStatus(db, row.id, 'DONE');
-    await db.execute('COMMIT');
     return { status: 'DONE', importRowId: row.id };
   } catch (error) {
-    await db.execute('ROLLBACK');
-    throw error;
+    throw await compensateDecisionFailure(db, row, error);
   }
+}
+
+async function compensateDecisionFailure(
+  db: DatabaseLike,
+  row: LeadImportRow,
+  originalError: unknown,
+  created: { customerId?: string | null; workItemId?: string | null } = {},
+): Promise<Error> {
+  const cleanupErrors: string[] = [];
+
+  if (created.workItemId) {
+    try {
+      await db.execute('DELETE FROM lead_work_items WHERE id = ?', [created.workItemId]);
+    } catch (error) {
+      cleanupErrors.push(`work item cleanup failed: ${formatError(error)}`);
+    }
+  }
+  if (created.customerId) {
+    try {
+      await db.execute('DELETE FROM customers WHERE id = ?', [created.customerId]);
+    } catch (error) {
+      cleanupErrors.push(`customer cleanup failed: ${formatError(error)}`);
+    }
+  }
+  try {
+    await db.execute(
+      `UPDATE lead_import_rows
+       SET decision_status = 'PENDING',
+           created_customer_id = NULL,
+           created_work_item_id = NULL,
+           error_message = NULL,
+           updated_at = ?
+       WHERE id = ?`,
+      [new Date().toISOString(), row.id],
+    );
+  } catch (error) {
+    cleanupErrors.push(`import row reset failed: ${formatError(error)}`);
+  }
+
+  const originalMessage = formatError(originalError);
+  const cleanupSuffix = cleanupErrors.length > 0
+    ? `; cleanup errors: ${cleanupErrors.join('; ')}`
+    : '';
+  return new Error(
+    `Lead import decision failed for row ${row.id} (${row.company_name}): ${originalMessage}${cleanupSuffix}`,
+    { cause: originalError },
+  );
+}
+
+function formatError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function createLookupFirstWorkItem(row: LeadImportRow): LeadWorkItem {

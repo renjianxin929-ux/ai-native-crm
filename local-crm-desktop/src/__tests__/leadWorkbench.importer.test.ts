@@ -30,6 +30,58 @@ async function createReadyDb() {
 }
 
 describe('lead workbench importer', () => {
+  it('imports 80 sparse rows without undefined SQL bindings and preserves 59/21 decisions', async () => {
+    const db = await createReadyDb();
+    const originalExecute = db.execute.bind(db);
+    const transactionStatements: string[] = [];
+
+    db.execute = async (sql: string, bindings: unknown[] = []) => {
+      if (['BEGIN', 'COMMIT', 'ROLLBACK'].includes(sql.trim().toUpperCase())) {
+        transactionStatements.push(sql.trim().toUpperCase());
+      }
+      if (sql.includes('INSERT INTO lead_import_batches') || sql.includes('INSERT INTO lead_import_rows')) {
+        expect(bindings).not.toContain(undefined);
+      }
+      return originalExecute(sql, bindings);
+    };
+
+    try {
+      const inputRows = [
+        ...Array.from({ length: 59 }, (_, index) => ({
+          company_name: `Sparse CRM With Lookup ${index + 1}`,
+          score: 85,
+        })),
+        ...Array.from({ length: 21 }, (_, index) => ({
+          company_name: `Sparse Lookup First ${index + 1}`,
+          score: 75,
+        })),
+      ];
+
+      const result = await importLeadRowsToBatch(
+        db,
+        { batch_name: 'Sparse 80 rows', batch_type: 'AI_DAILY' },
+        inputRows,
+      );
+      const rowCount = await db.select<{ count: number }>(
+        'SELECT COUNT(*) as count FROM lead_import_rows WHERE batch_id = ?',
+        [result.batch.id],
+      );
+      const decisionCounts = await db.select<{ decision: string; count: number }>(
+        'SELECT decision, COUNT(*) as count FROM lead_import_rows WHERE batch_id = ? GROUP BY decision',
+        [result.batch.id],
+      );
+
+      expect(rowCount[0].count).toBe(80);
+      expect(Object.fromEntries(decisionCounts.map(row => [row.decision, row.count]))).toEqual({
+        CRM_WITH_LOOKUP: 59,
+        LOOKUP_FIRST: 21,
+      });
+      expect(transactionStatements).toEqual([]);
+    } finally {
+      db.close();
+    }
+  });
+
   it('imports 100 rows into one batch and preserves row order/raw data', async () => {
     const db = await createReadyDb();
     try {
@@ -129,34 +181,53 @@ describe('lead workbench importer', () => {
     }
   });
 
-  it('rolls back batch and rows when row insertion fails midway', async () => {
+  it('preserves the original second-row insert error and cleans the failed batch even if rollback is unavailable', async () => {
     const db = await createReadyDb();
     const originalExecute = db.execute.bind(db);
     let leadRowInsertCount = 0;
+    let failedBatchId: string | null = null;
 
     db.execute = async (sql: string, bindings: unknown[] = []) => {
+      if (sql.includes('INSERT INTO lead_import_batches')) {
+        failedBatchId = String(bindings[0]);
+      }
       if (sql.includes('INSERT INTO lead_import_rows')) {
         leadRowInsertCount += 1;
         if (leadRowInsertCount === 2) {
-          throw new Error('simulated row insert failure');
+          throw new Error('undefined bind param');
         }
+      }
+      if (sql.trim().toUpperCase() === 'ROLLBACK') {
+        throw new Error('cannot rollback - no transaction is active');
       }
       return originalExecute(sql, bindings);
     };
 
     try {
-      await expect(importLeadRowsToBatch(
-        db,
-        { batch_name: 'Atomic batch', batch_type: 'MANUAL', source_label: 'unit-test' },
-        [
-          { company_name: 'Atomic One', mobile: '13800138000', score: 90 },
-          { company_name: 'Atomic Two', mobile: '13800138001', score: 90 },
-          { company_name: 'Atomic Three', mobile: '13800138002', score: 90 },
-        ],
-      )).rejects.toThrow('simulated row insert failure');
+      let errorMessage = '';
+      try {
+        await importLeadRowsToBatch(
+          db,
+          { batch_name: 'Atomic batch', batch_type: 'MANUAL', source_label: 'unit-test' },
+          [
+            { company_name: 'Atomic One', mobile: '13800138000', score: 90 },
+            { company_name: 'Atomic Two', mobile: '13800138001', score: 90 },
+            { company_name: 'Atomic Three', mobile: '13800138002', score: 90 },
+          ],
+        );
+      } catch (error) {
+        errorMessage = error instanceof Error ? error.message : String(error);
+      }
 
-      const batches = await db.select('SELECT * FROM lead_import_batches');
-      const rows = await db.select('SELECT * FROM lead_import_rows');
+      expect(errorMessage).toContain('undefined bind param');
+      expect(errorMessage).toContain('第 2 行');
+      expect(errorMessage).toContain('Atomic Two');
+      expect(errorMessage).toContain('已清理本次失败残留数据');
+      expect(errorMessage).not.toBe('cannot rollback - no transaction is active');
+      expect(failedBatchId).not.toBeNull();
+
+      const batches = await db.select('SELECT * FROM lead_import_batches WHERE id = ?', [failedBatchId]);
+      const rows = await db.select('SELECT * FROM lead_import_rows WHERE batch_id = ?', [failedBatchId]);
       const customers = await db.select('SELECT * FROM customers');
       const workItems = await db.select('SELECT * FROM lead_work_items');
 
@@ -164,6 +235,51 @@ describe('lead workbench importer', () => {
       expect(rows).toHaveLength(0);
       expect(customers).toHaveLength(0);
       expect(workItems).toHaveLength(0);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('rejects an 80-to-1 database count mismatch and removes the failed batch', async () => {
+    const db = await createReadyDb();
+    const originalSelect = db.select.bind(db);
+    let countQueryCalls = 0;
+    let failedBatchId: string | null = null;
+    const originalExecute = db.execute.bind(db);
+
+    db.execute = async (sql: string, bindings: unknown[] = []) => {
+      if (sql.includes('INSERT INTO lead_import_batches')) {
+        failedBatchId = String(bindings[0]);
+      }
+      return originalExecute(sql, bindings);
+    };
+    db.select = async <T>(sql: string, bindings: unknown[] = []) => {
+      if (sql.includes('COUNT(*)') && sql.includes('lead_import_rows')) {
+        countQueryCalls += 1;
+        if (countQueryCalls === 1) {
+          return [{ count: 1 }] as T[];
+        }
+      }
+      return originalSelect<T>(sql, bindings);
+    };
+
+    try {
+      await expect(importLeadRowsToBatch(
+        db,
+        { batch_name: 'Count mismatch batch', batch_type: 'AI_DAILY' },
+        Array.from({ length: 80 }, (_, index) => ({
+          company_name: `Count mismatch ${index + 1}`,
+          score: index < 59 ? 85 : 75,
+        })),
+      )).rejects.toThrow(
+        '保存失败：预览 80 行，但数据库仅保存 1 行。已阻止执行，请重新导入或查看错误详情。已清理本次失败残留数据。',
+      );
+
+      expect(countQueryCalls).toBeGreaterThanOrEqual(1);
+      const batches = await originalSelect('SELECT * FROM lead_import_batches WHERE id = ?', [failedBatchId]);
+      const rows = await originalSelect('SELECT * FROM lead_import_rows WHERE batch_id = ?', [failedBatchId]);
+      expect(batches).toHaveLength(0);
+      expect(rows).toHaveLength(0);
     } finally {
       db.close();
     }

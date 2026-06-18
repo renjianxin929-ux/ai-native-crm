@@ -122,11 +122,12 @@ export async function syncCollectedLeadCreateCustomer(
     };
   }
 
-  await db.execute('BEGIN');
+  let collectedLead: CollectedLead | null = null;
+  let createdCustomerId: string | null = null;
+  let createdLogId: string | null = null;
   try {
-    const collectedLead = await getCollectedLeadById(db, id);
+    collectedLead = await getCollectedLeadById(db, id);
     if (!collectedLead) {
-      await db.execute('COMMIT');
       return {
         collectedLeadId: id,
         status: 'FAILED',
@@ -136,7 +137,6 @@ export async function syncCollectedLeadCreateCustomer(
 
     const precheckResult = validateCreateCustomerMode(collectedLead);
     if (precheckResult) {
-      await db.execute('COMMIT');
       return precheckResult;
     }
 
@@ -153,14 +153,14 @@ export async function syncCollectedLeadCreateCustomer(
         message,
         updated_at: new Date().toISOString(),
       });
-      await insertLeadSyncLog(db, {
+      const log = await insertLeadSyncLog(db, {
         collected_lead_id: id,
         action: 'SKIP_DUPLICATE',
         target_customer_id: duplicatePhoneCustomer.id,
         status: 'SKIPPED',
         message,
       });
-      await db.execute('COMMIT');
+      createdLogId = log.id;
       return {
         collectedLeadId: id,
         targetCustomerId: duplicatePhoneCustomer.id,
@@ -182,14 +182,14 @@ export async function syncCollectedLeadCreateCustomer(
         message,
         updated_at: new Date().toISOString(),
       });
-      await insertLeadSyncLog(db, {
+      const log = await insertLeadSyncLog(db, {
         collected_lead_id: id,
         action: 'SKIP_DUPLICATE',
         target_customer_id: duplicateNameCustomer.id,
         status: 'SKIPPED',
         message,
       });
-      await db.execute('COMMIT');
+      createdLogId = log.id;
       return {
         collectedLeadId: id,
         targetCustomerId: duplicateNameCustomer.id,
@@ -198,35 +198,37 @@ export async function syncCollectedLeadCreateCustomer(
       };
     }
 
-    const customerId = await insertCustomerWithDb(db, customerInput);
+    createdCustomerId = await insertCustomerWithDb(db, customerInput);
     const now = new Date().toISOString();
     await updateCollectedLeadSyncState(db, {
       id,
       fromStatus: collectedLead.sync_status,
       toStatus: 'SYNCED',
-      created_customer_id: customerId,
+      created_customer_id: createdCustomerId,
       updated_customer_id: null,
       message: 'Created customer from collected lead',
       updated_at: now,
     });
-    await insertLeadSyncLog(db, {
+    const log = await insertLeadSyncLog(db, {
       collected_lead_id: id,
       action: 'CREATE_CUSTOMER',
-      target_customer_id: customerId,
+      target_customer_id: createdCustomerId,
       status: 'SUCCESS',
       message: 'Created customer from collected lead',
     });
-    await db.execute('COMMIT');
+    createdLogId = log.id;
 
     return {
       collectedLeadId: id,
-      targetCustomerId: customerId,
+      targetCustomerId: createdCustomerId,
       status: 'SUCCESS',
       message: 'Created customer from collected lead',
     };
   } catch (error) {
-    await db.execute('ROLLBACK');
-    throw error;
+    throw await compensateCreateSyncFailure(db, collectedLead, error, {
+      customerId: createdCustomerId,
+      logId: createdLogId,
+    });
   }
 }
 
@@ -243,11 +245,12 @@ export async function syncCollectedLeadEnrichCustomer(
     };
   }
 
-  await db.execute('BEGIN');
+  let collectedLead: CollectedLead | null = null;
+  let existingCustomer: Customer | null = null;
+  let createdLogId: string | null = null;
   try {
-    const collectedLead = await getCollectedLeadById(db, id);
+    collectedLead = await getCollectedLeadById(db, id);
     if (!collectedLead) {
-      await db.execute('COMMIT');
       return {
         collectedLeadId: id,
         status: 'FAILED',
@@ -257,12 +260,11 @@ export async function syncCollectedLeadEnrichCustomer(
 
     const precheckResult = validateEnrichCustomerMode(collectedLead);
     if (precheckResult) {
-      await db.execute('COMMIT');
       return precheckResult;
     }
 
     const customerId = collectedLead.customer_id!;
-    const existingCustomer = await getCustomerByIdWithDb(db, customerId);
+    existingCustomer = await getCustomerByIdWithDb(db, customerId);
     if (!existingCustomer) {
       const message = `Customer not found: ${customerId}`;
       await updateCollectedLeadSyncState(db, {
@@ -274,14 +276,14 @@ export async function syncCollectedLeadEnrichCustomer(
         message,
         updated_at: new Date().toISOString(),
       });
-      await insertLeadSyncLog(db, {
+      const log = await insertLeadSyncLog(db, {
         collected_lead_id: id,
         action: 'ENRICH_CUSTOMER',
         target_customer_id: null,
         status: 'FAILED',
         message,
       });
-      await db.execute('COMMIT');
+      createdLogId = log.id;
       return {
         collectedLeadId: id,
         targetCustomerId: customerId,
@@ -302,14 +304,14 @@ export async function syncCollectedLeadEnrichCustomer(
         message,
         updated_at: new Date().toISOString(),
       });
-      await insertLeadSyncLog(db, {
+      const log = await insertLeadSyncLog(db, {
         collected_lead_id: id,
         action: 'ENRICH_CUSTOMER',
         target_customer_id: customerId,
         status: 'FAILED',
         message,
       });
-      await db.execute('COMMIT');
+      createdLogId = log.id;
       return {
         collectedLeadId: id,
         targetCustomerId: customerId,
@@ -328,14 +330,14 @@ export async function syncCollectedLeadEnrichCustomer(
       message: 'Enriched customer from collected lead',
       updated_at: new Date().toISOString(),
     });
-    await insertLeadSyncLog(db, {
+    const log = await insertLeadSyncLog(db, {
       collected_lead_id: id,
       action: 'ENRICH_CUSTOMER',
       target_customer_id: customerId,
       status: 'SUCCESS',
       message: 'Enriched customer from collected lead',
     });
-    await db.execute('COMMIT');
+    createdLogId = log.id;
 
     return {
       collectedLeadId: id,
@@ -344,9 +346,108 @@ export async function syncCollectedLeadEnrichCustomer(
       message: 'Enriched customer from collected lead',
     };
   } catch (error) {
-    await db.execute('ROLLBACK');
-    throw error;
+    throw await compensateEnrichSyncFailure(db, collectedLead, existingCustomer, error, {
+      logId: createdLogId,
+    });
   }
+}
+
+async function compensateCreateSyncFailure(
+  db: DatabaseLike,
+  collectedLead: CollectedLead | null,
+  originalError: unknown,
+  created: { customerId?: string | null; logId?: string | null },
+): Promise<Error> {
+  const cleanupErrors: string[] = [];
+  await tryDeleteSyncLog(db, created.logId, cleanupErrors);
+  await tryRestoreCollectedLead(db, collectedLead, cleanupErrors);
+  if (created.customerId) {
+    try {
+      await db.execute('DELETE FROM customers WHERE id = ?', [created.customerId]);
+    } catch (error) {
+      cleanupErrors.push(`customer cleanup failed: ${formatError(error)}`);
+    }
+  }
+  return buildCompensatedSyncError(originalError, cleanupErrors);
+}
+
+async function compensateEnrichSyncFailure(
+  db: DatabaseLike,
+  collectedLead: CollectedLead | null,
+  existingCustomer: Customer | null,
+  originalError: unknown,
+  created: { logId?: string | null },
+): Promise<Error> {
+  const cleanupErrors: string[] = [];
+  await tryDeleteSyncLog(db, created.logId, cleanupErrors);
+  await tryRestoreCollectedLead(db, collectedLead, cleanupErrors);
+  if (existingCustomer) {
+    try {
+      await restoreCustomerSnapshot(db, existingCustomer);
+    } catch (error) {
+      cleanupErrors.push(`customer restore failed: ${formatError(error)}`);
+    }
+  }
+  return buildCompensatedSyncError(originalError, cleanupErrors);
+}
+
+async function tryDeleteSyncLog(
+  db: DatabaseLike,
+  logId: string | null | undefined,
+  cleanupErrors: string[],
+): Promise<void> {
+  if (!logId) return;
+  try {
+    await db.execute('DELETE FROM lead_sync_logs WHERE id = ?', [logId]);
+  } catch (error) {
+    cleanupErrors.push(`sync log cleanup failed: ${formatError(error)}`);
+  }
+}
+
+async function tryRestoreCollectedLead(
+  db: DatabaseLike,
+  collectedLead: CollectedLead | null,
+  cleanupErrors: string[],
+): Promise<void> {
+  if (!collectedLead) return;
+  try {
+    await db.execute(
+      `UPDATE collected_leads
+       SET sync_status = ?, created_customer_id = ?, updated_customer_id = ?, updated_at = ?
+       WHERE id = ?`,
+      [
+        collectedLead.sync_status,
+        collectedLead.created_customer_id,
+        collectedLead.updated_customer_id,
+        collectedLead.updated_at,
+        collectedLead.id,
+      ],
+    );
+  } catch (error) {
+    cleanupErrors.push(`collected lead restore failed: ${formatError(error)}`);
+  }
+}
+
+async function restoreCustomerSnapshot(db: DatabaseLike, customer: Customer): Promise<void> {
+  const fields = Object.keys(customer).filter(field => field !== 'id');
+  await db.execute(
+    `UPDATE customers SET ${fields.map(field => `${field} = ?`).join(', ')} WHERE id = ?`,
+    [
+      ...fields.map(field => customer[field as keyof Customer] ?? null),
+      customer.id,
+    ],
+  );
+}
+
+function buildCompensatedSyncError(originalError: unknown, cleanupErrors: string[]): Error {
+  const cleanupSuffix = cleanupErrors.length > 0
+    ? `; cleanup errors: ${cleanupErrors.join('; ')}`
+    : '';
+  return new Error(`${formatError(originalError)}${cleanupSuffix}`, { cause: originalError });
+}
+
+function formatError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function validateCreateCustomerMode(
