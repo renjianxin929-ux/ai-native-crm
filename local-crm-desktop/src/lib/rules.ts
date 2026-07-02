@@ -5,6 +5,7 @@ import type {
   VisitOutcome,
   DailySummary,
 } from './types';
+import { getActiveVerticalProfile, type VerticalRuleProfile } from './verticalProfiles';
 import { v4 as uuidv4 } from 'uuid';
 
 function nowISO(): string {
@@ -43,6 +44,10 @@ function makeTask(
   };
 }
 
+export interface RuleProfileOptions {
+  profile?: VerticalRuleProfile;
+}
+
 export function getDefaultCustomerGrade(params: {
   wechat_search_status?: string | null;
   is_key_decision_maker?: boolean;
@@ -56,13 +61,17 @@ export function getDefaultCustomerGrade(params: {
   return 'C';
 }
 
-export function applyWechatPassed(customer: Customer): { customer: Customer; tasks: Task[] } {
+export function applyWechatPassed(
+  customer: Customer,
+  options: RuleProfileOptions = {},
+): { customer: Customer; tasks: Task[] } {
+  const profile = options.profile ?? getActiveVerticalProfile();
   const updated = { ...customer };
   updated.stage = 'WECHAT_PASSED';
   updated.wechat_add_status = 'PASSED';
   updated.updated_at = nowISO();
 
-  const task = makeTask('首次微信沟通', customer.id, tomorrow0930(), 'MEDIUM', 'RULE');
+  const task = makeTask(profile.rules.taskTitles.wechatPassed, customer.id, tomorrow0930(), 'MEDIUM', 'RULE');
 
   return { customer: updated, tasks: [task] };
 }
@@ -340,27 +349,23 @@ export function buildTodaySummary(
 
 // ── v0.3.1: Recommended action by grade ──
 
-export function getRecommendedAction(customer: Customer): string {
+export function getRecommendedAction(
+  customer: Customer,
+  options: RuleProfileOptions = {},
+): string {
+  const profile = options.profile ?? getActiveVerticalProfile();
+  const recommendationRules = profile.rules.recommendedAction;
   const now = new Date();
   const nextFollowUp = customer.next_follow_up_at ? new Date(customer.next_follow_up_at) : null;
   const isOverdue = nextFollowUp && nextFollowUp < now;
   const neverContacted = !customer.last_contacted_at;
 
-  const prefix = isOverdue ? '【逾期】' : '';
+  const prefix = isOverdue ? recommendationRules.overduePrefix : '';
+  const neverContactedAction = neverContacted
+    ? recommendationRules.neverContactedByGrade[customer.customer_grade]
+    : undefined;
 
-  switch (customer.customer_grade) {
-    case 'A':
-      if (neverContacted) return `${prefix}首次触达：优先电话/微信联系，尝试约访`;
-      return `${prefix}优先电话/微信二次触达，尝试约访`;
-    case 'B':
-      return `${prefix}补充客户痛点，推动明确下一步动作`;
-    case 'C':
-      return `${prefix}低频触达，观察反馈后再决定是否升级`;
-    case 'D':
-      return `${prefix}降低跟进频率或归档观察`;
-    default:
-      return `${prefix}待评估，建议人工判断`;
-  }
+  return `${prefix}${neverContactedAction ?? recommendationRules.byGrade[customer.customer_grade] ?? recommendationRules.byGrade.default}`;
 }
 
 // ── v0.3.1: Follow-up auto-update ──

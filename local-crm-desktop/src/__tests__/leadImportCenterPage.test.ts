@@ -14,6 +14,7 @@ import { executeLeadImportBatchDecisions } from '../lib/leadWorkbench/decision';
 import { importLeadRowsToBatch } from '../lib/leadWorkbench/importer';
 import type { LeadImportBatch, LeadImportRow } from '../lib/leadWorkbench/types';
 import type { Customer } from '../lib/types';
+import { getActiveVerticalProfile } from '../lib/verticalProfiles';
 import {
   buildLeadImportBatchStats,
   buildLeadImportExecutionConfirmation,
@@ -64,6 +65,17 @@ describe('lead import center preview', () => {
       'CRM_WITH_LOOKUP',
       'LOOKUP_FIRST',
     ]);
+  });
+
+  it('builds sample JSON from the active vertical profile rows', () => {
+    expect(JSON.parse(LEAD_IMPORT_SAMPLE_JSON)).toEqual(getActiveVerticalProfile().leadImport.sampleRows);
+  });
+
+  it('uses the active profile resolver instead of directly binding the geo export profile object', () => {
+    const pageSource = readFileSync(resolve(__dirname, '../pages/LeadImportCenterPage.tsx'), 'utf8');
+
+    expect(pageSource).toContain('getActiveVerticalProfile');
+    expect(pageSource).not.toContain('defaultGeoExportProfile');
   });
 
   it('parses JSON array and uses lead importer defaults for decisions', () => {

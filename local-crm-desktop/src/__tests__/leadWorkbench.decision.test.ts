@@ -1,4 +1,6 @@
 import Database from 'better-sqlite3';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { ensureBaseSchema, type DatabaseLike } from '../lib/db';
@@ -10,6 +12,35 @@ import {
 import { buildCustomerInputFromImportRow, insertCustomerWithDb } from '../lib/leadWorkbench/customerAdapter';
 import { executeLeadImportBatchDecisions, executeLeadImportRowDecision } from '../lib/leadWorkbench/decision';
 import { importLeadRowsToBatch } from '../lib/leadWorkbench/importer';
+import { getActiveVerticalProfile, type VerticalRuleProfile } from '../lib/verticalProfiles';
+
+const dummyDecisionProfile: VerticalRuleProfile = {
+  key: 'dummy_decision_profile',
+  name: 'Dummy Decision Profile',
+  leadImport: {
+    scoreThresholds: {
+      crmWithLookup: 80,
+      lookupFirst: 70,
+    },
+    sampleRows: [],
+  },
+  decision: {
+    lookupGoal: 'VERIFY_COMPANY',
+    gradePriority: {
+      A: 91,
+      B: 71,
+      C: 51,
+    },
+    scorePriority: {
+      min: 10,
+      max: 90,
+    },
+    defaultPriority: 33,
+    lookupKeywordFallback: 'company_name',
+  },
+  rules: getActiveVerticalProfile().rules,
+  aiDraft: getActiveVerticalProfile().aiDraft,
+};
 
 function createSqliteDb(): DatabaseLike & { close(): void } {
   const sqlite = new Database(':memory:');
@@ -60,10 +91,133 @@ describe('lead workbench decision executor', () => {
         company_name: 'Lookup Co',
         city: 'Foshan',
         industry: 'Manufacturing',
+        priority: 75,
         lookup_goal: 'FIND_PHONE',
         tanji_search_keyword: 'Lookup Co',
         status: 'TODO',
       });
+    } finally {
+      db.close();
+    }
+  });
+
+  it('uses a supplied vertical profile for LOOKUP_FIRST work item lookup goal and priority rules', async () => {
+    const db = await createReadyDb();
+    try {
+      const imported = await importLeadRowsToBatch(
+        db,
+        { batch_name: 'Dummy decision lookup batch', batch_type: 'MANUAL', source_label: null },
+        [
+          { company_name: 'Dummy Grade A Lookup Co', score: 75, grade: 'A' },
+          { company_name: 'Dummy Default Lookup Co' },
+        ],
+      );
+      await db.execute('UPDATE lead_import_rows SET decision = ? WHERE id = ?', [
+        'LOOKUP_FIRST',
+        imported.rows[1].id,
+      ]);
+
+      await executeLeadImportRowDecision(db, imported.rows[0].id, { profile: dummyDecisionProfile });
+      await executeLeadImportRowDecision(db, imported.rows[1].id, { profile: dummyDecisionProfile });
+
+      const workItems = await db.select<{ company_name: string; lookup_goal: string; priority: number }>(
+        'SELECT company_name, lookup_goal, priority FROM lead_work_items ORDER BY company_name ASC',
+      );
+
+      expect(workItems).toEqual([
+        { company_name: 'Dummy Default Lookup Co', lookup_goal: 'VERIFY_COMPANY', priority: 33 },
+        { company_name: 'Dummy Grade A Lookup Co', lookup_goal: 'VERIFY_COMPANY', priority: 91 },
+      ]);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('uses a supplied vertical profile for CRM_WITH_LOOKUP enrichment work item rules', async () => {
+    const db = await createReadyDb();
+    try {
+      const imported = await importLeadRowsToBatch(
+        db,
+        { batch_name: 'Dummy decision enrichment batch', batch_type: 'MANUAL', source_label: null },
+        [{ company_name: 'Dummy Enrichment Co', score: 80, grade: 'B' }],
+      );
+
+      await executeLeadImportRowDecision(db, imported.rows[0].id, { profile: dummyDecisionProfile });
+
+      const workItems = await listLeadWorkItemsByImportRowId(db, imported.rows[0].id);
+      expect(workItems).toHaveLength(1);
+      expect(workItems[0]).toMatchObject({
+        work_type: 'CRM_CUSTOMER_ENRICHMENT',
+        lookup_goal: 'VERIFY_COMPANY',
+        priority: 71,
+        tanji_search_keyword: 'Dummy Enrichment Co',
+      });
+    } finally {
+      db.close();
+    }
+  });
+
+  it('uses a supplied vertical profile when executing import decisions by batch', async () => {
+    const db = await createReadyDb();
+    try {
+      const imported = await importLeadRowsToBatch(
+        db,
+        { batch_name: 'Dummy decision batch executor', batch_type: 'MANUAL', source_label: null },
+        [{ company_name: 'Dummy Batch Lookup Co', score: 75, grade: 'C' }],
+      );
+
+      const results = await executeLeadImportBatchDecisions(db, imported.batch.id, { profile: dummyDecisionProfile });
+      const workItems = await listLeadWorkItemsByImportRowId(db, imported.rows[0].id);
+
+      expect(results.map(result => result.status)).toEqual(['DONE']);
+      expect(workItems).toHaveLength(1);
+      expect(workItems[0]).toMatchObject({
+        lookup_goal: 'VERIFY_COMPANY',
+        priority: 51,
+      });
+    } finally {
+      db.close();
+    }
+  });
+
+  it('resolves active profile defaults without exporting internal decision helpers', () => {
+    const decisionSource = readFileSync(resolve(__dirname, '../lib/leadWorkbench/decision.ts'), 'utf8');
+
+    expect(decisionSource).toContain('getActiveVerticalProfile');
+    expect(decisionSource).not.toContain("lookup_goal: 'FIND_PHONE'");
+    expect(decisionSource).not.toContain('export function getLookupPriority');
+  });
+
+  it('keeps default vertical profile decision priority behavior unchanged', async () => {
+    const db = await createReadyDb();
+    try {
+      const imported = await importLeadRowsToBatch(
+        db,
+        { batch_name: 'Default decision priority batch', batch_type: 'MANUAL', source_label: null },
+        [
+          { company_name: 'Default Grade A Lookup Co', score: 75, grade: 'A' },
+          { company_name: 'Default Grade B Lookup Co', score: 75, grade: 'B' },
+          { company_name: 'Default Grade C Lookup Co', score: 75, grade: 'C' },
+          { company_name: 'Default Score Lookup Co', score: 125 },
+          { company_name: 'Default Empty Lookup Co' },
+        ],
+      );
+      for (const row of imported.rows) {
+        await db.execute('UPDATE lead_import_rows SET decision = ? WHERE id = ?', ['LOOKUP_FIRST', row.id]);
+        await executeLeadImportRowDecision(db, row.id);
+      }
+
+      const workItems = await db.select<{ company_name: string; lookup_goal: string; priority: number }>(
+        'SELECT company_name, lookup_goal, priority FROM lead_work_items ORDER BY company_name ASC',
+      );
+
+      expect(workItems).toEqual([
+        { company_name: 'Default Empty Lookup Co', lookup_goal: 'FIND_PHONE', priority: 50 },
+        { company_name: 'Default Grade A Lookup Co', lookup_goal: 'FIND_PHONE', priority: 100 },
+        { company_name: 'Default Grade B Lookup Co', lookup_goal: 'FIND_PHONE', priority: 80 },
+        { company_name: 'Default Grade C Lookup Co', lookup_goal: 'FIND_PHONE', priority: 60 },
+        { company_name: 'Default Score Lookup Co', lookup_goal: 'FIND_PHONE', priority: 100 },
+      ]);
     } finally {
       db.close();
     }

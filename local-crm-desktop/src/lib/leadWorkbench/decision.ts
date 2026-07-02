@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 
 import type { DatabaseLike } from '../db';
+import { getActiveVerticalProfile, type VerticalRuleProfile } from '../verticalProfiles';
 import {
   buildCustomerInputFromImportRow,
   findCustomerByPhoneNumber,
@@ -21,10 +22,16 @@ export type LeadDecisionExecutionResult =
   | { status: 'FAILED'; importRowId: string; errorMessage: string }
   | { status: 'ALREADY_DONE'; importRowId: string; workItemId?: string | null; customerId?: string | null };
 
+export interface LeadDecisionProfileOptions {
+  profile?: VerticalRuleProfile;
+}
+
 export async function executeLeadImportRowDecision(
   db: DatabaseLike,
   importRowId: string,
+  options: LeadDecisionProfileOptions = {},
 ): Promise<LeadDecisionExecutionResult> {
+  const profile = options.profile ?? getActiveVerticalProfile();
   const row = await getLeadImportRowById(db, importRowId);
   if (!row) {
     throw new Error(`Lead import row not found: ${importRowId}`);
@@ -43,11 +50,11 @@ export async function executeLeadImportRowDecision(
   }
 
   if (row.decision === 'CRM_WITH_LOOKUP') {
-    return executeCrmWithLookup(db, row);
+    return executeCrmWithLookup(db, row, profile);
   }
 
   if (row.decision === 'LOOKUP_FIRST') {
-    return executeLookupFirst(db, row);
+    return executeLookupFirst(db, row, profile);
   }
 
   if (row.decision === 'RESERVE' || row.decision === 'IGNORE') {
@@ -60,12 +67,13 @@ export async function executeLeadImportRowDecision(
 export async function executeLeadImportBatchDecisions(
   db: DatabaseLike,
   batchId: string,
+  options: LeadDecisionProfileOptions = {},
 ): Promise<LeadDecisionExecutionResult[]> {
   const rows = await listLeadImportRowsByBatchId(db, batchId);
   const results: LeadDecisionExecutionResult[] = [];
 
   for (const row of rows) {
-    results.push(await executeLeadImportRowDecision(db, row.id));
+    results.push(await executeLeadImportRowDecision(db, row.id, options));
   }
 
   return results;
@@ -115,6 +123,7 @@ async function executeDirectToCrm(
 async function executeCrmWithLookup(
   db: DatabaseLike,
   row: LeadImportRow,
+  profile: VerticalRuleProfile,
 ): Promise<LeadDecisionExecutionResult> {
   if (row.created_customer_id || row.created_work_item_id) {
     return {
@@ -146,7 +155,7 @@ async function executeCrmWithLookup(
     }
 
     createdCustomerId = await insertCustomerWithDb(db, customerInput);
-    const workItem = createCrmWithLookupWorkItem(row, createdCustomerId);
+    const workItem = createCrmWithLookupWorkItem(row, createdCustomerId, profile);
     await insertLeadWorkItem(db, workItem);
     createdWorkItemId = workItem.id;
     await updateLeadImportRowDecisionStatus(db, row.id, 'DONE', {
@@ -167,6 +176,7 @@ async function executeCrmWithLookup(
 async function executeLookupFirst(
   db: DatabaseLike,
   row: LeadImportRow,
+  profile: VerticalRuleProfile,
 ): Promise<LeadDecisionExecutionResult> {
   let createdWorkItemId: string | null = null;
   try {
@@ -184,7 +194,7 @@ async function executeLookupFirst(
       };
     }
 
-    const workItem = createLookupFirstWorkItem(row);
+    const workItem = createLookupFirstWorkItem(row, profile);
     await insertLeadWorkItem(db, workItem);
     createdWorkItemId = workItem.id;
     await updateLeadImportRowDecisionStatus(db, row.id, 'DONE', {
@@ -263,7 +273,7 @@ function formatError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function createLookupFirstWorkItem(row: LeadImportRow): LeadWorkItem {
+function createLookupFirstWorkItem(row: LeadImportRow, profile: VerticalRuleProfile): LeadWorkItem {
   const now = new Date().toISOString();
   return {
     id: uuidv4(),
@@ -273,9 +283,9 @@ function createLookupFirstWorkItem(row: LeadImportRow): LeadWorkItem {
     company_name: row.company_name,
     city: row.city,
     industry: row.industry,
-    priority: getLookupPriority(row),
-    lookup_goal: 'FIND_PHONE',
-    tanji_search_keyword: row.tanji_search_keyword || row.company_name,
+    priority: getLookupPriority(row, profile),
+    lookup_goal: profile.decision.lookupGoal,
+    tanji_search_keyword: getLookupKeyword(row, profile),
     status: 'TODO',
     note: null,
     created_at: now,
@@ -283,7 +293,11 @@ function createLookupFirstWorkItem(row: LeadImportRow): LeadWorkItem {
   };
 }
 
-function createCrmWithLookupWorkItem(row: LeadImportRow, customerId: string): LeadWorkItem {
+function createCrmWithLookupWorkItem(
+  row: LeadImportRow,
+  customerId: string,
+  profile: VerticalRuleProfile,
+): LeadWorkItem {
   const now = new Date().toISOString();
   return {
     id: uuidv4(),
@@ -293,9 +307,9 @@ function createCrmWithLookupWorkItem(row: LeadImportRow, customerId: string): Le
     company_name: row.company_name,
     city: row.city,
     industry: row.industry,
-    priority: getLookupPriority(row),
-    lookup_goal: 'FIND_PHONE',
-    tanji_search_keyword: row.tanji_search_keyword || row.company_name,
+    priority: getLookupPriority(row, profile),
+    lookup_goal: profile.decision.lookupGoal,
+    tanji_search_keyword: getLookupKeyword(row, profile),
     status: 'TODO',
     note: 'CRM_WITH_LOOKUP auto task',
     created_at: now,
@@ -303,10 +317,21 @@ function createCrmWithLookupWorkItem(row: LeadImportRow, customerId: string): Le
   };
 }
 
-function getLookupPriority(row: LeadImportRow): number {
-  if (row.grade === 'A') return 100;
-  if (row.grade === 'B') return 80;
-  if (row.grade === 'C') return 60;
-  if (row.score !== null) return Math.max(0, Math.min(100, Math.round(row.score)));
-  return 50;
+function getLookupPriority(row: LeadImportRow, profile: VerticalRuleProfile): number {
+  const gradePriority = row.grade ? profile.decision.gradePriority[row.grade] : undefined;
+  if (gradePriority !== undefined) return gradePriority;
+
+  if (row.score !== null) {
+    return Math.max(
+      profile.decision.scorePriority.min,
+      Math.min(profile.decision.scorePriority.max, Math.round(row.score)),
+    );
+  }
+  return profile.decision.defaultPriority;
+}
+
+function getLookupKeyword(row: LeadImportRow, profile: VerticalRuleProfile): string | null {
+  if (row.tanji_search_keyword) return row.tanji_search_keyword;
+  if (profile.decision.lookupKeywordFallback === 'company_name') return row.company_name;
+  return null;
 }

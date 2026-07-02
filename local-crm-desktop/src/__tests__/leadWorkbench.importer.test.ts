@@ -1,9 +1,12 @@
 import Database from 'better-sqlite3';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { ensureBaseSchema, type DatabaseLike } from '../lib/db';
 import { ensureLeadWorkbenchSchema } from '../lib/leadWorkbench/db';
-import { importLeadRowsToBatch } from '../lib/leadWorkbench/importer';
+import { importLeadRowsToBatch, normalizeLeadImportRows } from '../lib/leadWorkbench/importer';
+import { getActiveVerticalProfile, type VerticalRuleProfile } from '../lib/verticalProfiles';
 
 function createSqliteDb(): DatabaseLike & { close(): void } {
   const sqlite = new Database(':memory:');
@@ -115,16 +118,16 @@ describe('lead workbench importer', () => {
     }
   });
 
-  it('assigns default decisions without executing them', async () => {
+  it('assigns default decisions without executing them and keeps contact details higher priority than score', async () => {
     const db = await createReadyDb();
     try {
       const result = await importLeadRowsToBatch(
         db,
         { batch_name: 'Decision batch', batch_type: 'AI_DAILY', source_label: null },
         [
-          { company_name: 'Phone Co', mobile: '13800138000', score: 10 },
+          { company_name: 'Low Score Phone Co', mobile: '13800138000', score: 10 },
           { company_name: 'High Score No Phone', score: 80 },
-          { company_name: 'Lookup First Co', score: 75 },
+          { company_name: 'Lookup First Co', score: 70 },
           { company_name: 'Reserve Co', score: 69 },
         ],
       );
@@ -135,7 +138,7 @@ describe('lead workbench importer', () => {
       );
 
       expect(rows).toEqual([
-        { company_name: 'Phone Co', decision: 'DIRECT_TO_CRM', decision_status: 'PENDING' },
+        { company_name: 'Low Score Phone Co', decision: 'DIRECT_TO_CRM', decision_status: 'PENDING' },
         { company_name: 'High Score No Phone', decision: 'CRM_WITH_LOOKUP', decision_status: 'PENDING' },
         { company_name: 'Lookup First Co', decision: 'LOOKUP_FIRST', decision_status: 'PENDING' },
         { company_name: 'Reserve Co', decision: 'RESERVE', decision_status: 'PENDING' },
@@ -143,6 +146,58 @@ describe('lead workbench importer', () => {
     } finally {
       db.close();
     }
+  });
+
+  it('uses a supplied vertical profile for score thresholds without changing contact-first routing', () => {
+    const dummyProfile: VerticalRuleProfile = {
+      key: 'dummy_sales_profile',
+      name: 'Dummy Sales Profile',
+      leadImport: {
+        scoreThresholds: {
+          crmWithLookup: 90,
+          lookupFirst: 50,
+        },
+        sampleRows: [],
+      },
+      decision: {
+        lookupGoal: 'FIND_PHONE',
+        gradePriority: {
+          A: 100,
+          B: 80,
+          C: 60,
+        },
+        scorePriority: {
+          min: 0,
+          max: 100,
+        },
+        defaultPriority: 50,
+        lookupKeywordFallback: 'company_name',
+      },
+      rules: getActiveVerticalProfile().rules,
+      aiDraft: getActiveVerticalProfile().aiDraft,
+    };
+
+    const rows = normalizeLeadImportRows([
+      { company_name: 'Dummy 85 No Phone', score: 85 },
+      { company_name: 'Dummy 55 No Phone', score: 55 },
+      { company_name: 'Dummy Low Phone', mobile: '13800138000', score: 10 },
+    ], { profile: dummyProfile });
+
+    expect(rows.map(row => row.decision)).toEqual([
+      'LOOKUP_FIRST',
+      'LOOKUP_FIRST',
+      'DIRECT_TO_CRM',
+    ]);
+  });
+
+  it('resolves the active vertical profile by default instead of directly binding the geo export profile object', () => {
+    const importerSource = readFileSync(resolve(__dirname, '../lib/leadWorkbench/importer.ts'), 'utf8');
+
+    expect(importerSource).toContain('getActiveVerticalProfile');
+    expect(importerSource).not.toContain('defaultGeoExportProfile');
+    expect(importerSource).not.toContain('DEFAULT_VERTICAL_PROFILE');
+    expect(importerSource).not.toContain('score >= 80');
+    expect(importerSource).not.toContain('score >= 70');
   });
 
   it('rejects blank company names instead of silently importing normal rows', async () => {

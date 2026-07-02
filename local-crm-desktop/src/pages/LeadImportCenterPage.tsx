@@ -12,6 +12,7 @@ import {
   normalizeLeadImportRows,
   type LeadImportInputRow,
 } from '../lib/leadWorkbench/importer';
+import { getActiveVerticalProfile } from '../lib/verticalProfiles';
 import type {
   LeadBatchType,
   LeadDecisionStatus,
@@ -112,34 +113,7 @@ const SUPPORTED_FIELDS = [
   'source_evidence',
 ];
 
-export const LEAD_IMPORT_SAMPLE_JSON = JSON.stringify([
-  {
-    company_name: '佛山有电话样例',
-    city: '佛山',
-    industry: '装备制造',
-    mobile: '13800138000',
-    score: 62,
-    grade: 'A',
-    matching_reason: '有手机号，默认 DIRECT_TO_CRM',
-  },
-  {
-    company_name: '广州高分待查样例',
-    city: '广州',
-    industry: '照明工程',
-    score: 86,
-    grade: 'S',
-    tanji_search_keyword: '广州高分待查样例',
-    matching_reason: '高分无电话，默认 CRM_WITH_LOOKUP',
-  },
-  {
-    company_name: '中山优先查询样例',
-    city: '中山',
-    industry: '五金',
-    score: 75,
-    grade: 'B',
-    matching_reason: '70-79 分无电话，默认 LOOKUP_FIRST',
-  },
-], null, 2);
+export const LEAD_IMPORT_SAMPLE_JSON = JSON.stringify(getActiveVerticalProfile().leadImport.sampleRows, null, 2);
 
 export const LEAD_IMPORT_CENTER_ACTION_LABELS = [
   '填入示例 JSON',

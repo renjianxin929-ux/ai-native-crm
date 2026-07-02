@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 
 import type { DatabaseLike } from '../db';
+import { getActiveVerticalProfile, type VerticalRuleProfile } from '../verticalProfiles';
 import {
   countLeadImportRowsByBatchId,
   deleteLeadImportBatchById,
@@ -46,7 +47,16 @@ export interface ImportedLeadBatch {
   rows: LeadImportRow[];
 }
 
-export function normalizeLeadImportRows(inputRows: LeadImportInputRow[]): Omit<LeadImportRow, 'batch_id'>[] {
+export interface LeadImportProfileOptions {
+  profile?: VerticalRuleProfile;
+}
+
+export function normalizeLeadImportRows(
+  inputRows: LeadImportInputRow[],
+  options: LeadImportProfileOptions = {},
+): Omit<LeadImportRow, 'batch_id'>[] {
+  const profile = options.profile ?? getActiveVerticalProfile();
+
   return inputRows.map((inputRow, rowIndex) => {
     const companyName = stringOrNull(inputRow.company_name);
     if (!companyName) {
@@ -76,7 +86,7 @@ export function normalizeLeadImportRows(inputRows: LeadImportInputRow[]): Omit<L
       matching_reason: stringOrNull(inputRow.matching_reason),
       priority_contact_role: stringOrNull(inputRow.priority_contact_role),
       source_evidence: stringOrNull(inputRow.source_evidence),
-      decision: decideLeadImportRow({ companyName, mobile, tel, score }),
+      decision: decideLeadImportRow({ companyName, mobile, tel, score }, profile),
       decision_status: 'PENDING',
       created_customer_id: null,
       created_work_item_id: null,
@@ -115,8 +125,9 @@ export async function importLeadRowsToBatch(
   db: DatabaseLike,
   batchInput: LeadImportBatchInput,
   rows: LeadImportInputRow[],
+  options: LeadImportProfileOptions = {},
 ): Promise<ImportedLeadBatch> {
-  const normalizedRows = normalizeLeadImportRows(rows);
+  const normalizedRows = normalizeLeadImportRows(rows, options);
   const batch = buildLeadImportBatch({
     ...batchInput,
     total_rows: normalizedRows.length,
@@ -199,11 +210,13 @@ function decideLeadImportRow(input: {
   mobile: string | null;
   tel: string | null;
   score: number | null;
-}): LeadImportDecision {
+}, profile: VerticalRuleProfile): LeadImportDecision {
+  const thresholds = profile.leadImport.scoreThresholds;
+
   if (!input.companyName) return 'IGNORE';
   if (input.mobile || input.tel) return 'DIRECT_TO_CRM';
-  if (input.score !== null && input.score >= 80) return 'CRM_WITH_LOOKUP';
-  if (input.score !== null && input.score >= 70) return 'LOOKUP_FIRST';
+  if (input.score !== null && input.score >= thresholds.crmWithLookup) return 'CRM_WITH_LOOKUP';
+  if (input.score !== null && input.score >= thresholds.lookupFirst) return 'LOOKUP_FIRST';
   return 'RESERVE';
 }
 
