@@ -1,4 +1,5 @@
-import type { LeadLookupGoal } from './leadWorkbench/types';
+import type { LeadLookupGoal, LeadWorkStatus } from './leadWorkbench/types';
+import type { ContactMethod, CustomerGrade } from './types';
 
 export interface VerticalProfileLeadImportSampleRow {
   company_name?: unknown;
@@ -38,6 +39,13 @@ export interface VerticalRuleProfile {
     defaultPriority: number;
     lookupKeywordFallback: 'company_name';
   };
+  customerAdapter: {
+    importRowFallbackName: string;
+    collectedLeadFallbackName: string;
+    collectedLeadDefaultSource: string;
+    defaultContactMethod: ContactMethod | null;
+    gradeMapping: Record<string, CustomerGrade> & { default: CustomerGrade };
+  };
   rules: {
     taskTitles: {
       wechatPassed: string;
@@ -47,6 +55,23 @@ export interface VerticalRuleProfile {
       byGrade: Record<string, string> & { default: string };
       neverContactedByGrade: Record<string, string>;
     };
+  };
+  workItem: {
+    statusLabels: Record<LeadWorkStatus, string>;
+    actionLabels: {
+      copySearchKeyword: string;
+      startSearch: string;
+      noPhone: string;
+      skip: string;
+    };
+    terminalMessages: Partial<Record<LeadWorkStatus, string>>;
+    confirmationMessages: Partial<Record<LeadWorkStatus, string>>;
+    statusUpdateSuccessPrefix: string;
+  };
+  capture: {
+    mobilePattern: string;
+    landlineAreaCodes: string[];
+    possibleContactTitleSuffixes: string[];
   };
   aiDraft: {
     wechatScreenshotPrompt: string;
@@ -84,6 +109,16 @@ export interface VerticalRuleProfile {
     };
   };
 }
+
+export const VERTICAL_PROFILE_REQUIRED_SECTIONS = [
+  'leadImport',
+  'decision',
+  'customerAdapter',
+  'rules',
+  'workItem',
+  'capture',
+  'aiDraft',
+] as const satisfies readonly (keyof VerticalRuleProfile)[];
 
 export const defaultGeoExportProfile = {
   key: 'default_geo_export',
@@ -136,6 +171,19 @@ export const defaultGeoExportProfile = {
     defaultPriority: 50,
     lookupKeywordFallback: 'company_name',
   },
+  customerAdapter: {
+    importRowFallbackName: 'Unnamed lead',
+    collectedLeadFallbackName: 'Unnamed collected lead',
+    collectedLeadDefaultSource: '获客作业台/采集线索',
+    defaultContactMethod: 'PHONE',
+    gradeMapping: {
+      S: 'B',
+      A: 'C',
+      B: 'C',
+      C: 'D',
+      default: 'C',
+    },
+  },
   rules: {
     taskTitles: {
       wechatPassed: '首次微信沟通',
@@ -153,6 +201,38 @@ export const defaultGeoExportProfile = {
         A: '首次触达：优先电话/微信联系，尝试约访',
       },
     },
+  },
+  workItem: {
+    statusLabels: {
+      TODO: '待查询',
+      SEARCHING: '查询中',
+      STAGED: '待整理',
+      COLLECTED: '已采集',
+      NO_PHONE: '无电话',
+      SKIPPED: '已跳过',
+      DONE: '已完成',
+    },
+    actionLabels: {
+      copySearchKeyword: '复制搜索词',
+      startSearch: '开始查询',
+      noPhone: '标记无电话',
+      skip: '跳过',
+    },
+    terminalMessages: {
+      NO_PHONE: '该任务已标记为无电话，不能继续流转。',
+      SKIPPED: '该任务已跳过，不能继续流转。',
+      DONE: '该任务已完成，不能继续流转。',
+    },
+    confirmationMessages: {
+      NO_PHONE: '确认将「{{companyName}}」标记为无电话吗？',
+      SKIPPED: '确认跳过「{{companyName}}」吗？',
+    },
+    statusUpdateSuccessPrefix: '任务状态已更新为',
+  },
+  capture: {
+    mobilePattern: String.raw`(?:\+?86[\s-]*)?(1[3-9]\d[\s-]*\d{4}[\s-]*\d{4})`,
+    landlineAreaCodes: ['20', '750', '755', '757', '760', '769'],
+    possibleContactTitleSuffixes: ['总', '经理', '主任'],
   },
   aiDraft: {
     wechatScreenshotPrompt: `你是一个销售 CRM 助手。请分析微信聊天截图，提取以下结构化信息。

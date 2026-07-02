@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { ensureBaseSchema, type DatabaseLike } from '../lib/db';
 import { ensureLeadWorkbenchSchema } from '../lib/leadWorkbench/db';
 import {
+  buildCustomerInputFromCollectedLead,
   buildCustomerInputFromImportRow,
   findCustomerByPhoneNumber,
   findCustomersByName,
@@ -12,6 +13,7 @@ import {
 } from '../lib/leadWorkbench/customerAdapter';
 import { importLeadRowsToBatch } from '../lib/leadWorkbench/importer';
 import type { LeadImportRow } from '../lib/leadWorkbench/types';
+import { getActiveVerticalProfile, type VerticalRuleProfile } from '../lib/verticalProfiles';
 
 function createSqliteDb(): DatabaseLike & { close(): void } {
   const sqlite = new Database(':memory:');
@@ -110,6 +112,67 @@ describe('lead workbench customer adapter', () => {
     expect(buildCustomerInputFromImportRow(makeImportRow({ grade: 'A' })).customer_grade).toBe('C');
     expect(buildCustomerInputFromImportRow(makeImportRow({ grade: 'B' })).customer_grade).toBe('C');
     expect(buildCustomerInputFromImportRow(makeImportRow({ grade: null })).customer_grade).toBe('C');
+  });
+
+  it('uses supplied vertical profile customer adapter policy instead of fixed GEO/export defaults', () => {
+    const dummyProfile: VerticalRuleProfile = {
+      ...getActiveVerticalProfile(),
+      key: 'dummy_customer_adapter_profile',
+      customerAdapter: {
+        ...getActiveVerticalProfile().customerAdapter,
+        importRowFallbackName: 'Profile unnamed import',
+        collectedLeadFallbackName: 'Profile unnamed collected',
+        collectedLeadDefaultSource: 'Profile collected source',
+        defaultContactMethod: 'WECHAT',
+        gradeMapping: {
+          S: 'A',
+          A: 'B',
+          B: 'D',
+          default: 'D',
+        },
+      },
+    };
+
+    const importInput = buildCustomerInputFromImportRow(
+      makeImportRow({ company_name: '', grade: 'S' }),
+      { profile: dummyProfile },
+    );
+
+    expect(importInput).toMatchObject({
+      name: 'Profile unnamed import',
+      customer_grade: 'A',
+      contact_method: 'WECHAT',
+    });
+
+    const collectedInput = buildCustomerInputFromCollectedLead(
+      {
+        id: 'collected-1',
+        work_item_id: 'work-1',
+        import_row_id: null,
+        customer_id: null,
+        company_name: null,
+        contact_name: null,
+        position: null,
+        mobile: null,
+        tel: null,
+        website: null,
+        email: null,
+        raw_text: null,
+        note: null,
+        sync_status: 'UNSYNCED',
+        created_customer_id: null,
+        updated_customer_id: null,
+        created_at: '2026-06-14T00:00:00.000Z',
+        updated_at: '2026-06-14T00:00:00.000Z',
+      },
+      { profile: dummyProfile },
+    );
+
+    expect(collectedInput).toMatchObject({
+      name: 'Profile unnamed collected',
+      source: 'Profile collected source',
+      contact_method: 'WECHAT',
+    });
   });
 
   it('insertCustomerWithDb creates a customer through the provided db and lookup helpers can find it', async () => {

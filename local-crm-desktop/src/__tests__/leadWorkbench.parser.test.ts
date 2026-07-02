@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { parseLeadContactText } from '../lib/leadWorkbench/parser';
+import { getActiveVerticalProfile, type VerticalRuleProfile } from '../lib/verticalProfiles';
 
 describe('lead workbench parser', () => {
   it('parses and normalizes mainland mobile numbers', () => {
@@ -33,5 +34,24 @@ describe('lead workbench parser', () => {
 
     expect(parsed.contacts).toEqual([]);
     expect(parsed.possibleContacts).toEqual(['张总', '李经理', '王主任']);
+  });
+
+  it('uses supplied vertical profile capture parser policy instead of fixed GEO/export channel assumptions', () => {
+    const dummyProfile: VerticalRuleProfile = {
+      ...getActiveVerticalProfile(),
+      key: 'dummy_capture_parser_profile',
+      capture: {
+        ...getActiveVerticalProfile().capture,
+        landlineAreaCodes: ['0999'],
+        possibleContactTitleSuffixes: ['顾问'],
+      },
+    };
+
+    const parsed = parseLeadContactText('电话 0999-1234567 王顾问 0757-88889999', {
+      profile: dummyProfile,
+    });
+
+    expect(parsed.tels).toEqual(['0999-1234567']);
+    expect(parsed.possibleContacts).toEqual(['王顾问']);
   });
 });

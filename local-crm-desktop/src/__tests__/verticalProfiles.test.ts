@@ -1,7 +1,10 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import {
   DEFAULT_VERTICAL_PROFILE_ID,
+  VERTICAL_PROFILE_REQUIRED_SECTIONS,
   VERTICAL_PROFILE_REGISTRY,
   defaultGeoExportProfile,
   getActiveVerticalProfile,
@@ -64,5 +67,42 @@ describe('vertical profiles', () => {
         A: '首次触达：优先电话/微信联系，尝试约访',
       },
     });
+  });
+
+  it('keeps the required vertical profile policy sections explicit and complete', () => {
+    const profile = getActiveVerticalProfile();
+
+    expect(VERTICAL_PROFILE_REQUIRED_SECTIONS).toEqual([
+      'leadImport',
+      'decision',
+      'customerAdapter',
+      'rules',
+      'workItem',
+      'capture',
+      'aiDraft',
+    ]);
+    for (const section of VERTICAL_PROFILE_REQUIRED_SECTIONS) {
+      expect(profile[section]).toBeTruthy();
+    }
+  });
+
+  it('keeps business modules on the active resolver instead of the default geo profile object', () => {
+    const modules = [
+      '../lib/leadWorkbench/importer.ts',
+      '../lib/leadWorkbench/decision.ts',
+      '../lib/leadWorkbench/customerAdapter.ts',
+      '../lib/leadWorkbench/parser.ts',
+      '../lib/rules.ts',
+      '../lib/aiDraft.ts',
+      '../pages/LeadImportCenterPage.tsx',
+      '../pages/LeadWorkbenchPage.tsx',
+    ];
+
+    for (const modulePath of modules) {
+      const source = readFileSync(resolve(__dirname, modulePath), 'utf8');
+      expect(source).toContain('getActiveVerticalProfile');
+      expect(source).not.toContain('defaultGeoExportProfile');
+      expect(source).not.toContain('DEFAULT_VERTICAL_PROFILE_ID');
+    }
   });
 });

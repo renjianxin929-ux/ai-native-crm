@@ -1,3 +1,5 @@
+import { getActiveVerticalProfile, type VerticalRuleProfile } from '../verticalProfiles';
+
 export interface ParsedLeadContactText {
   mobiles: string[];
   tels: string[];
@@ -7,20 +9,29 @@ export interface ParsedLeadContactText {
   possibleContacts: string[];
 }
 
-export function parseLeadContactText(rawText: string): ParsedLeadContactText {
+export type LeadCaptureParserOptions = {
+  profile?: VerticalRuleProfile;
+};
+
+export function parseLeadContactText(
+  rawText: string,
+  options: LeadCaptureParserOptions = {},
+): ParsedLeadContactText {
+  const profile = options.profile ?? getActiveVerticalProfile();
+
   return {
-    mobiles: parseMobiles(rawText),
-    tels: parseLandlines(rawText),
+    mobiles: parseMobiles(rawText, profile),
+    tels: parseLandlines(rawText, profile),
     urls: parseUrls(rawText),
     emails: parseEmails(rawText),
     contacts: [],
-    possibleContacts: parsePossibleContacts(rawText),
+    possibleContacts: parsePossibleContacts(rawText, profile),
   };
 }
 
-function parseMobiles(text: string): string[] {
+function parseMobiles(text: string, profile: VerticalRuleProfile): string[] {
   const mobiles: string[] = [];
-  const regex = /(?:\+?86[\s-]*)?(1[3-9]\d[\s-]*\d{4}[\s-]*\d{4})/g;
+  const regex = new RegExp(profile.capture.mobilePattern, 'g');
   let match: RegExpExecArray | null;
 
   while ((match = regex.exec(text)) !== null) {
@@ -33,9 +44,15 @@ function parseMobiles(text: string): string[] {
   return unique(mobiles);
 }
 
-function parseLandlines(text: string): string[] {
+function parseLandlines(text: string, profile: VerticalRuleProfile): string[] {
   const landlines: string[] = [];
-  const regex = /\b(0(?:20|750|755|757|760|769))[-\s]?(\d{7,8})(?:-\d{1,6})?\b/g;
+  const areaCodePattern = profile.capture.landlineAreaCodes
+    .map(areaCode => areaCode.replace(/^0+/, ''))
+    .filter(Boolean)
+    .map(escapeRegExp)
+    .join('|');
+  if (!areaCodePattern) return [];
+  const regex = new RegExp(`\\b(0(?:${areaCodePattern}))[-\\s]?(\\d{7,8})(?:-\\d{1,6})?\\b`, 'g');
   let match: RegExpExecArray | null;
 
   while ((match = regex.exec(text)) !== null) {
@@ -55,9 +72,11 @@ function parseEmails(text: string): string[] {
   return unique(emails);
 }
 
-function parsePossibleContacts(text: string): string[] {
+function parsePossibleContacts(text: string, profile: VerticalRuleProfile): string[] {
   const possibleContacts: string[] = [];
-  const regex = /[\u4e00-\u9fa5]{1,3}(?:总|经理|主任)/g;
+  const suffixPattern = profile.capture.possibleContactTitleSuffixes.map(escapeRegExp).join('|');
+  if (!suffixPattern) return [];
+  const regex = new RegExp(`[\\u4e00-\\u9fa5]{1,3}(?:${suffixPattern})`, 'g');
   let match: RegExpExecArray | null;
 
   while ((match = regex.exec(text)) !== null) {
@@ -69,4 +88,8 @@ function parsePossibleContacts(text: string): string[] {
 
 function unique(values: string[]): string[] {
   return [...new Set(values)];
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

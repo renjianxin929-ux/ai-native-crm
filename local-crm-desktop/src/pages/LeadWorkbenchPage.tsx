@@ -35,6 +35,7 @@ import {
 } from '../lib/leadWorkbench/syncAdapter';
 import { updateLeadWorkItemStatus } from '../lib/leadWorkbench/workItemActions';
 import type { LeadWorkItem, LeadWorkStatus } from '../lib/leadWorkbench/types';
+import { getActiveVerticalProfile, type VerticalRuleProfile } from '../lib/verticalProfiles';
 
 export const LEAD_WORKBENCH_STATUS_FILTERS: LeadWorkStatus[] = [
   'TODO',
@@ -46,18 +47,19 @@ export const LEAD_WORKBENCH_STATUS_FILTERS: LeadWorkStatus[] = [
   'DONE',
 ];
 
-const LEAD_WORK_STATUS_LABELS: Record<LeadWorkStatus, string> = {
-  TODO: '待查询',
-  SEARCHING: '查询中',
-  STAGED: '待整理',
-  COLLECTED: '已采集',
-  NO_PHONE: '无电话',
-  SKIPPED: '已跳过',
-  DONE: '已完成',
+type LeadWorkbenchPresentationOptions = {
+  profile?: VerticalRuleProfile;
 };
 
-export function formatLeadWorkStatusLabel(status: LeadWorkStatus): string {
-  return LEAD_WORK_STATUS_LABELS[status];
+function resolveWorkbenchProfile(options: LeadWorkbenchPresentationOptions = {}): VerticalRuleProfile {
+  return options.profile ?? getActiveVerticalProfile();
+}
+
+export function formatLeadWorkStatusLabel(
+  status: LeadWorkStatus,
+  options: LeadWorkbenchPresentationOptions = {},
+): string {
+  return resolveWorkbenchProfile(options).workItem.statusLabels[status];
 }
 
 export function formatCollectedLeadSyncStatusLabel(status: CollectedLead['sync_status']): string {
@@ -74,10 +76,10 @@ export function formatCollectedLeadSyncStatusLabel(status: CollectedLead['sync_s
 }
 
 export const LEAD_WORKBENCH_ACTION_LABELS = [
-  '复制搜索词',
-  '开始查询',
-  '标记无电话',
-  '跳过',
+  getActiveVerticalProfile().workItem.actionLabels.copySearchKeyword,
+  getActiveVerticalProfile().workItem.actionLabels.startSearch,
+  getActiveVerticalProfile().workItem.actionLabels.noPhone,
+  getActiveVerticalProfile().workItem.actionLabels.skip,
 ];
 
 export type LeadWorkItemStatusAction = {
@@ -450,33 +452,37 @@ export function isLeadWorkItemTerminalStatus(status: LeadWorkStatus): boolean {
   return status === 'NO_PHONE' || status === 'SKIPPED' || status === 'DONE';
 }
 
-export function getLeadWorkItemTerminalMessage(status: LeadWorkStatus): string | null {
-  if (status === 'NO_PHONE') return '该任务已标记为无电话，不能继续流转。';
-  if (status === 'SKIPPED') return '该任务已跳过，不能继续流转。';
-  if (status === 'DONE') return '该任务已完成，不能继续流转。';
-  return null;
+export function getLeadWorkItemTerminalMessage(
+  status: LeadWorkStatus,
+  options: LeadWorkbenchPresentationOptions = {},
+): string | null {
+  return resolveWorkbenchProfile(options).workItem.terminalMessages[status] ?? null;
 }
 
-export function getLeadWorkItemStatusActions(status: LeadWorkStatus): LeadWorkItemStatusAction[] {
+export function getLeadWorkItemStatusActions(
+  status: LeadWorkStatus,
+  options: LeadWorkbenchPresentationOptions = {},
+): LeadWorkItemStatusAction[] {
   if (isLeadWorkItemTerminalStatus(status)) return [];
+  const labels = resolveWorkbenchProfile(options).workItem.actionLabels;
 
   if (status === 'TODO') {
     return [
-      { label: '开始查询', nextStatus: 'SEARCHING', icon: 'search' },
-      { label: '标记无电话', nextStatus: 'NO_PHONE', icon: 'phone-off' },
-      { label: '跳过', nextStatus: 'SKIPPED', icon: 'skip' },
+      { label: labels.startSearch, nextStatus: 'SEARCHING', icon: 'search' },
+      { label: labels.noPhone, nextStatus: 'NO_PHONE', icon: 'phone-off' },
+      { label: labels.skip, nextStatus: 'SKIPPED', icon: 'skip' },
     ];
   }
 
   if (status === 'SEARCHING') {
     return [
-      { label: '标记无电话', nextStatus: 'NO_PHONE', icon: 'phone-off' },
-      { label: '跳过', nextStatus: 'SKIPPED', icon: 'skip' },
+      { label: labels.noPhone, nextStatus: 'NO_PHONE', icon: 'phone-off' },
+      { label: labels.skip, nextStatus: 'SKIPPED', icon: 'skip' },
     ];
   }
 
   if (status === 'STAGED') {
-    return [{ label: '跳过', nextStatus: 'SKIPPED', icon: 'skip' }];
+    return [{ label: labels.skip, nextStatus: 'SKIPPED', icon: 'skip' }];
   }
 
   return [];
@@ -485,15 +491,11 @@ export function getLeadWorkItemStatusActions(status: LeadWorkStatus): LeadWorkIt
 export function getStatusActionConfirmationMessage(
   item: Pick<LeadWorkItem, 'company_name'>,
   nextStatus: LeadWorkStatus,
+  options: LeadWorkbenchPresentationOptions = {},
 ): string | null {
   const companyName = item.company_name?.trim() || '未命名公司';
-  if (nextStatus === 'NO_PHONE') {
-    return `确认将「${companyName}」标记为无电话吗？`;
-  }
-  if (nextStatus === 'SKIPPED') {
-    return `确认跳过「${companyName}」吗？`;
-  }
-  return null;
+  const template = resolveWorkbenchProfile(options).workItem.confirmationMessages[nextStatus];
+  return template ? template.replace('{{companyName}}', companyName) : null;
 }
 
 export function shouldRunLeadWorkItemStatusUpdate(
@@ -509,8 +511,12 @@ export function shouldRunLeadWorkItemStatusUpdate(
   return confirm(confirmationMessage);
 }
 
-export function getLeadWorkItemStatusUpdateSuccessMessage(nextStatus: LeadWorkStatus): string {
-  return `任务状态已更新为 ${formatLeadWorkStatusLabel(nextStatus)}`;
+export function getLeadWorkItemStatusUpdateSuccessMessage(
+  nextStatus: LeadWorkStatus,
+  options: LeadWorkbenchPresentationOptions = {},
+): string {
+  const profile = resolveWorkbenchProfile(options);
+  return `${profile.workItem.statusUpdateSuccessPrefix} ${formatLeadWorkStatusLabel(nextStatus, { profile })}`;
 }
 
 export async function copyLeadSearchKeyword(

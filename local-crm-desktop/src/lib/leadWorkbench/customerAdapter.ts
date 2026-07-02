@@ -12,6 +12,7 @@ import type {
   TimeParseStatus,
   WechatAddStatus,
 } from '../types';
+import { getActiveVerticalProfile, type VerticalRuleProfile } from '../verticalProfiles';
 import type { CollectedLead } from './collectedLeads';
 import type { LeadBatchType, LeadImportRow } from './types';
 
@@ -40,10 +41,12 @@ export interface LeadWorkbenchCustomerInput {
 export interface BuildCustomerInputOptions {
   batchType?: LeadBatchType | null;
   sourceLabel?: string | null;
+  profile?: VerticalRuleProfile;
 }
 
 export interface BuildCollectedLeadCustomerInputOptions {
   source?: string | null;
+  profile?: VerticalRuleProfile;
 }
 
 export type CustomerEnrichmentPatch = Partial<Pick<
@@ -90,8 +93,11 @@ export function buildCustomerInputFromImportRow(
   importRow: LeadImportRow,
   options: BuildCustomerInputOptions = {},
 ): LeadWorkbenchCustomerInput {
+  const profile = options.profile ?? getActiveVerticalProfile();
+  const policy = profile.customerAdapter;
+
   return {
-    name: importRow.company_name || 'Unnamed lead',
+    name: importRow.company_name || policy.importRowFallbackName,
     phone_number: importRow.mobile || importRow.tel,
     website: importRow.website,
     region: importRow.city,
@@ -101,9 +107,9 @@ export function buildCustomerInputFromImportRow(
     source: buildSource(options),
     qualification_reason: importRow.matching_reason,
     notes: buildNotes(importRow),
-    customer_grade: mapLeadGradeToCustomerGrade(importRow.grade),
+    customer_grade: mapLeadGradeToCustomerGrade(importRow.grade, profile),
     stage: 'NEW_LEAD',
-    contact_method: 'PHONE',
+    contact_method: policy.defaultContactMethod,
     next_follow_up_at: null,
     wechat_add_status: 'NOT_ADDED',
     intent_level: 'UNKNOWN',
@@ -117,20 +123,23 @@ export function buildCustomerInputFromCollectedLead(
   collectedLead: CollectedLead,
   options: BuildCollectedLeadCustomerInputOptions = {},
 ): LeadWorkbenchCustomerInput {
+  const profile = options.profile ?? getActiveVerticalProfile();
+  const policy = profile.customerAdapter;
+
   return {
-    name: normalizeOptional(collectedLead.company_name) || 'Unnamed collected lead',
+    name: normalizeOptional(collectedLead.company_name) || policy.collectedLeadFallbackName,
     phone_number: normalizeOptional(collectedLead.mobile) || normalizeOptional(collectedLead.tel),
     website: normalizeOptional(collectedLead.website),
     region: null,
     industry: null,
     contact_person: normalizeOptional(collectedLead.contact_name),
     email: normalizeOptional(collectedLead.email),
-    source: normalizeOptional(options.source) || '获客作业台/采集线索',
+    source: normalizeOptional(options.source) || policy.collectedLeadDefaultSource,
     qualification_reason: null,
     notes: buildCollectedLeadNotes(collectedLead),
-    customer_grade: 'C',
+    customer_grade: policy.gradeMapping.default,
     stage: 'NEW_LEAD',
-    contact_method: 'PHONE',
+    contact_method: policy.defaultContactMethod,
     next_follow_up_at: null,
     wechat_add_status: 'NOT_ADDED',
     intent_level: 'UNKNOWN',
@@ -273,18 +282,9 @@ export async function insertCustomerWithDb(
   return id;
 }
 
-function mapLeadGradeToCustomerGrade(leadGrade: string | null): CustomerGrade {
-  switch (leadGrade) {
-    case 'S':
-      return 'B';
-    case 'A':
-    case 'B':
-      return 'C';
-    case 'C':
-      return 'D';
-    default:
-      return 'C';
-  }
+function mapLeadGradeToCustomerGrade(leadGrade: string | null, profile: VerticalRuleProfile): CustomerGrade {
+  if (!leadGrade) return profile.customerAdapter.gradeMapping.default;
+  return profile.customerAdapter.gradeMapping[leadGrade] ?? profile.customerAdapter.gradeMapping.default;
 }
 
 function buildSource(options: BuildCustomerInputOptions): string | null {

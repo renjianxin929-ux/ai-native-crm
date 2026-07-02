@@ -16,6 +16,7 @@ import { updateLeadWorkItemStatus } from '../lib/leadWorkbench/workItemActions';
 import type { LeadWorkItem, LeadWorkStatus } from '../lib/leadWorkbench/types';
 import type { LeadCaptureEvent } from '../lib/leadWorkbench/captureEvents';
 import type { CollectedLead } from '../lib/leadWorkbench/collectedLeads';
+import { getActiveVerticalProfile, type VerticalRuleProfile } from '../lib/verticalProfiles';
 import {
   buildCollectedLeadDraftForm,
   buildLeadPastePreviewResult,
@@ -307,6 +308,56 @@ describe('lead workbench page operations', () => {
 
   it('shows a readable success message after status updates', () => {
     expect(getLeadWorkItemStatusUpdateSuccessMessage('NO_PHONE')).toBe('任务状态已更新为 无电话');
+  });
+
+  it('uses supplied vertical profile work item presentation policy instead of fixed GEO/export labels', () => {
+    const dummyProfile: VerticalRuleProfile = {
+      ...getActiveVerticalProfile(),
+      key: 'dummy_work_item_profile',
+      workItem: {
+        ...getActiveVerticalProfile().workItem,
+        statusLabels: {
+          ...getActiveVerticalProfile().workItem.statusLabels,
+          TODO: 'Profile todo',
+          NO_PHONE: 'Profile no contact',
+        },
+        actionLabels: {
+          ...getActiveVerticalProfile().workItem.actionLabels,
+          startSearch: 'Profile start',
+          noPhone: 'Profile no contact action',
+        },
+        terminalMessages: {
+          ...getActiveVerticalProfile().workItem.terminalMessages,
+          NO_PHONE: 'Profile terminal no contact',
+        },
+        confirmationMessages: {
+          ...getActiveVerticalProfile().workItem.confirmationMessages,
+          NO_PHONE: 'Profile confirm no contact: {{companyName}}',
+        },
+        statusUpdateSuccessPrefix: 'Profile updated to',
+      },
+    };
+
+    expect(formatLeadWorkStatusLabel('TODO', { profile: dummyProfile })).toBe('Profile todo');
+    expect(getLeadWorkItemStatusActions('TODO', { profile: dummyProfile })[0].label).toBe('Profile start');
+    expect(getLeadWorkItemStatusActions('TODO', { profile: dummyProfile })[1].label).toBe(
+      'Profile no contact action',
+    );
+    expect(getLeadWorkItemTerminalMessage('NO_PHONE', { profile: dummyProfile })).toBe(
+      'Profile terminal no contact',
+    );
+    expect(getStatusActionConfirmationMessage(
+      createWorkItem({ company_name: 'Profile Co' }),
+      'NO_PHONE',
+      { profile: dummyProfile },
+    )).toBe('Profile confirm no contact: Profile Co');
+    expect(getLeadWorkItemStatusUpdateSuccessMessage('NO_PHONE', { profile: dummyProfile })).toBe(
+      'Profile updated to Profile no contact',
+    );
+
+    expect(formatLeadWorkStatusLabel('NO_PHONE')).toBe(
+      getActiveVerticalProfile().workItem.statusLabels.NO_PHONE,
+    );
   });
 
   it('builds a read-only paste preview with normalized mobile candidates', () => {
