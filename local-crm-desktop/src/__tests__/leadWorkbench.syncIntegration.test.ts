@@ -4,11 +4,16 @@ import { describe, expect, it } from 'vitest';
 
 import { ensureBaseSchema, type DatabaseLike } from '../lib/db';
 import { getCollectedLeadById, type CollectedLead } from '../lib/leadWorkbench/collectedLeads';
-import { ensureLeadWorkbenchSchema } from '../lib/leadWorkbench/db';
+import {
+  ensureLeadWorkbenchSchema,
+  getLeadWorkItemById,
+  insertLeadWorkItem,
+} from '../lib/leadWorkbench/db';
 import {
   syncCollectedLeadCreateCustomer,
   syncCollectedLeadEnrichCustomer,
 } from '../lib/leadWorkbench/syncAdapter';
+import type { LeadWorkItem } from '../lib/leadWorkbench/types';
 import type { Customer } from '../lib/types';
 
 type SyncLogRow = {
@@ -265,7 +270,166 @@ describe('lead workbench collected lead CRM sync integration', () => {
     }
   });
 
-  it('keeps sync integration boundaries away from UI, importers, work items, clipboard, and Tanji automation', () => {
+  it('closes only the synced collected lead work item after successful create and enrich', async () => {
+    const db = await createReadyDb();
+    try {
+      await insertExistingCustomer(db, {
+        id: 'work-close-enrich-customer',
+        name: 'Work Close Enrich Co',
+        phone_number: null,
+      });
+      await insertStoredWorkItem(db, {
+        id: 'create-work',
+        import_row_id: 'create-import',
+        status: 'COLLECTED',
+      });
+      await insertStoredWorkItem(db, {
+        id: 'enrich-work',
+        import_row_id: 'enrich-import',
+        customer_id: 'work-close-enrich-customer',
+        status: 'COLLECTED',
+      });
+      await insertStoredWorkItem(db, {
+        id: 'unrelated-work',
+        import_row_id: 'unrelated-import',
+        status: 'COLLECTED',
+      });
+      await insertStoredDraft(db, {
+        id: 'create-work-draft',
+        work_item_id: 'create-work',
+        import_row_id: 'create-import',
+        company_name: 'Work Close Create Co',
+        mobile: '13840004001',
+      }, { skipForeignKeys: true });
+      await insertStoredDraft(db, {
+        id: 'enrich-work-draft',
+        work_item_id: 'enrich-work',
+        import_row_id: 'enrich-import',
+        customer_id: 'work-close-enrich-customer',
+        company_name: 'Work Close Enrich Co',
+        mobile: '13840004002',
+      }, { skipForeignKeys: true });
+
+      expect((await syncCollectedLeadCreateCustomer(db, 'create-work-draft')).status).toBe('SUCCESS');
+      expect((await syncCollectedLeadEnrichCustomer(db, 'enrich-work-draft')).status).toBe('SUCCESS');
+
+      expect((await getLeadWorkItemById(db, 'create-work'))?.status).toBe('DONE');
+      expect((await getLeadWorkItemById(db, 'enrich-work'))?.status).toBe('DONE');
+      expect((await getLeadWorkItemById(db, 'unrelated-work'))?.status).toBe('COLLECTED');
+    } finally {
+      db.close();
+    }
+  });
+
+  it('does not close work items when sync fails, log insert rolls back, or the item is not collected', async () => {
+    const db = await createReadyDb();
+    try {
+      await insertExistingCustomer(db, {
+        id: 'failure-phone-owner',
+        name: 'Failure Phone Owner',
+        phone_number: '13850005001',
+      });
+      await insertStoredWorkItem(db, {
+        id: 'failed-work',
+        import_row_id: 'failed-import',
+        status: 'COLLECTED',
+      });
+      await insertStoredWorkItem(db, {
+        id: 'rollback-work',
+        import_row_id: 'rollback-import',
+        status: 'COLLECTED',
+      });
+      await insertStoredWorkItem(db, {
+        id: 'todo-work',
+        import_row_id: 'todo-import',
+        status: 'TODO',
+      });
+      await insertStoredDraft(db, {
+        id: 'failed-work-draft',
+        work_item_id: 'failed-work',
+        import_row_id: 'failed-import',
+        company_name: 'Failure Phone Draft',
+        mobile: '13850005001',
+      }, { skipForeignKeys: true });
+      await insertStoredDraft(db, {
+        id: 'rollback-work-draft',
+        work_item_id: 'rollback-work',
+        import_row_id: 'rollback-import',
+        company_name: 'Rollback Work Draft',
+        mobile: '13850005002',
+      }, { skipForeignKeys: true });
+      await insertStoredDraft(db, {
+        id: 'todo-work-draft',
+        work_item_id: 'todo-work',
+        import_row_id: 'todo-import',
+        company_name: 'Todo Work Draft',
+        mobile: '13850005003',
+      }, { skipForeignKeys: true });
+
+      expect((await syncCollectedLeadCreateCustomer(db, 'failed-work-draft')).status).toBe('DUPLICATE_PHONE');
+      const throwingDb = createThrowingDb(db, sql => sql.includes('INSERT INTO lead_sync_logs'));
+      await expect(syncCollectedLeadCreateCustomer(throwingDb, 'rollback-work-draft')).rejects.toThrow('simulated db failure');
+      expect((await syncCollectedLeadCreateCustomer(db, 'todo-work-draft')).status).toBe('SUCCESS');
+
+      expect((await getLeadWorkItemById(db, 'failed-work'))?.status).toBe('COLLECTED');
+      expect((await getLeadWorkItemById(db, 'rollback-work'))?.status).toBe('COLLECTED');
+      expect((await getLeadWorkItemById(db, 'todo-work'))?.status).toBe('TODO');
+    } finally {
+      db.close();
+    }
+  });
+
+  it('does not close a collected work item when the collected lead linkage does not match it', async () => {
+    const db = await createReadyDb();
+    try {
+      await insertExistingCustomer(db, {
+        id: 'mismatch-enrich-customer',
+        name: 'Mismatch Enrich Co',
+        phone_number: null,
+      });
+      await insertExistingCustomer(db, {
+        id: 'other-enrich-customer',
+        name: 'Other Enrich Co',
+        phone_number: null,
+      });
+      await insertStoredWorkItem(db, {
+        id: 'mismatch-create-work',
+        import_row_id: 'work-import',
+        status: 'COLLECTED',
+      });
+      await insertStoredWorkItem(db, {
+        id: 'mismatch-enrich-work',
+        import_row_id: 'enrich-import',
+        customer_id: 'other-enrich-customer',
+        status: 'COLLECTED',
+      });
+      await insertStoredDraft(db, {
+        id: 'mismatch-create-draft',
+        work_item_id: 'mismatch-create-work',
+        import_row_id: 'draft-import',
+        company_name: 'Mismatch Create Co',
+        mobile: '13860006001',
+      }, { skipForeignKeys: true });
+      await insertStoredDraft(db, {
+        id: 'mismatch-enrich-draft',
+        work_item_id: 'mismatch-enrich-work',
+        import_row_id: 'enrich-import',
+        customer_id: 'mismatch-enrich-customer',
+        company_name: 'Mismatch Enrich Co',
+        mobile: '13860006002',
+      }, { skipForeignKeys: true });
+
+      expect((await syncCollectedLeadCreateCustomer(db, 'mismatch-create-draft')).status).toBe('SUCCESS');
+      expect((await syncCollectedLeadEnrichCustomer(db, 'mismatch-enrich-draft')).status).toBe('SUCCESS');
+
+      expect((await getLeadWorkItemById(db, 'mismatch-create-work'))?.status).toBe('COLLECTED');
+      expect((await getLeadWorkItemById(db, 'mismatch-enrich-work'))?.status).toBe('COLLECTED');
+    } finally {
+      db.close();
+    }
+  });
+
+  it('keeps sync integration boundaries away from UI, importers, work item creation, clipboard, and Tanji automation', () => {
     const syncSource = readFileSync(new URL('../lib/leadWorkbench/syncAdapter.ts', import.meta.url), 'utf8');
     const customerSource = readFileSync(new URL('../lib/leadWorkbench/customerAdapter.ts', import.meta.url), 'utf8');
     const combined = `${syncSource}\n${customerSource}`;
@@ -278,7 +442,7 @@ describe('lead workbench collected lead CRM sync integration', () => {
     expect(combined).not.toContain('clip' + 'board');
     expect(combined).not.toContain('tan' + 'ji');
     expect(combined).not.toContain('insertLead' + 'WorkItem');
-    expect(combined).not.toContain('updateLead' + 'WorkItemStatus');
+    expect(syncSource).toContain('updateLead' + 'WorkItemStatus');
   });
 });
 
@@ -463,6 +627,35 @@ async function insertStoredDraft(
   if (options.skipForeignKeys) {
     await db.execute('PRAGMA foreign_keys = ON');
   }
+}
+
+async function insertStoredWorkItem(
+  db: DatabaseLike,
+  overrides: Partial<LeadWorkItem> = {},
+): Promise<void> {
+  await db.execute('PRAGMA foreign_keys = OFF');
+  await insertLeadWorkItem(db, makeWorkItem(overrides));
+  await db.execute('PRAGMA foreign_keys = ON');
+}
+
+function makeWorkItem(overrides: Partial<LeadWorkItem> = {}): LeadWorkItem {
+  return {
+    id: 'work-1',
+    import_row_id: null,
+    customer_id: null,
+    work_type: 'NEW_CUSTOMER_LOOKUP',
+    company_name: 'Work Co',
+    city: null,
+    industry: null,
+    priority: 50,
+    lookup_goal: 'FIND_PHONE',
+    tanji_search_keyword: null,
+    status: 'COLLECTED',
+    note: null,
+    created_at: '2026-06-14T00:00:00.000Z',
+    updated_at: '2026-06-14T00:00:00.000Z',
+    ...overrides,
+  };
 }
 
 function makeCollectedLead(overrides: Partial<CollectedLead> = {}): CollectedLead {

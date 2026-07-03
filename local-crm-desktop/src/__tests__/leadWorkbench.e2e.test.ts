@@ -12,6 +12,7 @@ import {
 import { executeLeadImportBatchDecisions } from '../lib/leadWorkbench/decision';
 import {
   ensureLeadWorkbenchSchema,
+  getLeadWorkItemById,
   listLeadImportRowsByBatchId,
   listLeadWorkItemsByBatchId,
 } from '../lib/leadWorkbench/db';
@@ -22,6 +23,10 @@ import {
   syncCollectedLeadEnrichCustomer,
 } from '../lib/leadWorkbench/syncAdapter';
 import type { LeadImportRow, LeadWorkItem } from '../lib/leadWorkbench/types';
+import {
+  saveLeadCaptureWorkflow,
+  startLeadQueryWorkflow,
+} from '../lib/leadWorkbench/workflow';
 import type { Customer } from '../lib/types';
 
 type SyncLogRow = {
@@ -132,17 +137,16 @@ describe('lead workbench daily end-to-end flow', () => {
         '官网 https://lookup-create.example.com',
         '邮箱 sales@lookup-create.example.com',
       ].join('\n');
+      await startLeadQueryWorkflow(db, lookupFirstWorkItem.id, { writeText: async () => undefined });
       const parsed = parseLeadContactText(rawText);
 
-      await insertLeadCaptureEvent(db, {
-        work_item_id: lookupFirstWorkItem.id,
-        raw_text: rawText,
-        parsed_json: parsed,
-        confidence_json: { source: 'e2e' },
-        action: 'PARSED',
+      const capture = await saveLeadCaptureWorkflow(db, {
+        workItemId: lookupFirstWorkItem.id,
+        rawText,
       });
       const collectedLead = await insertCollectedLeadDraft(db, {
         work_item_id: lookupFirstWorkItem.id,
+        capture_event_id: capture.capture_event_id,
         import_row_id: lookupFirstWorkItem.import_row_id,
         customer_id: null,
         company_name: lookupFirstWorkItem.company_name,
@@ -155,6 +159,7 @@ describe('lead workbench daily end-to-end flow', () => {
         raw_text: rawText,
         note: rawText,
       });
+      expect((await getLeadWorkItemById(db, lookupFirstWorkItem.id))?.status).toBe('COLLECTED');
 
       const result = await syncCollectedLeadCreateCustomer(db, collectedLead.id);
       const syncedLead = await getCollectedLeadById(db, collectedLead.id);
@@ -176,6 +181,7 @@ describe('lead workbench daily end-to-end flow', () => {
         status: 'SUCCESS',
         target_customer_id: syncedLead?.created_customer_id,
       });
+      expect((await getLeadWorkItemById(db, lookupFirstWorkItem.id))?.status).toBe('DONE');
 
       const repeatResult = await syncCollectedLeadCreateCustomer(db, collectedLead.id);
 
@@ -218,16 +224,16 @@ describe('lead workbench daily end-to-end flow', () => {
         '邮箱 enrich@example.com',
         'note: enrich note',
       ].join('\n');
+      await startLeadQueryWorkflow(db, crmLookupWorkItem.id, { writeText: async () => undefined });
       const parsed = parseLeadContactText(rawText);
 
-      await insertLeadCaptureEvent(db, {
-        work_item_id: crmLookupWorkItem.id,
-        raw_text: rawText,
-        parsed_json: parsed,
-        action: 'PARSED',
+      const capture = await saveLeadCaptureWorkflow(db, {
+        workItemId: crmLookupWorkItem.id,
+        rawText,
       });
       const collectedLead = await insertCollectedLeadDraft(db, {
         work_item_id: crmLookupWorkItem.id,
+        capture_event_id: capture.capture_event_id,
         import_row_id: crmLookupWorkItem.import_row_id,
         customer_id: crmLookupWorkItem.customer_id,
         company_name: crmLookupWorkItem.company_name,
@@ -240,6 +246,7 @@ describe('lead workbench daily end-to-end flow', () => {
         raw_text: rawText,
         note: 'enrich note',
       });
+      expect((await getLeadWorkItemById(db, crmLookupWorkItem.id))?.status).toBe('COLLECTED');
       const customerCountBeforeSync = (await db.select<Customer>('SELECT * FROM customers')).length;
 
       const result = await syncCollectedLeadEnrichCustomer(db, collectedLead.id);
@@ -267,6 +274,7 @@ describe('lead workbench daily end-to-end flow', () => {
         status: 'SUCCESS',
         target_customer_id: crmLookupWorkItem.customer_id,
       });
+      expect((await getLeadWorkItemById(db, crmLookupWorkItem.id))?.status).toBe('DONE');
 
       const repeatResult = await syncCollectedLeadEnrichCustomer(db, collectedLead.id);
 

@@ -15,7 +15,9 @@ import {
   findCustomersByName,
   insertCustomerWithDb,
 } from './customerAdapter';
-import type { LeadSyncAction, LeadSyncStatus } from './types';
+import { getLeadWorkItemById } from './db';
+import type { LeadSyncAction, LeadSyncStatus, LeadWorkItem } from './types';
+import { updateLeadWorkItemStatus } from './workItemActions';
 
 export interface LeadSyncLog {
   id: string;
@@ -217,6 +219,7 @@ export async function syncCollectedLeadCreateCustomer(
       message: 'Created customer from collected lead',
     });
     createdLogId = log.id;
+    await closeCollectedLeadWorkItem(db, collectedLead);
 
     return {
       collectedLeadId: id,
@@ -338,6 +341,7 @@ export async function syncCollectedLeadEnrichCustomer(
       message: 'Enriched customer from collected lead',
     });
     createdLogId = log.id;
+    await closeCollectedLeadWorkItem(db, collectedLead);
 
     return {
       collectedLeadId: id,
@@ -350,6 +354,20 @@ export async function syncCollectedLeadEnrichCustomer(
       logId: createdLogId,
     });
   }
+}
+
+async function closeCollectedLeadWorkItem(db: DatabaseLike, collectedLead: CollectedLead): Promise<void> {
+  if (!collectedLead.work_item_id) return;
+  const workItem = await getLeadWorkItemById(db, collectedLead.work_item_id);
+  if (workItem?.status !== 'COLLECTED') return;
+  if (!isCollectedLeadLinkedToWorkItem(collectedLead, workItem)) return;
+  await updateLeadWorkItemStatus(db, collectedLead.work_item_id, 'DONE');
+}
+
+function isCollectedLeadLinkedToWorkItem(collectedLead: CollectedLead, workItem: LeadWorkItem): boolean {
+  if (collectedLead.import_row_id !== workItem.import_row_id) return false;
+  if (collectedLead.customer_id !== workItem.customer_id) return false;
+  return true;
 }
 
 async function compensateCreateSyncFailure(
