@@ -16,10 +16,13 @@ import { updateLeadWorkItemStatus } from '../lib/leadWorkbench/workItemActions';
 import type { LeadWorkItem, LeadWorkStatus } from '../lib/leadWorkbench/types';
 import type { LeadCaptureEvent } from '../lib/leadWorkbench/captureEvents';
 import type { CollectedLead } from '../lib/leadWorkbench/collectedLeads';
+import type { LeadSyncReplayEvidence } from '../lib/leadWorkbench/syncAdapter';
 import { getActiveVerticalProfile, type VerticalRuleProfile } from '../lib/verticalProfiles';
 import {
   buildCollectedLeadDraftForm,
   buildLeadPastePreviewResult,
+  filterLeadSyncReplayEvidenceForWorkItem,
+  formatLeadSyncReplayEvidenceRows,
   copyLeadSearchKeyword,
   filterLeadWorkItemsByStatus,
   formatLeadWorkStatusLabel,
@@ -1021,6 +1024,83 @@ describe('lead workbench page operations', () => {
     expect(pageSource).not.toContain('src/lib/importer');
     expect(pageSource).not.toContain('../lib/importer');
   });
+
+  it('wires replay evidence loading into the workbench detail path without inventing an Outcome UI', () => {
+    const pageSource = readFileSync(resolve(__dirname, '../pages/LeadWorkbenchPage.tsx'), 'utf8');
+
+    expect(pageSource).toContain('listLeadSyncReplayEvidence');
+    expect(pageSource).toContain('loadLeadSyncReplayEvidence');
+    expect(pageSource).toContain('setLeadSyncReplayEvidence');
+    expect(pageSource).toContain('Replay Evidence');
+    expect(pageSource).toContain('formatLeadSyncReplayEvidenceRows');
+    expect(pageSource).not.toContain('Outcome UI');
+    expect(pageSource).not.toContain('HumanReview');
+    expect(pageSource).not.toContain('AIJudgment');
+  });
+
+  it('filters replay evidence to the selected work item and keeps unrelated sync logs out of the UI', () => {
+    const rows = [
+      createReplayEvidence({ log_id: 'visible-log', work_item_id: 'selected-work' }),
+      createReplayEvidence({ log_id: 'other-log', work_item_id: 'other-work' }),
+      createReplayEvidence({ log_id: 'missing-work-log', work_item_id: null }),
+    ];
+
+    expect(filterLeadSyncReplayEvidenceForWorkItem(rows, 'selected-work').map(row => row.log_id)).toEqual([
+      'visible-log',
+    ]);
+    expect(filterLeadSyncReplayEvidenceForWorkItem(rows, null)).toEqual([]);
+  });
+
+  it('formats replay evidence from real joined fields with empty states and no sample placeholders', () => {
+    const formatted = formatLeadSyncReplayEvidenceRows([
+      createReplayEvidence({
+        log_id: 'success-log',
+        action: 'CREATE_CUSTOMER',
+        status: 'SUCCESS',
+        message: 'Created customer from collected lead',
+        collected_sync_status: 'SYNCED',
+        work_item_status: 'DONE',
+        collected_raw_text: 'collected raw text from draft',
+        capture_raw_text: 'capture raw text from capture event',
+        import_row_id: 'import-row-1',
+        import_row_decision_status: 'DONE',
+        import_row_error_message: null,
+      }),
+      createReplayEvidence({
+        log_id: 'failed-log',
+        action: 'ENRICH_CUSTOMER',
+        status: 'FAILED',
+        message: 'Customer not found: missing-customer',
+        collected_sync_status: 'FAILED',
+        work_item_id: null,
+        work_item_status: null,
+        import_row_id: null,
+        import_row_decision_status: null,
+        import_row_error_message: null,
+        collected_raw_text: null,
+        capture_event_id: null,
+        capture_raw_text: null,
+      }),
+    ]);
+    const visible = formatted.map(row => row.details.join('\n')).join('\n');
+
+    expect(visible).toContain('sync status: SUCCESS');
+    expect(visible).toContain('sync action: CREATE_CUSTOMER');
+    expect(visible).toContain('collected lead sync status: SYNCED');
+    expect(visible).toContain('linked work item status: DONE');
+    expect(visible).toContain('capture raw text: capture raw text from capture event');
+    expect(visible).toContain('collected raw text: collected raw text from draft');
+    expect(visible).toContain('import row: import-row-1');
+    expect(visible).toContain('import row decision status: DONE');
+    expect(visible).toContain('sync status: FAILED');
+    expect(visible).toContain('error reason: Customer not found: missing-customer');
+    expect(visible).toContain('linked work item status: Not linked');
+    expect(visible).toContain('capture raw text: No capture source');
+    expect(visible).toContain('import row: Not linked');
+    expect(visible).not.toContain('sampleRows');
+    expect(visible).not.toContain('placeholder');
+    expect(visible).not.toContain('mock');
+  });
 });
 
 function createCaptureEvent(overrides: Partial<LeadCaptureEvent> = {}): LeadCaptureEvent {
@@ -1056,6 +1136,30 @@ function createCollectedLead(overrides: Partial<CollectedLead> = {}): CollectedL
     updated_customer_id: null,
     created_at: '2026-06-14T00:00:00.000Z',
     updated_at: '2026-06-14T00:00:00.000Z',
+    ...overrides,
+  };
+}
+
+function createReplayEvidence(overrides: Partial<LeadSyncReplayEvidence> = {}): LeadSyncReplayEvidence {
+  return {
+    log_id: 'log-1',
+    collected_lead_id: 'draft-1',
+    action: 'CREATE_CUSTOMER',
+    target_customer_id: 'customer-1',
+    status: 'SUCCESS',
+    message: 'Created customer from collected lead',
+    created_at: '2026-06-14T00:00:00.000Z',
+    work_item_id: 'work-1',
+    work_item_status: 'DONE',
+    import_row_id: 'import-row-1',
+    import_row_decision_status: 'DONE',
+    import_row_error_message: null,
+    collected_sync_status: 'SYNCED',
+    collected_raw_text: 'collected raw text',
+    capture_event_id: 'capture-1',
+    capture_raw_text: 'capture raw text',
+    created_customer_id: 'customer-1',
+    updated_customer_id: null,
     ...overrides,
   };
 }

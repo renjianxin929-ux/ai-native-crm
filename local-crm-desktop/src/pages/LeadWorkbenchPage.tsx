@@ -33,8 +33,10 @@ import {
 import {
   createEmptyLeadSyncLogStatusCounts,
   getLeadSyncLogStatusCounts,
+  listLeadSyncReplayEvidence,
   syncCollectedLeadCreateCustomer,
   syncCollectedLeadEnrichCustomer,
+  type LeadSyncReplayEvidence,
   type LeadSyncLogStatusCounts,
   type SyncCollectedLeadCreateCustomerResult,
   type SyncCollectedLeadEnrichCustomerResult,
@@ -111,6 +113,13 @@ export type LeadWorkbenchRealityStatRow = {
   count: number;
 };
 
+export type LeadSyncReplayEvidenceDisplayRow = {
+  logId: string;
+  collectedLeadId: string;
+  title: string;
+  details: string[];
+};
+
 export function buildLeadWorkbenchRealityStatRows(input: {
   collectedLeadSyncCounts: CollectedLeadSyncStatusCounts;
   syncLogStatusCounts: LeadSyncLogStatusCounts;
@@ -125,6 +134,55 @@ export function buildLeadWorkbenchRealityStatRows(input: {
       count: input.syncLogStatusCounts[status],
     })),
   ];
+}
+
+export function filterLeadSyncReplayEvidenceForWorkItem(
+  rows: LeadSyncReplayEvidence[],
+  workItemId: string | null,
+): LeadSyncReplayEvidence[] {
+  if (!workItemId) return [];
+  return rows.filter(row => row.work_item_id === workItemId);
+}
+
+export function formatLeadSyncReplayEvidenceRows(
+  rows: LeadSyncReplayEvidence[],
+): LeadSyncReplayEvidenceDisplayRow[] {
+  return rows.map(row => {
+    const details = [
+      `sync status: ${row.status}`,
+      `sync action: ${row.action}`,
+      `sync message: ${formatReplayEvidenceValue(row.message, 'No sync message')}`,
+      `collected lead sync status: ${row.collected_sync_status}`,
+      `linked work item: ${formatReplayEvidenceValue(row.work_item_id, 'Not linked')}`,
+      `linked work item status: ${formatReplayEvidenceValue(row.work_item_status, 'Not linked')}`,
+      `collected raw text: ${formatReplayEvidenceValue(row.collected_raw_text, 'No collected raw text')}`,
+      `capture_event_id: ${formatReplayEvidenceValue(row.capture_event_id, 'Not linked')}`,
+      `capture raw text: ${formatReplayEvidenceValue(row.capture_raw_text, 'No capture source')}`,
+      `import row: ${formatReplayEvidenceValue(row.import_row_id, 'Not linked')}`,
+      `import row decision status: ${formatReplayEvidenceValue(row.import_row_decision_status, 'Not linked')}`,
+      `target_customer_id: ${formatReplayEvidenceValue(row.target_customer_id, 'Not linked')}`,
+      `created_customer_id: ${formatReplayEvidenceValue(row.created_customer_id, 'Not linked')}`,
+      `updated_customer_id: ${formatReplayEvidenceValue(row.updated_customer_id, 'Not linked')}`,
+      `created_at: ${row.created_at}`,
+    ];
+    const errorReason = row.import_row_error_message?.trim()
+      || (row.status === 'SUCCESS' ? '' : row.message.trim());
+    if (errorReason) {
+      details.push(`error reason: ${errorReason}`);
+    }
+
+    return {
+      logId: row.log_id,
+      collectedLeadId: row.collected_lead_id,
+      title: `${row.status} / ${row.action} / ${row.created_at}`,
+      details,
+    };
+  });
+}
+
+function formatReplayEvidenceValue(value: string | number | null | undefined, empty: string): string {
+  const normalized = typeof value === 'number' ? String(value) : value?.trim() || '';
+  return normalized || empty;
 }
 
 export type LeadWorkItemStatusAction = {
@@ -652,6 +710,9 @@ export default function LeadWorkbenchPage() {
   const [collectedLeadDraft, setCollectedLeadDraft] = useState<CollectedLeadDraftForm | null>(null);
   const [captureEvents, setCaptureEvents] = useState<LeadCaptureEvent[]>([]);
   const [collectedLeadDrafts, setCollectedLeadDrafts] = useState<CollectedLead[]>([]);
+  const [leadSyncReplayEvidence, setLeadSyncReplayEvidence] = useState<LeadSyncReplayEvidence[]>([]);
+  const [isLoadingReplayEvidence, setIsLoadingReplayEvidence] = useState(false);
+  const [replayEvidenceError, setReplayEvidenceError] = useState<string | null>(null);
   const [captureSaveEvidence, setCaptureSaveEvidence] = useState<LeadCaptureSaveEvidence | null>(null);
   const [collectedLeadSaveEvidence, setCollectedLeadSaveEvidence] = useState<CollectedLeadSaveEvidence | null>(null);
 
@@ -667,6 +728,10 @@ export default function LeadWorkbenchPage() {
     collectedLeadSyncCounts,
     syncLogStatusCounts,
   }), [collectedLeadSyncCounts, syncLogStatusCounts]);
+  const selectedLeadSyncReplayEvidence = useMemo(
+    () => filterLeadSyncReplayEvidenceForWorkItem(leadSyncReplayEvidence, selectedItemId),
+    [leadSyncReplayEvidence, selectedItemId],
+  );
 
   const loadItems = useCallback(async (status: LeadWorkStatus) => {
     setIsLoading(true);
@@ -725,6 +790,20 @@ export default function LeadWorkbenchPage() {
     setCollectedLeadDrafts(drafts);
   }, []);
 
+  const loadLeadSyncReplayEvidence = useCallback(async () => {
+    setIsLoadingReplayEvidence(true);
+    setReplayEvidenceError(null);
+    try {
+      const db = await getDb();
+      const rows = await listLeadSyncReplayEvidence(db);
+      setLeadSyncReplayEvidence(rows);
+    } catch (err) {
+      setReplayEvidenceError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsLoadingReplayEvidence(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (!selectedItemId) {
       setCaptureEvents([]);
@@ -740,6 +819,8 @@ export default function LeadWorkbenchPage() {
   useEffect(() => {
     if (!selectedItemId) {
       setCollectedLeadDrafts([]);
+      setLeadSyncReplayEvidence([]);
+      setReplayEvidenceError(null);
       return;
     }
 
@@ -747,7 +828,8 @@ export default function LeadWorkbenchPage() {
     void loadCollectedLeadDrafts(selectedItemId).catch(err => {
       setError(getCollectedLeadDraftSaveErrorMessage(err));
     });
-  }, [loadCollectedLeadDrafts, selectedItemId]);
+    void loadLeadSyncReplayEvidence();
+  }, [loadCollectedLeadDrafts, loadLeadSyncReplayEvidence, selectedItemId]);
 
   const handleRefreshTasks = useCallback(async () => {
     setMessage(null);
@@ -936,16 +1018,18 @@ export default function LeadWorkbenchPage() {
       } else {
         setError(run.message);
       }
+      await loadLeadSyncReplayEvidence();
     } catch (err) {
       setError(getCollectedLeadCreateCustomerErrorMessage(err));
       const workItemId = draft.work_item_id ?? selectedItemId;
       if (workItemId) {
         await loadCollectedLeadDrafts(workItemId).catch(() => undefined);
       }
+      await loadLeadSyncReplayEvidence();
     } finally {
       setIsSyncingCollectedLeadId(null);
     }
-  }, [loadCollectedLeadDrafts, loadItems, selectedItemId, statusFilter]);
+  }, [loadCollectedLeadDrafts, loadItems, loadLeadSyncReplayEvidence, selectedItemId, statusFilter]);
 
   const handleSyncCollectedLeadEnrichCustomer = useCallback(async (draft: CollectedLead) => {
     if (!shouldRunCollectedLeadEnrichCustomer(draft, messageToConfirm => window.confirm(messageToConfirm))) {
@@ -969,16 +1053,18 @@ export default function LeadWorkbenchPage() {
       } else {
         setError(resultMessage);
       }
+      await loadLeadSyncReplayEvidence();
     } catch (err) {
       setError(getCollectedLeadEnrichCustomerErrorMessage(err));
       const workItemId = draft.work_item_id ?? selectedItemId;
       if (workItemId) {
         await loadCollectedLeadDrafts(workItemId).catch(() => undefined);
       }
+      await loadLeadSyncReplayEvidence();
     } finally {
       setIsSyncingCollectedLeadId(null);
     }
-  }, [loadCollectedLeadDrafts, loadItems, selectedItemId, statusFilter]);
+  }, [loadCollectedLeadDrafts, loadItems, loadLeadSyncReplayEvidence, selectedItemId, statusFilter]);
 
   const statusActions = selectedItem ? getLeadWorkItemStatusActions(selectedItem.status) : [];
   const searchKeyword = selectedItem ? getSuggestedTanjiSearchKeyword(selectedItem) : '';
@@ -1314,6 +1400,9 @@ export default function LeadWorkbenchPage() {
                           const enrichCustomerStateLabel = getCollectedLeadEnrichCustomerStateLabel(draft);
                           const isCurrentDraftSyncing = isSyncingCollectedLeadId === draft.id;
                           const collectedLeadStateLabel = createCustomerStateLabel ?? enrichCustomerStateLabel;
+                          const replayRows = formatLeadSyncReplayEvidenceRows(
+                            selectedLeadSyncReplayEvidence.filter(row => row.collected_lead_id === draft.id),
+                          );
 
                           return (
                             <details className="lead-workbench-history-item" key={draft.id}>
@@ -1364,6 +1453,29 @@ export default function LeadWorkbenchPage() {
                                   )
                                 )}
                               </div>
+                              <section className="lead-workbench-capture-history">
+                                <div className="section-title">Replay Evidence</div>
+                                {isLoadingReplayEvidence ? (
+                                  <div className="empty-state lead-workbench-history-empty">Loading replay evidence...</div>
+                                ) : replayEvidenceError ? (
+                                  <div className="lead-alert lead-alert-danger">
+                                    <span>{replayEvidenceError}</span>
+                                  </div>
+                                ) : replayRows.length === 0 ? (
+                                  <div className="empty-state lead-workbench-history-empty">No replay evidence linked to this collected lead.</div>
+                                ) : (
+                                  <div className="lead-workbench-history-list">
+                                    {replayRows.map(row => (
+                                      <details className="lead-workbench-history-item" key={row.logId}>
+                                        <summary>
+                                          <span>{row.title}</span>
+                                        </summary>
+                                        <PreviewText label="Replay Evidence" value={row.details.join('\n')} />
+                                      </details>
+                                    ))}
+                                  </div>
+                                )}
+                              </section>
                             </details>
                           );
                         })}
