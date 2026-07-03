@@ -10,6 +10,7 @@ import {
   insertLeadWorkItem,
 } from '../lib/leadWorkbench/db';
 import {
+  listLeadSyncReplayEvidence,
   syncCollectedLeadCreateCustomer,
   syncCollectedLeadEnrichCustomer,
 } from '../lib/leadWorkbench/syncAdapter';
@@ -429,6 +430,92 @@ describe('lead workbench collected lead CRM sync integration', () => {
     }
   });
 
+  it('lists replay evidence for successful and failed sync outcomes without an Outcome table', async () => {
+    const db = await createReadyDb();
+    try {
+      await insertExistingCustomer(db, {
+        id: 'replay-existing-customer',
+        name: 'Replay Existing Co',
+        phone_number: '13870007001',
+      });
+      await insertStoredWorkItem(db, {
+        id: 'replay-success-work',
+        import_row_id: 'replay-success-import',
+        status: 'COLLECTED',
+      });
+      await insertStoredWorkItem(db, {
+        id: 'replay-failed-work',
+        import_row_id: 'replay-failed-import',
+        status: 'COLLECTED',
+      });
+      await insertStoredDraft(db, {
+        id: 'replay-success-draft',
+        work_item_id: 'replay-success-work',
+        capture_event_id: 'replay-success-capture',
+        import_row_id: 'replay-success-import',
+        company_name: 'Replay Success Co',
+        mobile: '13870007002',
+        raw_text: 'success capture raw text',
+      }, { skipForeignKeys: true });
+      await insertStoredDraft(db, {
+        id: 'replay-failed-draft',
+        work_item_id: 'replay-failed-work',
+        capture_event_id: 'replay-failed-capture',
+        import_row_id: 'replay-failed-import',
+        company_name: 'Replay Existing Co',
+        mobile: '13870007003',
+        raw_text: 'failed capture raw text',
+      }, { skipForeignKeys: true });
+      await insertStoredCaptureEvent(db, {
+        id: 'replay-success-capture',
+        work_item_id: 'replay-success-work',
+        raw_text: 'success capture raw text',
+      });
+      await insertStoredCaptureEvent(db, {
+        id: 'replay-failed-capture',
+        work_item_id: 'replay-failed-work',
+        raw_text: 'failed capture raw text',
+      });
+
+      expect((await syncCollectedLeadCreateCustomer(db, 'replay-success-draft')).status).toBe('SUCCESS');
+      expect((await syncCollectedLeadCreateCustomer(db, 'replay-failed-draft')).status).toBe('DUPLICATE_NAME');
+
+      const evidence = await listLeadSyncReplayEvidence(db);
+
+      expect(evidence).toEqual([
+        expect.objectContaining({
+          collected_lead_id: 'replay-failed-draft',
+          action: 'SKIP_DUPLICATE',
+          status: 'SKIPPED',
+          message: 'Duplicate customer name: Replay Existing Co',
+          work_item_id: 'replay-failed-work',
+          work_item_status: 'COLLECTED',
+          import_row_id: 'replay-failed-import',
+          collected_sync_status: 'FAILED',
+          collected_raw_text: 'failed capture raw text',
+          capture_event_id: 'replay-failed-capture',
+          capture_raw_text: 'failed capture raw text',
+          target_customer_id: 'replay-existing-customer',
+        }),
+        expect.objectContaining({
+          collected_lead_id: 'replay-success-draft',
+          action: 'CREATE_CUSTOMER',
+          status: 'SUCCESS',
+          message: 'Created customer from collected lead',
+          work_item_id: 'replay-success-work',
+          work_item_status: 'DONE',
+          import_row_id: 'replay-success-import',
+          collected_sync_status: 'SYNCED',
+          collected_raw_text: 'success capture raw text',
+          capture_event_id: 'replay-success-capture',
+          capture_raw_text: 'success capture raw text',
+        }),
+      ]);
+    } finally {
+      db.close();
+    }
+  });
+
   it('keeps sync integration boundaries away from UI, importers, work item creation, clipboard, and Tanji automation', () => {
     const syncSource = readFileSync(new URL('../lib/leadWorkbench/syncAdapter.ts', import.meta.url), 'utf8');
     const customerSource = readFileSync(new URL('../lib/leadWorkbench/customerAdapter.ts', import.meta.url), 'utf8');
@@ -599,13 +686,14 @@ async function insertStoredDraft(
   }
   await db.execute(
     `INSERT INTO collected_leads (
-      id, work_item_id, import_row_id, customer_id, company_name, contact_name,
+      id, work_item_id, capture_event_id, import_row_id, customer_id, company_name, contact_name,
       position, mobile, tel, website, email, raw_text, note, sync_status,
       created_customer_id, updated_customer_id, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       draft.id,
       draft.work_item_id,
+      draft.capture_event_id ?? null,
       draft.import_row_id,
       draft.customer_id,
       draft.company_name,
@@ -635,6 +723,32 @@ async function insertStoredWorkItem(
 ): Promise<void> {
   await db.execute('PRAGMA foreign_keys = OFF');
   await insertLeadWorkItem(db, makeWorkItem(overrides));
+  await db.execute('PRAGMA foreign_keys = ON');
+}
+
+async function insertStoredCaptureEvent(
+  db: DatabaseLike,
+  overrides: {
+    id: string;
+    work_item_id: string;
+    raw_text: string;
+  },
+): Promise<void> {
+  await db.execute('PRAGMA foreign_keys = OFF');
+  await db.execute(
+    `INSERT INTO lead_capture_events (
+      id, work_item_id, raw_text, parsed_json, confidence_json, action, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [
+      overrides.id,
+      overrides.work_item_id,
+      overrides.raw_text,
+      '{}',
+      '{}',
+      'CAPTURE_SAVED',
+      '2026-06-14T00:00:00.000Z',
+    ],
+  );
   await db.execute('PRAGMA foreign_keys = ON');
 }
 

@@ -62,6 +62,7 @@ import {
   LEAD_WORKBENCH_STATUS_FILTERS,
   shouldRunCollectedLeadCreateCustomer,
   shouldRunCollectedLeadEnrichCustomer,
+  syncCollectedLeadCreateCustomerFromWorkbench,
   shouldEnableCollectedLeadDraftSave,
   shouldRunCollectedLeadDraftSave,
   shouldEnableLeadCaptureSave,
@@ -708,6 +709,58 @@ describe('lead workbench page operations', () => {
     expect(confirm).toHaveBeenCalledTimes(1);
     expect(shouldRunCollectedLeadCreateCustomer(createCollectedLead({ sync_status: 'SYNCED' }), confirm)).toBe(false);
     expect(confirm).toHaveBeenCalledTimes(1);
+  });
+
+  it('orchestrates CREATE_CUSTOMER sync from the workbench only after confirmation and refreshes evidence', async () => {
+    const draft = createCollectedLead({
+      id: 'workbench-create-sync',
+      work_item_id: 'workbench-work',
+      sync_status: 'UNSYNCED',
+    });
+    const confirm = vi.fn().mockReturnValue(false);
+    const sync = vi.fn();
+    const refreshDrafts = vi.fn();
+    const refreshItems = vi.fn();
+
+    await expect(syncCollectedLeadCreateCustomerFromWorkbench({
+      draft,
+      confirm,
+      sync,
+      refreshDrafts,
+      refreshItems,
+    })).resolves.toEqual({ status: 'CANCELLED' });
+    expect(sync).not.toHaveBeenCalled();
+    expect(refreshDrafts).not.toHaveBeenCalled();
+    expect(refreshItems).not.toHaveBeenCalled();
+
+    confirm.mockReturnValue(true);
+    sync.mockResolvedValue({
+      collectedLeadId: draft.id,
+      targetCustomerId: 'created-customer',
+      status: 'SUCCESS',
+      message: 'Created customer from collected lead',
+    });
+
+    await expect(syncCollectedLeadCreateCustomerFromWorkbench({
+      draft,
+      confirm,
+      sync,
+      refreshDrafts,
+      refreshItems,
+      selectedStatus: 'COLLECTED',
+    })).resolves.toEqual({
+      status: 'EXECUTED',
+      result: {
+        collectedLeadId: draft.id,
+        targetCustomerId: 'created-customer',
+        status: 'SUCCESS',
+        message: 'Created customer from collected lead',
+      },
+      message: 'CRM 客户创建成功：created-customer',
+    });
+    expect(sync).toHaveBeenCalledWith(draft.id);
+    expect(refreshDrafts).toHaveBeenCalledWith('workbench-work');
+    expect(refreshItems).toHaveBeenCalledWith('COLLECTED');
   });
 
   it('shows readable CREATE_CUSTOMER success and failure messages', () => {

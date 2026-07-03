@@ -16,7 +16,7 @@ import {
   insertCustomerWithDb,
 } from './customerAdapter';
 import { getLeadWorkItemById } from './db';
-import type { LeadSyncAction, LeadSyncStatus, LeadWorkItem } from './types';
+import type { LeadSyncAction, LeadSyncStatus, LeadWorkItem, LeadWorkStatus } from './types';
 import { updateLeadWorkItemStatus } from './workItemActions';
 
 export type LeadSyncLogStatusCounts = Record<LeadSyncStatus, number>;
@@ -37,6 +37,27 @@ export interface InsertLeadSyncLogInput {
   target_customer_id: string | null;
   status: LeadSyncStatus;
   message: string;
+}
+
+export interface LeadSyncReplayEvidence {
+  log_id: string;
+  collected_lead_id: string;
+  action: LeadSyncAction;
+  target_customer_id: string | null;
+  status: LeadSyncStatus;
+  message: string;
+  created_at: string;
+  work_item_id: string | null;
+  work_item_status: LeadWorkStatus | null;
+  import_row_id: string | null;
+  import_row_decision_status: string | null;
+  import_row_error_message: string | null;
+  collected_sync_status: CollectedLead['sync_status'];
+  collected_raw_text: string | null;
+  capture_event_id: string | null;
+  capture_raw_text: string | null;
+  created_customer_id: string | null;
+  updated_customer_id: string | null;
 }
 
 export type SyncCollectedLeadCreateCustomerStatus =
@@ -134,6 +155,36 @@ export async function getLeadSyncLogStatusCounts(
     }
   }
   return counts;
+}
+
+export async function listLeadSyncReplayEvidence(db: DatabaseLike): Promise<LeadSyncReplayEvidence[]> {
+  return db.select<LeadSyncReplayEvidence>(
+    `SELECT
+      log.id AS log_id,
+      log.collected_lead_id,
+      log.action,
+      log.target_customer_id,
+      log.status,
+      log.message,
+      log.created_at,
+      collected.work_item_id,
+      work.status AS work_item_status,
+      collected.import_row_id,
+      import_row.decision_status AS import_row_decision_status,
+      import_row.error_message AS import_row_error_message,
+      collected.sync_status AS collected_sync_status,
+      collected.raw_text AS collected_raw_text,
+      collected.capture_event_id,
+      capture.raw_text AS capture_raw_text,
+      collected.created_customer_id,
+      collected.updated_customer_id
+     FROM lead_sync_logs log
+     INNER JOIN collected_leads collected ON collected.id = log.collected_lead_id
+     LEFT JOIN lead_work_items work ON work.id = collected.work_item_id
+     LEFT JOIN lead_capture_events capture ON capture.id = collected.capture_event_id
+     LEFT JOIN lead_import_rows import_row ON import_row.id = collected.import_row_id
+     ORDER BY log.created_at DESC, log.rowid DESC`,
+  );
 }
 
 export async function syncCollectedLeadCreateCustomer(

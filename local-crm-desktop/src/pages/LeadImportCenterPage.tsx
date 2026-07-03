@@ -280,6 +280,9 @@ export function buildLeadImportExecutionConfirmation(
       ...DECISIONS.map(decision => `${formatLeadDecisionLabel(decision)}: ${stats.decisionCounts[decision]}`),
       '',
       '执行后可能创建 CRM 客户和获客任务。',
+      '直接入库将立即创建 CRM 客户。',
+      '先查重后入库 / 先查询将创建获客任务，不会在此步同步采集线索。',
+      '采集线索同步仍需在获客作业台单条确认。',
     ].join('\n'),
   };
   void [

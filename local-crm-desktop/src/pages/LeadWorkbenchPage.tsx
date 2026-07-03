@@ -293,6 +293,39 @@ export function shouldRunCollectedLeadCreateCustomer(
   return confirm(getCollectedLeadCreateCustomerConfirmationMessage(draft));
 }
 
+export type WorkbenchCollectedLeadCreateCustomerSyncResult =
+  | { status: 'CANCELLED' }
+  | { status: 'EXECUTED'; result: SyncCollectedLeadCreateCustomerResult; message: string };
+
+export async function syncCollectedLeadCreateCustomerFromWorkbench(input: {
+  draft: CollectedLead;
+  confirm: ConfirmFn;
+  sync: (collectedLeadId: string) => Promise<SyncCollectedLeadCreateCustomerResult>;
+  refreshDrafts: (workItemId: string) => Promise<void>;
+  refreshItems: (status: LeadWorkStatus) => Promise<void>;
+  selectedStatus?: LeadWorkStatus;
+  fallbackWorkItemId?: string | null;
+  onConfirmed?: () => void;
+}): Promise<WorkbenchCollectedLeadCreateCustomerSyncResult> {
+  if (!shouldRunCollectedLeadCreateCustomer(input.draft, input.confirm)) {
+    return { status: 'CANCELLED' };
+  }
+
+  input.onConfirmed?.();
+  const result = await input.sync(input.draft.id);
+  const workItemId = input.draft.work_item_id ?? input.fallbackWorkItemId;
+  if (workItemId) {
+    await input.refreshDrafts(workItemId);
+  }
+  await input.refreshItems(input.selectedStatus ?? 'COLLECTED');
+
+  return {
+    status: 'EXECUTED',
+    result,
+    message: getCollectedLeadCreateCustomerResultMessage(result),
+  };
+}
+
 export function getCollectedLeadCreateCustomerResultMessage(
   result: SyncCollectedLeadCreateCustomerResult,
 ): string {
@@ -877,26 +910,31 @@ export default function LeadWorkbenchPage() {
   ]);
 
   const handleSyncCollectedLeadCreateCustomer = useCallback(async (draft: CollectedLead) => {
-    if (!shouldRunCollectedLeadCreateCustomer(draft, messageToConfirm => window.confirm(messageToConfirm))) {
-      return;
-    }
-
-    setIsSyncingCollectedLeadId(draft.id);
-    setError(null);
-    setMessage(null);
     try {
-      const db = await getDb();
-      const result = await syncCollectedLeadCreateCustomer(db, draft.id);
-      const workItemId = draft.work_item_id ?? selectedItemId;
-      if (workItemId) {
-        await loadCollectedLeadDrafts(workItemId);
+      const run = await syncCollectedLeadCreateCustomerFromWorkbench({
+        draft,
+        confirm: messageToConfirm => window.confirm(messageToConfirm),
+        sync: async collectedLeadId => {
+          const db = await getDb();
+          return syncCollectedLeadCreateCustomer(db, collectedLeadId);
+        },
+        refreshDrafts: loadCollectedLeadDrafts,
+        refreshItems: loadItems,
+        selectedStatus: statusFilter,
+        fallbackWorkItemId: selectedItemId,
+        onConfirmed: () => {
+          setIsSyncingCollectedLeadId(draft.id);
+          setError(null);
+          setMessage(null);
+        },
+      });
+      if (run.status === 'CANCELLED') {
+        return;
       }
-      const resultMessage = getCollectedLeadCreateCustomerResultMessage(result);
-      await loadItems(statusFilter);
-      if (result.status === 'SUCCESS') {
-        setMessage(resultMessage);
+      if (run.result.status === 'SUCCESS') {
+        setMessage(run.message);
       } else {
-        setError(resultMessage);
+        setError(run.message);
       }
     } catch (err) {
       setError(getCollectedLeadCreateCustomerErrorMessage(err));
