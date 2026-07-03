@@ -4,6 +4,8 @@ import type { DatabaseLike } from '../db';
 import { assertCollectedLeadSyncStatusTransition } from './stateMachine';
 import type { CollectedLeadSyncStatus } from './types';
 
+export type CollectedLeadSyncStatusCounts = Record<CollectedLeadSyncStatus, number>;
+
 export interface CollectedLead {
   id: string;
   work_item_id: string | null;
@@ -24,6 +26,15 @@ export interface CollectedLead {
   updated_customer_id: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export function createEmptyCollectedLeadSyncStatusCounts(): CollectedLeadSyncStatusCounts {
+  return {
+    UNSYNCED: 0,
+    SYNCED: 0,
+    FAILED: 0,
+    IGNORED: 0,
+  };
 }
 
 export interface InsertCollectedLeadDraftInput {
@@ -227,6 +238,21 @@ export async function listCollectedLeadsByWorkItemId(
     'SELECT * FROM collected_leads WHERE work_item_id = ? ORDER BY created_at DESC, rowid DESC',
     [workItemId],
   );
+}
+
+export async function getCollectedLeadSyncStatusCounts(
+  db: DatabaseLike,
+): Promise<CollectedLeadSyncStatusCounts> {
+  const rows = await db.select<{ sync_status: CollectedLeadSyncStatus; count: number | string }>(
+    'SELECT sync_status, COUNT(*) as count FROM collected_leads GROUP BY sync_status',
+  );
+  const counts = createEmptyCollectedLeadSyncStatusCounts();
+  for (const row of rows) {
+    if (row.sync_status in counts) {
+      counts[row.sync_status] = Number(row.count);
+    }
+  }
+  return counts;
 }
 
 function normalizeOptional(value: string | null | undefined): string | null {

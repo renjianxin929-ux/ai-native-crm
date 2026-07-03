@@ -19,6 +19,8 @@ import { getLeadWorkItemById } from './db';
 import type { LeadSyncAction, LeadSyncStatus, LeadWorkItem } from './types';
 import { updateLeadWorkItemStatus } from './workItemActions';
 
+export type LeadSyncLogStatusCounts = Record<LeadSyncStatus, number>;
+
 export interface LeadSyncLog {
   id: string;
   collected_lead_id: string;
@@ -69,6 +71,14 @@ export interface SyncCollectedLeadEnrichCustomerResult {
   message: string;
 }
 
+export function createEmptyLeadSyncLogStatusCounts(): LeadSyncLogStatusCounts {
+  return {
+    SUCCESS: 0,
+    FAILED: 0,
+    SKIPPED: 0,
+  };
+}
+
 export async function insertLeadSyncLog(
   db: DatabaseLike,
   input: InsertLeadSyncLogInput,
@@ -109,6 +119,21 @@ export async function insertLeadSyncLog(
   );
 
   return log;
+}
+
+export async function getLeadSyncLogStatusCounts(
+  db: DatabaseLike,
+): Promise<LeadSyncLogStatusCounts> {
+  const rows = await db.select<{ status: LeadSyncStatus; count: number | string }>(
+    'SELECT status, COUNT(*) as count FROM lead_sync_logs GROUP BY status',
+  );
+  const counts = createEmptyLeadSyncLogStatusCounts();
+  for (const row of rows) {
+    if (row.status in counts) {
+      counts[row.status] = Number(row.count);
+    }
+  }
+  return counts;
 }
 
 export async function syncCollectedLeadCreateCustomer(

@@ -11,8 +11,11 @@ import {
   type LeadCaptureEvent,
 } from '../lib/leadWorkbench/captureEvents';
 import {
+  createEmptyCollectedLeadSyncStatusCounts,
+  getCollectedLeadSyncStatusCounts,
   listCollectedLeadsByWorkItemId,
   type CollectedLead,
+  type CollectedLeadSyncStatusCounts,
 } from '../lib/leadWorkbench/collectedLeads';
 import {
   getLeadWorkItemStatusCounts,
@@ -28,13 +31,16 @@ import {
   type LeadCaptureSaveEvidence,
 } from '../lib/leadWorkbench/workflow';
 import {
+  createEmptyLeadSyncLogStatusCounts,
+  getLeadSyncLogStatusCounts,
   syncCollectedLeadCreateCustomer,
   syncCollectedLeadEnrichCustomer,
+  type LeadSyncLogStatusCounts,
   type SyncCollectedLeadCreateCustomerResult,
   type SyncCollectedLeadEnrichCustomerResult,
 } from '../lib/leadWorkbench/syncAdapter';
 import { updateLeadWorkItemStatus } from '../lib/leadWorkbench/workItemActions';
-import type { LeadWorkItem, LeadWorkStatus } from '../lib/leadWorkbench/types';
+import type { LeadSyncStatus, LeadWorkItem, LeadWorkStatus } from '../lib/leadWorkbench/types';
 import { getActiveVerticalProfile, type VerticalRuleProfile } from '../lib/verticalProfiles';
 
 export const LEAD_WORKBENCH_STATUS_FILTERS: LeadWorkStatus[] = [
@@ -45,6 +51,19 @@ export const LEAD_WORKBENCH_STATUS_FILTERS: LeadWorkStatus[] = [
   'NO_PHONE',
   'SKIPPED',
   'DONE',
+];
+
+const COLLECTED_LEAD_SYNC_STATUSES: CollectedLead['sync_status'][] = [
+  'UNSYNCED',
+  'SYNCED',
+  'FAILED',
+  'IGNORED',
+];
+
+const LEAD_SYNC_LOG_STATUSES: LeadSyncStatus[] = [
+  'SUCCESS',
+  'FAILED',
+  'SKIPPED',
 ];
 
 type LeadWorkbenchPresentationOptions = {
@@ -84,6 +103,27 @@ export function getLeadWorkbenchActionLabels(
     labels.startSearch,
     labels.noPhone,
     labels.skip,
+  ];
+}
+
+export type LeadWorkbenchRealityStatRow = {
+  label: string;
+  count: number;
+};
+
+export function buildLeadWorkbenchRealityStatRows(input: {
+  collectedLeadSyncCounts: CollectedLeadSyncStatusCounts;
+  syncLogStatusCounts: LeadSyncLogStatusCounts;
+}): LeadWorkbenchRealityStatRow[] {
+  return [
+    ...COLLECTED_LEAD_SYNC_STATUSES.map(status => ({
+      label: `collected_leads ${status}`,
+      count: input.collectedLeadSyncCounts[status],
+    })),
+    ...LEAD_SYNC_LOG_STATUSES.map(status => ({
+      label: `lead_sync_logs ${status}`,
+      count: input.syncLogStatusCounts[status],
+    })),
   ];
 }
 
@@ -571,6 +611,8 @@ export default function LeadWorkbenchPage() {
   const [isSavingCollectedLead, setIsSavingCollectedLead] = useState(false);
   const [isReadingClipboard, setIsReadingClipboard] = useState(false);
   const [isSyncingCollectedLeadId, setIsSyncingCollectedLeadId] = useState<string | null>(null);
+  const [collectedLeadSyncCounts, setCollectedLeadSyncCounts] = useState(createEmptyCollectedLeadSyncStatusCounts);
+  const [syncLogStatusCounts, setSyncLogStatusCounts] = useState(createEmptyLeadSyncLogStatusCounts);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [pastePreviewState, setPastePreviewState] = useState<LeadPastePreviewState>(getEmptyLeadPastePreviewState);
@@ -588,19 +630,32 @@ export default function LeadWorkbenchPage() {
   const totalTaskCount = useMemo(() => getTotalStatusCount(counts), [counts]);
   const visibleItems = useMemo(() => sortLeadWorkItemsForDisplay(items), [items]);
   const workbenchActionLabels = getLeadWorkbenchActionLabels();
+  const realityStatRows = useMemo(() => buildLeadWorkbenchRealityStatRows({
+    collectedLeadSyncCounts,
+    syncLogStatusCounts,
+  }), [collectedLeadSyncCounts, syncLogStatusCounts]);
 
   const loadItems = useCallback(async (status: LeadWorkStatus) => {
     setIsLoading(true);
     setError(null);
     try {
       const db = await getDb();
-      const [nextItems, nextCounts] = await Promise.all([
+      const [
+        nextItems,
+        nextCounts,
+        nextCollectedLeadSyncCounts,
+        nextSyncLogStatusCounts,
+      ] = await Promise.all([
         listLeadWorkItemsByStatus(db, status),
         getLeadWorkItemStatusCounts(db),
+        getCollectedLeadSyncStatusCounts(db),
+        getLeadSyncLogStatusCounts(db),
       ]);
       const sortedItems = sortLeadWorkItemsForDisplay(nextItems);
       setItems(sortedItems);
       setCounts(nextCounts);
+      setCollectedLeadSyncCounts(nextCollectedLeadSyncCounts);
+      setSyncLogStatusCounts(nextSyncLogStatusCounts);
       setSelectedItemId(current => {
         if (current && sortedItems.some(item => item.id === current)) return current;
         return sortedItems[0]?.id ?? null;
@@ -837,6 +892,7 @@ export default function LeadWorkbenchPage() {
         await loadCollectedLeadDrafts(workItemId);
       }
       const resultMessage = getCollectedLeadCreateCustomerResultMessage(result);
+      await loadItems(statusFilter);
       if (result.status === 'SUCCESS') {
         setMessage(resultMessage);
       } else {
@@ -851,7 +907,7 @@ export default function LeadWorkbenchPage() {
     } finally {
       setIsSyncingCollectedLeadId(null);
     }
-  }, [loadCollectedLeadDrafts, selectedItemId]);
+  }, [loadCollectedLeadDrafts, loadItems, selectedItemId, statusFilter]);
 
   const handleSyncCollectedLeadEnrichCustomer = useCallback(async (draft: CollectedLead) => {
     if (!shouldRunCollectedLeadEnrichCustomer(draft, messageToConfirm => window.confirm(messageToConfirm))) {
@@ -869,6 +925,7 @@ export default function LeadWorkbenchPage() {
         await loadCollectedLeadDrafts(workItemId);
       }
       const resultMessage = getCollectedLeadEnrichCustomerResultMessage(result);
+      await loadItems(statusFilter);
       if (result.status === 'SUCCESS') {
         setMessage(resultMessage);
       } else {
@@ -883,7 +940,7 @@ export default function LeadWorkbenchPage() {
     } finally {
       setIsSyncingCollectedLeadId(null);
     }
-  }, [loadCollectedLeadDrafts, selectedItemId]);
+  }, [loadCollectedLeadDrafts, loadItems, selectedItemId, statusFilter]);
 
   const statusActions = selectedItem ? getLeadWorkItemStatusActions(selectedItem.status) : [];
   const searchKeyword = selectedItem ? getSuggestedTanjiSearchKeyword(selectedItem) : '';
@@ -938,6 +995,14 @@ export default function LeadWorkbenchPage() {
                 <span>{formatLeadWorkStatusLabel(status)}</span>
                 <strong>{counts[status]}</strong>
               </button>
+            ))}
+          </div>
+          <div className="lead-workbench-status-tabs">
+            {realityStatRows.map(row => (
+              <div className="lead-workbench-status-tab" key={row.label}>
+                <span>{row.label}</span>
+                <strong>{row.count}</strong>
+              </div>
             ))}
           </div>
         </section>
