@@ -113,7 +113,9 @@ const SUPPORTED_FIELDS = [
   'source_evidence',
 ];
 
-export const LEAD_IMPORT_SAMPLE_JSON = JSON.stringify(getActiveVerticalProfile().leadImport.sampleRows, null, 2);
+export function getLeadImportSampleJson(): string {
+  return JSON.stringify(getActiveVerticalProfile().leadImport.sampleRows, null, 2);
+}
 
 export const LEAD_IMPORT_CENTER_ACTION_LABELS = [
   '填入示例 JSON',
@@ -385,6 +387,7 @@ export default function LeadImportCenterPage() {
   const [executionSummary, setExecutionSummary] = useState<LeadImportExecutionSummary | null>(null);
 
   const hasPreviewErrors = preview?.rows.some(row => row.error) ?? false;
+  const leadImportSampleJson = getLeadImportSampleJson();
   const decisionCounts = useMemo(() => countDecisions(preview?.rows ?? []), [preview]);
   const selectedBatch = batches.find(batch => batch.id === selectedBatchId) ?? null;
   const selectedBatchStats = useMemo(() => buildLeadImportBatchStats(selectedRows), [selectedRows]);
@@ -442,7 +445,7 @@ export default function LeadImportCenterPage() {
   }, [loadBatches]);
 
   const handleFillSample = () => {
-    setJsonText(LEAD_IMPORT_SAMPLE_JSON);
+    setJsonText(leadImportSampleJson);
     setPreview(null);
     setSaveError(null);
     setSavedSummary(null);
@@ -607,7 +610,7 @@ export default function LeadImportCenterPage() {
                 className="lead-json-input"
                 value={jsonText}
                 onChange={event => setJsonText(event.target.value)}
-                placeholder={LEAD_IMPORT_SAMPLE_JSON}
+                placeholder={leadImportSampleJson}
               />
             </div>
 

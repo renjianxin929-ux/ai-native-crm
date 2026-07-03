@@ -75,12 +75,17 @@ export function formatCollectedLeadSyncStatusLabel(status: CollectedLead['sync_s
   }
 }
 
-export const LEAD_WORKBENCH_ACTION_LABELS = [
-  getActiveVerticalProfile().workItem.actionLabels.copySearchKeyword,
-  getActiveVerticalProfile().workItem.actionLabels.startSearch,
-  getActiveVerticalProfile().workItem.actionLabels.noPhone,
-  getActiveVerticalProfile().workItem.actionLabels.skip,
-];
+export function getLeadWorkbenchActionLabels(
+  options: LeadWorkbenchPresentationOptions = {},
+): string[] {
+  const labels = resolveWorkbenchProfile(options).workItem.actionLabels;
+  return [
+    labels.copySearchKeyword,
+    labels.startSearch,
+    labels.noPhone,
+    labels.skip,
+  ];
+}
 
 export type LeadWorkItemStatusAction = {
   label: string;
@@ -582,6 +587,7 @@ export default function LeadWorkbenchPage() {
 
   const totalTaskCount = useMemo(() => getTotalStatusCount(counts), [counts]);
   const visibleItems = useMemo(() => sortLeadWorkItemsForDisplay(items), [items]);
+  const workbenchActionLabels = getLeadWorkbenchActionLabels();
 
   const loadItems = useCallback(async (status: LeadWorkStatus) => {
     setIsLoading(true);
@@ -1007,7 +1013,7 @@ export default function LeadWorkbenchPage() {
                     disabled={isLoading || isUpdating || !searchKeyword}
                   >
                     <Clipboard size={14} />
-                    复制搜索词
+                    {workbenchActionLabels[0]}
                   </button>
                 </div>
 

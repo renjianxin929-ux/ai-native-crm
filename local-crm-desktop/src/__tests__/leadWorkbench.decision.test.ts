@@ -38,7 +38,10 @@ const dummyDecisionProfile: VerticalRuleProfile = {
     defaultPriority: 33,
     lookupKeywordFallback: 'company_name',
   },
+  customerAdapter: getActiveVerticalProfile().customerAdapter,
   rules: getActiveVerticalProfile().rules,
+  workItem: getActiveVerticalProfile().workItem,
+  capture: getActiveVerticalProfile().capture,
   aiDraft: getActiveVerticalProfile().aiDraft,
 };
 

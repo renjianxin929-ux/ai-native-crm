@@ -46,7 +46,7 @@ export async function executeLeadImportRowDecision(
   }
 
   if (row.decision === 'DIRECT_TO_CRM') {
-    return executeDirectToCrm(db, row);
+    return executeDirectToCrm(db, row, profile);
   }
 
   if (row.decision === 'CRM_WITH_LOOKUP') {
@@ -82,6 +82,7 @@ export async function executeLeadImportBatchDecisions(
 async function executeDirectToCrm(
   db: DatabaseLike,
   row: LeadImportRow,
+  profile: VerticalRuleProfile,
 ): Promise<LeadDecisionExecutionResult> {
   if (row.created_customer_id) {
     return { status: 'ALREADY_DONE', importRowId: row.id, customerId: row.created_customer_id };
@@ -91,7 +92,7 @@ async function executeDirectToCrm(
   try {
     await updateLeadImportRowDecisionStatus(db, row.id, 'EXECUTING');
 
-    const customerInput = buildCustomerInputFromImportRow(row);
+    const customerInput = buildCustomerInputFromImportRow(row, { profile });
     const duplicatePhoneCustomer = await findCustomerByPhoneNumber(db, customerInput.phone_number);
     if (duplicatePhoneCustomer) {
       const errorMessage = `Duplicate customer phone_number: ${customerInput.phone_number}`;
@@ -139,7 +140,7 @@ async function executeCrmWithLookup(
   try {
     await updateLeadImportRowDecisionStatus(db, row.id, 'EXECUTING');
 
-    const customerInput = buildCustomerInputFromImportRow(row);
+    const customerInput = buildCustomerInputFromImportRow(row, { profile });
     const duplicatePhoneCustomer = await findCustomerByPhoneNumber(db, customerInput.phone_number);
     if (duplicatePhoneCustomer) {
       const errorMessage = `Duplicate customer phone_number: ${customerInput.phone_number}`;

@@ -48,6 +48,7 @@ import {
   getEmptyLeadPastePreviewState,
   getLeadWorkbenchDetailEmptyMessage,
   getLeadWorkbenchListEmptyMessage,
+  getLeadWorkbenchActionLabels,
   getLeadWorkItemStatusActions,
   getLeadWorkItemStatusUpdateSuccessMessage,
   getLeadWorkItemTerminalMessage,
@@ -58,7 +59,6 @@ import {
   isLeadCaptureHistoryVisible,
   isLeadWorkItemTerminalStatus,
   isLeadPastePreviewVisible,
-  LEAD_WORKBENCH_ACTION_LABELS,
   LEAD_WORKBENCH_STATUS_FILTERS,
   shouldRunCollectedLeadCreateCustomer,
   shouldRunCollectedLeadEnrichCustomer,
@@ -95,6 +95,17 @@ async function createReadyDb() {
 }
 
 describe('lead workbench page operations', () => {
+  it('uses the active profile resolver without freezing profile-derived page constants at module load', () => {
+    const pageSource = readFileSync(resolve(__dirname, '../pages/LeadWorkbenchPage.tsx'), 'utf8');
+
+    expect(pageSource).toContain('getActiveVerticalProfile');
+    expect(pageSource).not.toContain('defaultGeoExportProfile');
+    expect(pageSource).not.toContain('DEFAULT_VERTICAL_PROFILE_ID');
+    expect(pageSource).not.toMatch(/export const\s+\w+\s*=\s*[^;]*getActiveVerticalProfile\(\)[^;]*;/);
+    expect(pageSource).not.toMatch(/\nconst\s+\w+\s*=\s*[^;]*getActiveVerticalProfile\(\)[^;]*;/);
+    expect(pageSource).not.toMatch(/export const\s+\w+\s*=\s*\[[\s\S]*?getActiveVerticalProfile\(\)[\s\S]*?\];/);
+  });
+
   it('lists lead work items without creating customers or extra work items', async () => {
     const db = await createReadyDb();
     try {
@@ -224,7 +235,7 @@ describe('lead workbench page operations', () => {
 
     const result = await copyLeadSearchKeyword(item, clipboard);
 
-    expect(LEAD_WORKBENCH_ACTION_LABELS).toContain('复制搜索词');
+    expect(getLeadWorkbenchActionLabels()).toContain('复制搜索词');
     expect(clipboard.writeText).toHaveBeenCalledWith('Tanji Keyword');
     expect(result).toEqual({ ok: true, message: '已复制搜索词' });
   });

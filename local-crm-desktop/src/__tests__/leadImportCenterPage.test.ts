@@ -23,9 +23,9 @@ import {
   buildLeadImportSaveConfirmation,
   executeLeadImportBatchFromCenter,
   getLeadImportBatchExecutionState,
+  getLeadImportSampleJson,
   refreshLeadImportBatchBrowser,
   LEAD_IMPORT_CENTER_ACTION_LABELS,
-  LEAD_IMPORT_SAMPLE_JSON,
   formatLeadBatchTypeLabel,
   formatLeadDecisionLabel,
 } from '../pages/LeadImportCenterPage';
@@ -56,7 +56,7 @@ async function createReadyDb() {
 
 describe('lead import center preview', () => {
   it('sample JSON covers direct, crm-with-lookup, and lookup-first rows', () => {
-    const preview = buildLeadImportPreview(LEAD_IMPORT_SAMPLE_JSON);
+    const preview = buildLeadImportPreview(getLeadImportSampleJson());
 
     expect(preview.error).toBeNull();
     expect(preview.rows).toHaveLength(3);
@@ -68,7 +68,7 @@ describe('lead import center preview', () => {
   });
 
   it('builds sample JSON from the active vertical profile rows', () => {
-    expect(JSON.parse(LEAD_IMPORT_SAMPLE_JSON)).toEqual(getActiveVerticalProfile().leadImport.sampleRows);
+    expect(JSON.parse(getLeadImportSampleJson())).toEqual(getActiveVerticalProfile().leadImport.sampleRows);
   });
 
   it('uses the active profile resolver instead of directly binding the geo export profile object', () => {
@@ -76,6 +76,10 @@ describe('lead import center preview', () => {
 
     expect(pageSource).toContain('getActiveVerticalProfile');
     expect(pageSource).not.toContain('defaultGeoExportProfile');
+    expect(pageSource).not.toContain('DEFAULT_VERTICAL_PROFILE_ID');
+    expect(pageSource).not.toMatch(/export const\s+\w+\s*=\s*[^;]*getActiveVerticalProfile\(\)[^;]*;/);
+    expect(pageSource).not.toMatch(/\nconst\s+\w+\s*=\s*[^;]*getActiveVerticalProfile\(\)[^;]*;/);
+    expect(pageSource).not.toMatch(/export const\s+\w+\s*=\s*\[[\s\S]*?getActiveVerticalProfile\(\)[\s\S]*?\];/);
   });
 
   it('parses JSON array and uses lead importer defaults for decisions', () => {
@@ -363,7 +367,7 @@ describe('lead import center preview', () => {
   });
 
   it('builds save confirmation before persisting a batch', () => {
-    const preview = buildLeadImportPreview(LEAD_IMPORT_SAMPLE_JSON);
+    const preview = buildLeadImportPreview(getLeadImportSampleJson());
     const confirmation = buildLeadImportSaveConfirmation({
       batchName: 'Daily batch',
       batchType: 'AI_DAILY',
