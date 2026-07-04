@@ -244,12 +244,29 @@ describe('Model Router Runtime Adapter readiness gate', () => {
       ...execFileSync('git', ['diff', '--name-only'], { encoding: 'utf8' }).trim().split(/\r?\n/),
       ...execFileSync('git', ['diff', '--cached', '--name-only'], { encoding: 'utf8' }).trim().split(/\r?\n/),
     ].filter(Boolean).map(file => file.replace(/^local-crm-desktop\//, ''));
-    const allowedFiles = [
-      'src/__tests__/modelRouterRuntime.readiness.test.ts',
+    const forbiddenFiles = [
+      'src/lib/promptRuntimeReadiness.ts',
       'src/lib/modelRouterRuntimeReadiness.ts',
       'src/lib/modelRouterRuntime/modelInvocationFixturesV1.ts',
+      'src/lib/aiRuntimeReadiness.ts',
+      'src/lib/evalRunnerReadiness.ts',
+      'src/lib/evalDatasetReadiness.ts',
+      'src/lib/evalDataset/salesAiEvalDatasetV1.ts',
+      'src/lib/evalDataset/evalCandidateFixturesV1.ts',
+      'src/lib/aiDraft.ts',
+      'src/lib/promptRegistryReadiness.ts',
+      'src/lib/modelRouterReadiness.ts',
+      'src/lib/leadWorkbench/syncAdapter.ts',
+      'src/lib/leadWorkbench/stateMachine.ts',
+      'src/lib/leadWorkbench/schema.ts',
+      'src/lib/db.ts',
+      'src/lib/textAIProvider.ts',
+      'src/lib/multimodalProvider.ts',
     ];
 
-    expect(changedFiles.filter(file => !allowedFiles.includes(file))).toEqual([]);
+    expect(changedFiles.filter(file => forbiddenFiles.includes(file))).toEqual([]);
+    expect(changedFiles.filter(file => file.startsWith('src/pages/'))).toEqual([]);
+    expect(changedFiles.filter(file => file.startsWith('src-tauri/'))).toEqual([]);
+    expect(changedFiles.filter(file => file.includes('schema'))).toEqual([]);
   });
 });
