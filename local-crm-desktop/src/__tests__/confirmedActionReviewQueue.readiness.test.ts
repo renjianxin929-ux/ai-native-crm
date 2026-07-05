@@ -31,6 +31,9 @@ const ALLOWED_CHANGED_FILES = new Set([
   'src/lib/dbWritePlanDryRunReadiness.ts',
   'src/lib/dbWritePlanDryRun/dbWritePlanDryRunFixturesV1.ts',
   'src/__tests__/dbWritePlanDryRun.readiness.test.ts',
+  'src/lib/safeWriteRunnerGateReadiness.ts',
+  'src/lib/safeWriteRunnerGate/safeWriteRunnerGateFixturesV1.ts',
+  'src/__tests__/safeWriteRunnerGate.readiness.test.ts',
 ]);
 
 describe('Confirmed Action review queue readiness gate', () => {

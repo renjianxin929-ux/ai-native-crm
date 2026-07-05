@@ -25,6 +25,9 @@ const ALLOWED_CHANGED_FILES = new Set([
   'src/__tests__/confirmedActionLiveDryRun.readiness.test.ts',
   'src/__tests__/confirmedActionReviewQueue.readiness.test.ts',
   'src/__tests__/humanConfirmationContract.readiness.test.ts',
+  'src/lib/safeWriteRunnerGateReadiness.ts',
+  'src/lib/safeWriteRunnerGate/safeWriteRunnerGateFixturesV1.ts',
+  'src/__tests__/safeWriteRunnerGate.readiness.test.ts',
 ]);
 
 const ACTIVE_TRUE_STATE_KEYS = [
