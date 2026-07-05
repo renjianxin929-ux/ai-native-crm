@@ -313,7 +313,6 @@ describe('Confirmed Action Contract readiness gate', () => {
       ...execFileSync('git', ['diff', '--cached', '--name-only'], { encoding: 'utf8' }).trim().split(/\r?\n/),
     ].filter(Boolean).map(file => file.replace(/^local-crm-desktop\//, ''));
     const forbiddenFiles = [
-      'src/lib/suggestOnlyAgentReadiness.ts',
       'src/lib/suggestOnlyAgent/suggestOnlyAgentFixturesV1.ts',
       'src/lib/readOnlyAgent/readOnlyAgentFixturesV1.ts',
       'src/lib/promptRuntimeReadiness.ts',

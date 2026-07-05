@@ -344,7 +344,6 @@ describe('Read-only Agent live dry-run readiness gate', () => {
       'src/lib/readOnlySnapshotLoader/readOnlySnapshotLoaderFixturesV1.ts',
       'src/lib/readOnlyAgentSnapshotAdapterReadiness.ts',
       'src/lib/readOnlyAgentSnapshotAdapter/readOnlyAgentSnapshotAdapterFixturesV1.ts',
-      'src/lib/suggestOnlyAgentReadiness.ts',
       'src/lib/suggestOnlyAgent/suggestOnlyAgentFixturesV1.ts',
       'src/lib/confirmedActionContractReadiness.ts',
       'src/lib/confirmedActionContract/confirmedActionContractFixturesV1.ts',

@@ -133,7 +133,11 @@ export function buildSuggestOnlyAgentPlan(request: SuggestOnlyAgentRequest): Sug
 }
 
 export function proposeFromReadOnlyFindings(plan: SuggestOnlyAgentPlan): SuggestOnlyAgentProposal[] {
-  return plan.request.read_only_answer.findings.map((finding, index) => buildProposal(finding, index));
+  return proposeFromReadOnlyAnswer(plan.request.read_only_answer);
+}
+
+export function proposeFromReadOnlyAnswer(answer: ReadOnlyAgentAnswer): SuggestOnlyAgentProposal[] {
+  return answer.findings.map((finding, index) => buildProposal(finding, index));
 }
 
 export function buildSuggestOnlyAgentTrace(plan: SuggestOnlyAgentPlan): SuggestOnlyAgentTrace {
