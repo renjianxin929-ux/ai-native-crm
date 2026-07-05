@@ -110,6 +110,11 @@ export interface ReadOnlyAgentSnapshot {
   eval_summaries: readonly Readonly<Record<string, string | number | boolean | null>>[];
 }
 
+export type ReadOnlyAgentSnapshotCollections = Omit<
+  ReadOnlyAgentSnapshot,
+  'kind' | 'version' | 'snapshot_id' | 'synthetic' | 'persisted'
+>;
+
 export interface ReadOnlyAgentRequest {
   kind: 'READ_ONLY_AGENT_REQUEST';
   intent: ReadOnlyAgentIntent;
@@ -118,6 +123,19 @@ export interface ReadOnlyAgentRequest {
   target_customer_id?: string;
   target_work_item_id?: string;
 }
+
+export interface ReadOnlyAgentCollectionsQueryInput {
+  intent: ReadOnlyAgentIntent;
+  collections: ReadOnlyAgentSnapshotCollections;
+  context?: ReadOnlyAgentContext;
+  target_customer_id?: string;
+  target_work_item_id?: string;
+  safety?: ReadOnlyAgentSafety;
+}
+
+type ReadOnlyAgentCollectionsRequest = Omit<ReadOnlyAgentRequest, 'kind' | 'snapshot'> & {
+  snapshot: ReadOnlyAgentSnapshotCollections;
+};
 
 export interface ReadOnlyAgentFinding {
   kind: 'READ_ONLY_AGENT_FINDING';
@@ -205,6 +223,29 @@ export function answerReadOnlyAgentQuery(plan: ReadOnlyAgentPlan): ReadOnlyAgent
   };
 }
 
+export function answerReadOnlyAgentQueryForCollections(
+  input: ReadOnlyAgentCollectionsQueryInput,
+): ReadOnlyAgentAnswer {
+  const request: ReadOnlyAgentCollectionsRequest = {
+    intent: input.intent,
+    snapshot: input.collections,
+    context: input.context,
+    target_customer_id: input.target_customer_id,
+    target_work_item_id: input.target_work_item_id,
+  };
+  const findings = findingsFor(request);
+
+  return {
+    kind: 'READ_ONLY_AGENT_ANSWER',
+    version: READ_ONLY_AGENT_VERSION,
+    intent: input.intent,
+    read_only_summary: summarize(input.intent, findings),
+    findings,
+    safety: input.safety ?? buildReadOnlyAgentSafety(),
+    represents_executed_action: false,
+  };
+}
+
 export function buildReadOnlyAgentTrace(plan: ReadOnlyAgentPlan): ReadOnlyAgentTrace {
   return {
     kind: 'READ_ONLY_AGENT_TRACE',
@@ -234,7 +275,7 @@ function buildReadOnlyAgentSafety(): ReadOnlyAgentSafety {
   };
 }
 
-function findingsFor(request: ReadOnlyAgentRequest): ReadOnlyAgentFinding[] {
+function findingsFor(request: ReadOnlyAgentCollectionsRequest): ReadOnlyAgentFinding[] {
   if (request.intent === 'today_priorities') return todayPriorities(request);
   if (request.intent === 'stuck_work_items') return stuckWorkItems(request);
   if (request.intent === 'sync_failures') return syncFailures(request);
@@ -243,7 +284,7 @@ function findingsFor(request: ReadOnlyAgentRequest): ReadOnlyAgentFinding[] {
   return nextBestReadOnlySummary(request);
 }
 
-function todayPriorities(request: ReadOnlyAgentRequest): ReadOnlyAgentFinding[] {
+function todayPriorities(request: ReadOnlyAgentCollectionsRequest): ReadOnlyAgentFinding[] {
   const workItem = request.snapshot.work_items.find(item => ['TODO', 'SEARCHING'].includes(item.status));
   const task = request.snapshot.tasks.find(item => item.status === 'TODO');
 
@@ -257,7 +298,7 @@ function todayPriorities(request: ReadOnlyAgentRequest): ReadOnlyAgentFinding[] 
   ]);
 }
 
-function stuckWorkItems(request: ReadOnlyAgentRequest): ReadOnlyAgentFinding[] {
+function stuckWorkItems(request: ReadOnlyAgentCollectionsRequest): ReadOnlyAgentFinding[] {
   const stale = request.snapshot.work_items.filter(item => (
     ['TODO', 'SEARCHING', 'STAGED'].includes(item.status) && item.updated_at < '2026-07-01T00:00:00.000Z'
   ));
@@ -267,7 +308,7 @@ function stuckWorkItems(request: ReadOnlyAgentRequest): ReadOnlyAgentFinding[] {
   ]));
 }
 
-function syncFailures(request: ReadOnlyAgentRequest): ReadOnlyAgentFinding[] {
+function syncFailures(request: ReadOnlyAgentCollectionsRequest): ReadOnlyAgentFinding[] {
   return request.snapshot.replay_evidence
     .filter(item => item.status === 'FAILED')
     .map(item => finding(request.intent, 'warning', 'Failed replay evidence in snapshot', item.message, [
@@ -276,7 +317,7 @@ function syncFailures(request: ReadOnlyAgentRequest): ReadOnlyAgentFinding[] {
     ]));
 }
 
-function highIntentLeads(request: ReadOnlyAgentRequest): ReadOnlyAgentFinding[] {
+function highIntentLeads(request: ReadOnlyAgentCollectionsRequest): ReadOnlyAgentFinding[] {
   const customer = request.snapshot.customers.find(item => item.intent_level === 'HIGH' || item.customer_grade === 'A');
   const collected = request.snapshot.collected_leads.find(item => item.intent_level === 'HIGH' || item.lead_grade === 'A');
   const row = request.snapshot.import_rows.find(item => item.intent_level === 'HIGH' || item.lead_grade === 'A');
@@ -294,7 +335,7 @@ function highIntentLeads(request: ReadOnlyAgentRequest): ReadOnlyAgentFinding[] 
   ]);
 }
 
-function evidenceForCustomer(request: ReadOnlyAgentRequest): ReadOnlyAgentFinding[] {
+function evidenceForCustomer(request: ReadOnlyAgentCollectionsRequest): ReadOnlyAgentFinding[] {
   const refs: ReadOnlyAgentEvidenceRef[] = [];
   const customerId = request.target_customer_id;
   const workItemId = request.target_work_item_id;
@@ -321,7 +362,7 @@ function evidenceForCustomer(request: ReadOnlyAgentRequest): ReadOnlyAgentFindin
   return [finding(request.intent, 'info', 'Snapshot evidence found for requested target', 'Review linked snapshot records', refs)];
 }
 
-function nextBestReadOnlySummary(request: ReadOnlyAgentRequest): ReadOnlyAgentFinding[] {
+function nextBestReadOnlySummary(request: ReadOnlyAgentCollectionsRequest): ReadOnlyAgentFinding[] {
   const source = [
     ...highIntentLeads({ ...request, intent: 'high_intent_leads' }),
     ...stuckWorkItems({ ...request, intent: 'stuck_work_items' }),

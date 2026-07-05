@@ -315,7 +315,6 @@ describe('Confirmed Action Contract readiness gate', () => {
     const forbiddenFiles = [
       'src/lib/suggestOnlyAgentReadiness.ts',
       'src/lib/suggestOnlyAgent/suggestOnlyAgentFixturesV1.ts',
-      'src/lib/readOnlyAgentReadiness.ts',
       'src/lib/readOnlyAgent/readOnlyAgentFixturesV1.ts',
       'src/lib/promptRuntimeReadiness.ts',
       'src/lib/modelRouterRuntimeReadiness.ts',

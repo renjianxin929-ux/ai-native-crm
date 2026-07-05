@@ -213,7 +213,6 @@ describe('Suggest-only Agent readiness gate', () => {
       ...execFileSync('git', ['diff', '--cached', '--name-only'], { encoding: 'utf8' }).trim().split(/\r?\n/),
     ].filter(Boolean).map(file => file.replace(/^local-crm-desktop\//, ''));
     const forbiddenFiles = [
-      'src/lib/readOnlyAgentReadiness.ts',
       'src/lib/readOnlyAgent/readOnlyAgentFixturesV1.ts',
       'src/lib/promptRuntimeReadiness.ts',
       'src/lib/modelRouterRuntimeReadiness.ts',

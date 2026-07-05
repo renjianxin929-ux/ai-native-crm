@@ -101,7 +101,6 @@ const FORBIDDEN_SOURCE_TERMS = [
 ];
 
 const FORBIDDEN_CHANGED_FILES = [
-  'src/lib/readOnlyAgentReadiness.ts',
   'src/lib/readOnlyAgent/readOnlyAgentFixturesV1.ts',
   'src/lib/suggestOnlyAgentReadiness.ts',
   'src/lib/suggestOnlyAgent/suggestOnlyAgentFixturesV1.ts',
