@@ -25,6 +25,9 @@ const ALLOWED_CHANGED_FILES = new Set([
   'src/lib/humanConfirmationContractReadiness.ts',
   'src/lib/humanConfirmationContract/humanConfirmationContractFixturesV1.ts',
   'src/__tests__/humanConfirmationContract.readiness.test.ts',
+  'src/lib/actionRunnerBoundaryContractReadiness.ts',
+  'src/lib/actionRunnerBoundaryContract/actionRunnerBoundaryContractFixturesV1.ts',
+  'src/__tests__/actionRunnerBoundaryContract.readiness.test.ts',
 ]);
 
 describe('Confirmed Action review queue readiness gate', () => {
