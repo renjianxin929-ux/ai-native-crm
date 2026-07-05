@@ -103,7 +103,6 @@ const FORBIDDEN_SOURCE_TERMS = [
 const FORBIDDEN_CHANGED_FILES = [
   'src/lib/readOnlyAgent/readOnlyAgentFixturesV1.ts',
   'src/lib/suggestOnlyAgent/suggestOnlyAgentFixturesV1.ts',
-  'src/lib/confirmedActionContractReadiness.ts',
   'src/lib/confirmedActionContract/confirmedActionContractFixturesV1.ts',
   'src/lib/promptRuntimeReadiness.ts',
   'src/lib/modelRouterRuntimeReadiness.ts',

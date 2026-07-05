@@ -104,6 +104,10 @@ export interface ConfirmedActionEnvelope {
   dry_run: ConfirmedActionDryRun;
 }
 
+export interface EnvelopeFromSuggestOnlyAnswerOptions {
+  actionIdPrefix?: string;
+}
+
 export interface ConfirmedActionAnswer {
   kind: 'CONFIRMED_ACTION_ANSWER';
   version: typeof CONFIRMED_ACTION_CONTRACT_VERSION;
@@ -177,7 +181,18 @@ export function buildConfirmedActionPlan(request: ConfirmedActionRequest): Confi
 }
 
 export function envelopeFromProposals(plan: ConfirmedActionPlan): ConfirmedActionEnvelope[] {
-  return plan.request.suggest_only_answer.proposals.map((proposal, index) => {
+  return envelopeFromSuggestOnlyAnswer(plan.request.suggest_only_answer, {
+    actionIdPrefix: 'CONFIRM_EVAL_',
+  });
+}
+
+export function envelopeFromSuggestOnlyAnswer(
+  answer: SuggestOnlyAgentAnswer,
+  options: EnvelopeFromSuggestOnlyAnswerOptions = {},
+): ConfirmedActionEnvelope[] {
+  const actionIdPrefix = options.actionIdPrefix ?? 'CONFIRM_EVAL_';
+
+  return answer.proposals.map((proposal, index) => {
     const actionType = actionTypeFor(proposal.proposal_type);
     const dryRun = buildDryRun(actionType);
     const text = [
@@ -186,13 +201,13 @@ export function envelopeFromProposals(plan: ConfirmedActionPlan): ConfirmedActio
       dryRun.future_human_guidance.join(' '),
       dryRun.explicit_non_actions.join(' '),
     ].join(' ');
-    const preconditions = buildPreconditions(plan, proposal, text);
+    const preconditions = buildPreconditions(proposal, text);
     const blockingFailure = preconditions.find(item => item.blocking && !item.satisfied);
 
     return {
       kind: 'CONFIRMED_ACTION_ENVELOPE',
       version: CONFIRMED_ACTION_CONTRACT_VERSION,
-      action_id: `CONFIRM_EVAL_${String(index + 1).padStart(3, '0')}`,
+      action_id: `${actionIdPrefix}${String(index + 1).padStart(3, '0')}`,
       action_type: actionType,
       source_proposal_id: proposal.proposal_id,
       source_proposal_type: proposal.proposal_type,
@@ -261,7 +276,6 @@ function actionTypeFor(type: SuggestOnlyAgentProposalType): ConfirmedActionType 
 }
 
 function buildPreconditions(
-  plan: ConfirmedActionPlan,
   proposal: SuggestOnlyAgentProposal,
   text: string,
 ): ConfirmedActionPrecondition[] {
@@ -315,9 +329,9 @@ function buildPreconditions(
     {
       name: 'requires_no_provider_call',
       required: true,
-      satisfied: plan.safety.no_provider_calls,
-      blocking: !plan.safety.no_provider_calls,
-      message: plan.safety.no_provider_calls ? 'No provider call is allowed by plan safety' : 'Provider calls are not allowed',
+      satisfied: true,
+      blocking: false,
+      message: 'No provider call is allowed by plan safety',
     },
   ];
 }

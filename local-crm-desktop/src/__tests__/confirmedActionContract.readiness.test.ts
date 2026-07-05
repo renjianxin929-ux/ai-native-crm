@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildConfirmedActionPlan,
   buildConfirmedActionTrace,
+  envelopeFromSuggestOnlyAnswer,
   envelopeFromProposals,
   type ConfirmedActionEnvelope,
   type ConfirmedActionPreconditionName,
@@ -125,6 +126,38 @@ describe('Confirmed Action Contract readiness gate', () => {
       expect(source).toBeDefined();
       expect(envelope.evidence_refs).toEqual(source?.evidence_refs);
       expect(envelope.risk_flags).toEqual(source?.risk_flags);
+    }
+  });
+
+  it('delegates proposal envelopes through the suggest-only answer narrow API without changing legacy output', () => {
+    const plan = buildConfirmedActionPlan(buildConfirmedActionRequestFixtureV1());
+    const legacyEnvelopes = envelopeFromProposals(plan);
+    const delegatedEnvelopes = envelopeFromSuggestOnlyAnswer(plan.request.suggest_only_answer, {
+      actionIdPrefix: 'CONFIRM_EVAL_',
+    });
+
+    expect(delegatedEnvelopes).toEqual(legacyEnvelopes);
+    expect(delegatedEnvelopes.map(envelope => envelope.action_id)).toEqual([
+      'CONFIRM_EVAL_001',
+      'CONFIRM_EVAL_002',
+      'CONFIRM_EVAL_003',
+      'CONFIRM_EVAL_004',
+      'CONFIRM_EVAL_005',
+      'CONFIRM_EVAL_006',
+      'CONFIRM_EVAL_007',
+    ]);
+    for (const [index, envelope] of delegatedEnvelopes.entries()) {
+      const source = plan.request.suggest_only_answer.proposals[index];
+      expect(envelope.confirmation_required).toBe(true);
+      expect(envelope.human_confirmed).toBe(false);
+      expect(envelope.dry_run_only).toBe(true);
+      expect(envelope.executable).toBe(false);
+      expect(envelope.represents_executed_action).toBe(false);
+      expect(envelope.source_proposal_id).toBe(source.proposal_id);
+      expect(envelope.source_proposal_type).toBe(source.proposal_type);
+      expect(envelope.evidence_refs).toEqual(source.evidence_refs);
+      expect(envelope.risk_flags).toEqual(source.risk_flags);
+      expect(envelope.preconditions.map(item => item.name).sort()).toEqual([...PRECONDITIONS].sort());
     }
   });
 
