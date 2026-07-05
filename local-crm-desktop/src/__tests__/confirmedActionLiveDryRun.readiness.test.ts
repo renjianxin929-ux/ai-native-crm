@@ -23,6 +23,9 @@ const ALLOWED_CHANGED_FILES = new Set([
   'src/__tests__/readOnlySnapshotLoader.readiness.test.ts',
   'src/__tests__/readOnlyAgentSnapshotAdapter.readiness.test.ts',
   'src/__tests__/readOnlyAgentLiveDryRun.readiness.test.ts',
+  'src/lib/confirmedActionReviewQueueReadiness.ts',
+  'src/lib/confirmedActionReviewQueue/confirmedActionReviewQueueFixturesV1.ts',
+  'src/__tests__/confirmedActionReviewQueue.readiness.test.ts',
 ]);
 
 describe('Confirmed Action live dry-run readiness gate', () => {
