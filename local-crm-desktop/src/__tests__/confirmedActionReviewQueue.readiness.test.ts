@@ -28,6 +28,9 @@ const ALLOWED_CHANGED_FILES = new Set([
   'src/lib/actionRunnerBoundaryContractReadiness.ts',
   'src/lib/actionRunnerBoundaryContract/actionRunnerBoundaryContractFixturesV1.ts',
   'src/__tests__/actionRunnerBoundaryContract.readiness.test.ts',
+  'src/lib/dbWritePlanDryRunReadiness.ts',
+  'src/lib/dbWritePlanDryRun/dbWritePlanDryRunFixturesV1.ts',
+  'src/__tests__/dbWritePlanDryRun.readiness.test.ts',
 ]);
 
 describe('Confirmed Action review queue readiness gate', () => {
