@@ -28,6 +28,9 @@ const ALLOWED_CHANGED_FILES = new Set([
   'src/__tests__/confirmedActionReviewQueue.readiness.test.ts',
   'src/__tests__/confirmedActionLiveDryRun.readiness.test.ts',
   'src/__tests__/confirmedActionContract.readiness.test.ts',
+  'src/components/dashboard/DashboardProjectionPanel.tsx',
+  'src/components/dashboard/dashboardProjectionViewModel.ts',
+  'src/__tests__/dashboardProjectionPanel.readiness.test.ts',
 ]);
 
 const ACTIVE_TRUE_STATE_KEYS = [
@@ -593,7 +596,10 @@ describe('Dashboard data projection readiness gate', () => {
 
     expect(changedFiles.filter(file => !ALLOWED_CHANGED_FILES.has(file))).toEqual([]);
     expect(changedFiles.filter(file => file.startsWith('src/pages/'))).toEqual([]);
-    expect(changedFiles.filter(file => file.startsWith('src/components/'))).toEqual([]);
+    expect(changedFiles.filter(file => (
+      file.startsWith('src/components/')
+      && !ALLOWED_CHANGED_FILES.has(file)
+    ))).toEqual([]);
     expect(changedFiles.filter(file => file.startsWith('src/lib/leadWorkbench/'))).toEqual([]);
     expect(changedFiles.filter(file => file.startsWith('src-tauri/'))).toEqual([]);
     expect(changedFiles.filter(file => file.includes('schema'))).toEqual([]);

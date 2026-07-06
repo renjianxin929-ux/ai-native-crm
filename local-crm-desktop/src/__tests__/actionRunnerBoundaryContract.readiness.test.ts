@@ -33,6 +33,9 @@ const ALLOWED_CHANGED_FILES = new Set([
   'src/lib/dashboardDataProjectionReadiness.ts',
   'src/lib/dashboardDataProjection/dashboardDataProjectionFixturesV1.ts',
   'src/__tests__/dashboardDataProjection.readiness.test.ts',
+  'src/components/dashboard/DashboardProjectionPanel.tsx',
+  'src/components/dashboard/dashboardProjectionViewModel.ts',
+  'src/__tests__/dashboardProjectionPanel.readiness.test.ts',
 ]);
 
 const ACTIVE_TRUE_STATE_KEYS = [
