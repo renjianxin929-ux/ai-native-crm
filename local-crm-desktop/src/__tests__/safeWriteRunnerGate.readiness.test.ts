@@ -27,6 +27,9 @@ const ALLOWED_CHANGED_FILES = new Set([
   'src/__tests__/confirmedActionLiveDryRun.readiness.test.ts',
   'src/__tests__/confirmedActionContract.readiness.test.ts',
   'src/__tests__/dbWritePlanDryRun.readiness.test.ts',
+  'src/lib/dashboardDataProjectionReadiness.ts',
+  'src/lib/dashboardDataProjection/dashboardDataProjectionFixturesV1.ts',
+  'src/__tests__/dashboardDataProjection.readiness.test.ts',
 ]);
 
 const ACTIVE_TRUE_STATE_KEYS = [

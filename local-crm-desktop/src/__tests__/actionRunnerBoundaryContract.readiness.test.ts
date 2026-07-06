@@ -30,6 +30,9 @@ const ALLOWED_CHANGED_FILES = new Set([
   'src/lib/safeWriteRunnerGateReadiness.ts',
   'src/lib/safeWriteRunnerGate/safeWriteRunnerGateFixturesV1.ts',
   'src/__tests__/safeWriteRunnerGate.readiness.test.ts',
+  'src/lib/dashboardDataProjectionReadiness.ts',
+  'src/lib/dashboardDataProjection/dashboardDataProjectionFixturesV1.ts',
+  'src/__tests__/dashboardDataProjection.readiness.test.ts',
 ]);
 
 const ACTIVE_TRUE_STATE_KEYS = [
