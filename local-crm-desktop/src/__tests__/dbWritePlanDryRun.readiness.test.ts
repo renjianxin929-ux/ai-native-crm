@@ -34,6 +34,9 @@ const ALLOWED_CHANGED_FILES = new Set([
   'src/components/dashboard/DashboardProjectionPanel.tsx',
   'src/components/dashboard/dashboardProjectionViewModel.ts',
   'src/__tests__/dashboardProjectionPanel.readiness.test.ts',
+  'src/lib/modelProviderReadOnlySandboxReadiness.ts',
+  'src/lib/modelProviderReadOnlySandbox/modelProviderReadOnlySandboxFixturesV1.ts',
+  'src/__tests__/modelProviderReadOnlySandbox.readiness.test.ts',
 ]);
 
 const ACTIVE_TRUE_STATE_KEYS = [

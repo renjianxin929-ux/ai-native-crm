@@ -30,6 +30,9 @@ const LOOP_41_CHANGED_FILES = new Set([
   'src/__tests__/dbWritePlanDryRun.readiness.test.ts',
   'src/__tests__/humanConfirmationContract.readiness.test.ts',
   'src/__tests__/safeWriteRunnerGate.readiness.test.ts',
+  'src/lib/modelProviderReadOnlySandboxReadiness.ts',
+  'src/lib/modelProviderReadOnlySandbox/modelProviderReadOnlySandboxFixturesV1.ts',
+  'src/__tests__/modelProviderReadOnlySandbox.readiness.test.ts',
 ]);
 
 const PRODUCTION_FILES = [
