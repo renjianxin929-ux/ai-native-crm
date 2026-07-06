@@ -45,6 +45,9 @@ const LOOP_41_CHANGED_FILES = new Set([
   'src/lib/modelSuggestOnlyOutputGateReadiness.ts',
   'src/lib/modelSuggestOnlyOutputGate/modelSuggestOnlyOutputGateFixturesV1.ts',
   'src/__tests__/modelSuggestOnlyOutputGate.readiness.test.ts',
+  'src/lib/modelSuggestionReviewDraftGateReadiness.ts',
+  'src/lib/modelSuggestionReviewDraftGate/modelSuggestionReviewDraftGateFixturesV1.ts',
+  'src/__tests__/modelSuggestionReviewDraftGate.readiness.test.ts',
 ]);
 
 const PRODUCTION_FILES = [

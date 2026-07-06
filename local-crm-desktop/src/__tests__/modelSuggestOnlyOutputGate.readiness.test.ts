@@ -21,7 +21,10 @@ import type { ModelReadOnlyInvocationGateResult } from '../lib/modelReadOnlyInvo
 const LOOP_45_ALLOWED_CHANGED_FILES = new Set([
   'src/lib/modelSuggestOnlyOutputGateReadiness.ts',
   'src/lib/modelSuggestOnlyOutputGate/modelSuggestOnlyOutputGateFixturesV1.ts',
+  'src/lib/modelSuggestionReviewDraftGateReadiness.ts',
+  'src/lib/modelSuggestionReviewDraftGate/modelSuggestionReviewDraftGateFixturesV1.ts',
   'src/__tests__/modelSuggestOnlyOutputGate.readiness.test.ts',
+  'src/__tests__/modelSuggestionReviewDraftGate.readiness.test.ts',
   'src/lib/modelSuggestionAdapterBoundaryReadiness.ts',
   'src/lib/modelSuggestionAdapterBoundary/modelSuggestionAdapterBoundaryFixturesV1.ts',
   'src/__tests__/modelSuggestionAdapterBoundary.readiness.test.ts',

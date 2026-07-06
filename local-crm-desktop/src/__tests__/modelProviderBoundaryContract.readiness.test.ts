@@ -20,7 +20,10 @@ import type { ModelProviderReadOnlySandboxResult } from '../lib/modelProviderRea
 const LOOP_43_ALLOWED_CHANGED_FILES = new Set([
   'src/lib/modelProviderBoundaryContractReadiness.ts',
   'src/lib/modelProviderBoundaryContract/modelProviderBoundaryContractFixturesV1.ts',
+  'src/lib/modelSuggestionReviewDraftGateReadiness.ts',
+  'src/lib/modelSuggestionReviewDraftGate/modelSuggestionReviewDraftGateFixturesV1.ts',
   'src/__tests__/modelProviderBoundaryContract.readiness.test.ts',
+  'src/__tests__/modelSuggestionReviewDraftGate.readiness.test.ts',
   'src/lib/modelReadOnlyInvocationGateReadiness.ts',
   'src/lib/modelReadOnlyInvocationGate/modelReadOnlyInvocationGateFixturesV1.ts',
   'src/__tests__/modelReadOnlyInvocationGate.readiness.test.ts',

@@ -24,7 +24,10 @@ import {
 const LOOP_42_ALLOWED_CHANGED_FILES = new Set([
   'src/lib/modelProviderReadOnlySandboxReadiness.ts',
   'src/lib/modelProviderReadOnlySandbox/modelProviderReadOnlySandboxFixturesV1.ts',
+  'src/lib/modelSuggestionReviewDraftGateReadiness.ts',
+  'src/lib/modelSuggestionReviewDraftGate/modelSuggestionReviewDraftGateFixturesV1.ts',
   'src/__tests__/modelProviderReadOnlySandbox.readiness.test.ts',
+  'src/__tests__/modelSuggestionReviewDraftGate.readiness.test.ts',
   'src/lib/modelProviderBoundaryContractReadiness.ts',
   'src/lib/modelProviderBoundaryContract/modelProviderBoundaryContractFixturesV1.ts',
   'src/__tests__/modelProviderBoundaryContract.readiness.test.ts',
