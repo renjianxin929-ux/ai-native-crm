@@ -42,6 +42,9 @@ const ALLOWED_CHANGED_FILES = new Set([
   'src/lib/modelProviderBoundaryContractReadiness.ts',
   'src/lib/modelProviderBoundaryContract/modelProviderBoundaryContractFixturesV1.ts',
   'src/__tests__/modelProviderBoundaryContract.readiness.test.ts',
+  'src/lib/modelReadOnlyInvocationGateReadiness.ts',
+  'src/lib/modelReadOnlyInvocationGate/modelReadOnlyInvocationGateFixturesV1.ts',
+  'src/__tests__/modelReadOnlyInvocationGate.readiness.test.ts',
 ]);
 
 const ACTIVE_TRUE_STATE_KEYS = [
