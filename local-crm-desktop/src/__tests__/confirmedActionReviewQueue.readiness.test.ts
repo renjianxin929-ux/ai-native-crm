@@ -71,6 +71,9 @@ const ALLOWED_CHANGED_FILES = new Set([
   'src/lib/liveSandboxToSuggestOnlyBridgeReadiness.ts',
   'src/lib/liveSandboxToSuggestOnlyBridge/liveSandboxToSuggestOnlyBridgeFixturesV1.ts',
   'src/__tests__/liveSandboxToSuggestOnlyBridge.readiness.test.ts',
+  'src/lib/readOnlyAISuggestionServiceReadiness.ts',
+  'src/lib/readOnlyAISuggestionService/readOnlyAISuggestionServiceFixturesV1.ts',
+  'src/__tests__/readOnlyAISuggestionService.readiness.test.ts',
 ]);
 
 describe('Confirmed Action review queue readiness gate', () => {

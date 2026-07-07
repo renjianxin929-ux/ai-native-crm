@@ -43,6 +43,9 @@ const LOOP_50_ALLOWED_CHANGED_FILES = new Set([
   'src/lib/liveSandboxToSuggestOnlyBridgeReadiness.ts',
   'src/lib/liveSandboxToSuggestOnlyBridge/liveSandboxToSuggestOnlyBridgeFixturesV1.ts',
   'src/__tests__/liveSandboxToSuggestOnlyBridge.readiness.test.ts',
+  'src/lib/readOnlyAISuggestionServiceReadiness.ts',
+  'src/lib/readOnlyAISuggestionService/readOnlyAISuggestionServiceFixturesV1.ts',
+  'src/__tests__/readOnlyAISuggestionService.readiness.test.ts',
 ]);
 
 const LOOP_51_BRIDGE_WITH_GUARD_UPDATE_CHANGED_FILES = [
@@ -66,6 +69,33 @@ const LOOP_51_BRIDGE_WITH_GUARD_UPDATE_CHANGED_FILES = [
   'src/lib/liveSandboxToSuggestOnlyBridgeReadiness.ts',
   'src/lib/liveSandboxToSuggestOnlyBridge/liveSandboxToSuggestOnlyBridgeFixturesV1.ts',
   'src/__tests__/liveSandboxToSuggestOnlyBridge.readiness.test.ts',
+  'src/lib/readOnlyAISuggestionServiceReadiness.ts',
+  'src/lib/readOnlyAISuggestionService/readOnlyAISuggestionServiceFixturesV1.ts',
+  'src/__tests__/readOnlyAISuggestionService.readiness.test.ts',
+];
+
+const LOOP_52_READ_ONLY_AI_SUGGESTION_SERVICE_CHANGED_FILES = [
+  'src/__tests__/actionRunnerBoundaryContract.readiness.test.ts',
+  'src/__tests__/confirmedActionLiveDryRun.readiness.test.ts',
+  'src/__tests__/confirmedActionReviewQueue.readiness.test.ts',
+  'src/__tests__/dashboardDataProjection.readiness.test.ts',
+  'src/__tests__/dashboardProjectionPanel.readiness.test.ts',
+  'src/__tests__/dbWritePlanDryRun.readiness.test.ts',
+  'src/__tests__/humanConfirmationContract.readiness.test.ts',
+  'src/__tests__/liveProviderSandboxCall.readiness.test.ts',
+  'src/__tests__/liveSandboxToSuggestOnlyBridge.readiness.test.ts',
+  'src/__tests__/manualLiveProviderSmokeGate.readiness.test.ts',
+  'src/__tests__/modelProviderBoundaryContract.readiness.test.ts',
+  'src/__tests__/modelProviderReadOnlySandbox.readiness.test.ts',
+  'src/__tests__/modelReadOnlyInvocationGate.readiness.test.ts',
+  'src/__tests__/modelSuggestOnlyOutputGate.readiness.test.ts',
+  'src/__tests__/modelSuggestionAdapterBoundary.readiness.test.ts',
+  'src/__tests__/modelSuggestionReviewDraftGate.readiness.test.ts',
+  'src/__tests__/reviewDraftQueueBoundary.readiness.test.ts',
+  'src/__tests__/safeWriteRunnerGate.readiness.test.ts',
+  'src/lib/readOnlyAISuggestionServiceReadiness.ts',
+  'src/lib/readOnlyAISuggestionService/readOnlyAISuggestionServiceFixturesV1.ts',
+  'src/__tests__/readOnlyAISuggestionService.readiness.test.ts',
 ];
 
 const CORE_FILE = 'src/lib/manualLiveProviderSmokeGateReadiness.ts';
@@ -571,8 +601,10 @@ function gitLines(args: readonly string[]): string[] {
 function isAcceptedLoop50ChangedFileSet(changedFiles: readonly string[]): boolean {
   const loop50Allowed = [...LOOP_50_ALLOWED_CHANGED_FILES];
   const loop51GuardUpdate = LOOP_51_BRIDGE_WITH_GUARD_UPDATE_CHANGED_FILES;
+  const loop52ReadOnlySuggestionService = LOOP_52_READ_ONLY_AI_SUGGESTION_SERVICE_CHANGED_FILES;
   return hasCompleteChangedFileSet(changedFiles, loop50Allowed)
-    || hasCompleteChangedFileSet(changedFiles, loop51GuardUpdate);
+    || hasCompleteChangedFileSet(changedFiles, loop51GuardUpdate)
+    || hasCompleteChangedFileSet(changedFiles, loop52ReadOnlySuggestionService);
 }
 
 function hasCompleteChangedFileSet(changedFiles: readonly string[], expectedFiles: readonly string[]): boolean {

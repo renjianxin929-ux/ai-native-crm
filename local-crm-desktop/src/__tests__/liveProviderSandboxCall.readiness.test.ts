@@ -47,6 +47,9 @@ const LOOP_49_ALLOWED_CHANGED_FILES = new Set([
   'src/lib/liveSandboxToSuggestOnlyBridgeReadiness.ts',
   'src/lib/liveSandboxToSuggestOnlyBridge/liveSandboxToSuggestOnlyBridgeFixturesV1.ts',
   'src/__tests__/liveSandboxToSuggestOnlyBridge.readiness.test.ts',
+  'src/lib/readOnlyAISuggestionServiceReadiness.ts',
+  'src/lib/readOnlyAISuggestionService/readOnlyAISuggestionServiceFixturesV1.ts',
+  'src/__tests__/readOnlyAISuggestionService.readiness.test.ts',
 ]);
 
 const LOOP_49_REQUIRED_CHANGED_FILES = [
@@ -106,6 +109,33 @@ const LOOP_51_BRIDGE_WITH_GUARD_UPDATE_CHANGED_FILES = [
   'src/lib/liveSandboxToSuggestOnlyBridgeReadiness.ts',
   'src/lib/liveSandboxToSuggestOnlyBridge/liveSandboxToSuggestOnlyBridgeFixturesV1.ts',
   'src/__tests__/liveSandboxToSuggestOnlyBridge.readiness.test.ts',
+  'src/lib/readOnlyAISuggestionServiceReadiness.ts',
+  'src/lib/readOnlyAISuggestionService/readOnlyAISuggestionServiceFixturesV1.ts',
+  'src/__tests__/readOnlyAISuggestionService.readiness.test.ts',
+];
+
+const LOOP_52_READ_ONLY_AI_SUGGESTION_SERVICE_CHANGED_FILES = [
+  'src/__tests__/actionRunnerBoundaryContract.readiness.test.ts',
+  'src/__tests__/confirmedActionLiveDryRun.readiness.test.ts',
+  'src/__tests__/confirmedActionReviewQueue.readiness.test.ts',
+  'src/__tests__/dashboardDataProjection.readiness.test.ts',
+  'src/__tests__/dashboardProjectionPanel.readiness.test.ts',
+  'src/__tests__/dbWritePlanDryRun.readiness.test.ts',
+  'src/__tests__/humanConfirmationContract.readiness.test.ts',
+  'src/__tests__/liveProviderSandboxCall.readiness.test.ts',
+  'src/__tests__/liveSandboxToSuggestOnlyBridge.readiness.test.ts',
+  'src/__tests__/manualLiveProviderSmokeGate.readiness.test.ts',
+  'src/__tests__/modelProviderBoundaryContract.readiness.test.ts',
+  'src/__tests__/modelProviderReadOnlySandbox.readiness.test.ts',
+  'src/__tests__/modelReadOnlyInvocationGate.readiness.test.ts',
+  'src/__tests__/modelSuggestOnlyOutputGate.readiness.test.ts',
+  'src/__tests__/modelSuggestionAdapterBoundary.readiness.test.ts',
+  'src/__tests__/modelSuggestionReviewDraftGate.readiness.test.ts',
+  'src/__tests__/reviewDraftQueueBoundary.readiness.test.ts',
+  'src/__tests__/safeWriteRunnerGate.readiness.test.ts',
+  'src/lib/readOnlyAISuggestionServiceReadiness.ts',
+  'src/lib/readOnlyAISuggestionService/readOnlyAISuggestionServiceFixturesV1.ts',
+  'src/__tests__/readOnlyAISuggestionService.readiness.test.ts',
 ];
 
 const ACCEPTED_CHANGED_FILE_SETS = [
@@ -113,6 +143,7 @@ const ACCEPTED_CHANGED_FILE_SETS = [
   LOOP_50_REQUIRED_CHANGED_FILES,
   LOOP_50_BATCH_OLD_GUARD_RISK_CLOSE_CHANGED_FILES,
   LOOP_51_BRIDGE_WITH_GUARD_UPDATE_CHANGED_FILES,
+  LOOP_52_READ_ONLY_AI_SUGGESTION_SERVICE_CHANGED_FILES,
 ];
 
 const CORE_FILE = 'src/lib/liveProviderSandboxCallReadiness.ts';
