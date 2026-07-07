@@ -48,6 +48,9 @@ const LOOP_48_ALLOWED_CHANGED_FILES = new Set([
   'src/lib/liveProviderSandboxCall/liveProviderSandboxCallFixturesV1.ts',
   'src/lib/liveProviderSandboxCall/liveProviderSandboxTransport.ts',
   'src/__tests__/liveProviderSandboxCall.readiness.test.ts',
+  'src/lib/manualLiveProviderSmokeGateReadiness.ts',
+  'src/lib/manualLiveProviderSmokeGate/manualLiveProviderSmokeGateFixturesV1.ts',
+  'src/__tests__/manualLiveProviderSmokeGate.readiness.test.ts',
 ]);
 
 const LOOP_48_REQUIRED_CHANGED_FILES = [
@@ -61,6 +64,34 @@ const LOOP_49_REQUIRED_CHANGED_FILES = [
   'src/lib/liveProviderSandboxCall/liveProviderSandboxCallFixturesV1.ts',
   'src/lib/liveProviderSandboxCall/liveProviderSandboxTransport.ts',
   'src/__tests__/liveProviderSandboxCall.readiness.test.ts',
+];
+
+const LOOP_50_REQUIRED_CHANGED_FILES = [
+  'src/lib/manualLiveProviderSmokeGateReadiness.ts',
+  'src/lib/manualLiveProviderSmokeGate/manualLiveProviderSmokeGateFixturesV1.ts',
+  'src/__tests__/manualLiveProviderSmokeGate.readiness.test.ts',
+];
+
+const LOOP_50_BATCH_OLD_GUARD_RISK_CLOSE_CHANGED_FILES = [
+  'src/__tests__/liveProviderSandboxCall.readiness.test.ts',
+  'src/__tests__/modelProviderReadOnlySandbox.readiness.test.ts',
+  'src/__tests__/modelProviderBoundaryContract.readiness.test.ts',
+  'src/__tests__/modelReadOnlyInvocationGate.readiness.test.ts',
+  'src/__tests__/modelSuggestOnlyOutputGate.readiness.test.ts',
+  'src/__tests__/modelSuggestionAdapterBoundary.readiness.test.ts',
+  'src/__tests__/modelSuggestionReviewDraftGate.readiness.test.ts',
+  'src/__tests__/reviewDraftQueueBoundary.readiness.test.ts',
+  'src/__tests__/safeWriteRunnerGate.readiness.test.ts',
+  'src/__tests__/dbWritePlanDryRun.readiness.test.ts',
+  'src/__tests__/actionRunnerBoundaryContract.readiness.test.ts',
+  'src/__tests__/humanConfirmationContract.readiness.test.ts',
+  'src/__tests__/confirmedActionReviewQueue.readiness.test.ts',
+  'src/__tests__/confirmedActionLiveDryRun.readiness.test.ts',
+  'src/__tests__/dashboardDataProjection.readiness.test.ts',
+  'src/__tests__/dashboardProjectionPanel.readiness.test.ts',
+  'src/lib/manualLiveProviderSmokeGateReadiness.ts',
+  'src/lib/manualLiveProviderSmokeGate/manualLiveProviderSmokeGateFixturesV1.ts',
+  'src/__tests__/manualLiveProviderSmokeGate.readiness.test.ts',
 ];
 
 const PRODUCTION_AND_FIXTURE_FILES = [
@@ -596,24 +627,30 @@ describe('Review draft queue boundary readiness', () => {
     }
   });
 
-  it('keeps the file-scope guard limited to complete Loop 48 or Loop 49 file sets', () => {
+  it('keeps the file-scope guard limited to complete Loop 48, Loop 49, or Loop 50 file sets', () => {
     expect(isLoop48FileScopeGuardSatisfied(LOOP_48_REQUIRED_CHANGED_FILES)).toBe(true);
     expect(isLoop48FileScopeGuardSatisfied(LOOP_49_REQUIRED_CHANGED_FILES)).toBe(true);
+    expect(isLoop48FileScopeGuardSatisfied(LOOP_50_REQUIRED_CHANGED_FILES)).toBe(true);
+    expect(isLoop48FileScopeGuardSatisfied(LOOP_50_BATCH_OLD_GUARD_RISK_CLOSE_CHANGED_FILES)).toBe(true);
     expect(isLoop48FileScopeGuardSatisfied(LOOP_48_REQUIRED_CHANGED_FILES.slice(0, 2))).toBe(false);
     expect(isLoop48FileScopeGuardSatisfied(LOOP_49_REQUIRED_CHANGED_FILES.slice(0, 3))).toBe(false);
+    expect(isLoop48FileScopeGuardSatisfied(LOOP_50_REQUIRED_CHANGED_FILES.slice(0, 2))).toBe(false);
     expect(isLoop48FileScopeGuardSatisfied([
       LOOP_48_REQUIRED_CHANGED_FILES[0],
       LOOP_49_REQUIRED_CHANGED_FILES[0],
+      LOOP_50_REQUIRED_CHANGED_FILES[0],
     ])).toBe(false);
     expect(isLoop48FileScopeGuardSatisfied([
-      ...LOOP_49_REQUIRED_CHANGED_FILES,
+      ...LOOP_50_REQUIRED_CHANGED_FILES,
       'src/lib/liveProviderSandboxCallLoop50Readiness.ts',
     ])).toBe(false);
     expect(isLoop48FileScopeGuardSatisfied([
-      ...LOOP_49_REQUIRED_CHANGED_FILES,
+      ...LOOP_50_REQUIRED_CHANGED_FILES,
       'src/lib/foo.ts',
     ])).toBe(false);
     expect(isLoop48FileScopeGuardSatisfied([])).toBe(false);
+    expect(LOOP_48_ALLOWED_CHANGED_FILES.has('src/lib/**')).toBe(false);
+    expect(LOOP_48_ALLOWED_CHANGED_FILES.has('src/lib/manualLiveProviderSmokeGate/**')).toBe(false);
   });
 
   it('does not modify files outside the Loop 48 allowed change set', () => {
@@ -687,9 +724,11 @@ function isLoop48FileScopeGuardSatisfied(changedFiles: readonly string[]): boole
     && (
       hasCompleteChangedFileSet(changedFiles, LOOP_48_REQUIRED_CHANGED_FILES)
       || hasCompleteChangedFileSet(changedFiles, LOOP_49_REQUIRED_CHANGED_FILES)
+      || hasCompleteChangedFileSet(changedFiles, LOOP_50_REQUIRED_CHANGED_FILES)
+      || hasCompleteChangedFileSet(changedFiles, LOOP_50_BATCH_OLD_GUARD_RISK_CLOSE_CHANGED_FILES)
     );
 }
 
 function hasCompleteChangedFileSet(changedFiles: readonly string[], expectedFiles: readonly string[]): boolean {
-  return expectedFiles.every(file => changedFiles.includes(file));
+  return changedFiles.length === expectedFiles.length && expectedFiles.every(file => changedFiles.includes(file));
 }

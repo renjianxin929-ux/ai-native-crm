@@ -49,6 +49,9 @@ const LOOP_43_ALLOWED_CHANGED_FILES = new Set([
   'src/lib/liveProviderSandboxCall/liveProviderSandboxCallFixturesV1.ts',
   'src/lib/liveProviderSandboxCall/liveProviderSandboxTransport.ts',
   'src/__tests__/liveProviderSandboxCall.readiness.test.ts',
+  'src/lib/manualLiveProviderSmokeGateReadiness.ts',
+  'src/lib/manualLiveProviderSmokeGate/manualLiveProviderSmokeGateFixturesV1.ts',
+  'src/__tests__/manualLiveProviderSmokeGate.readiness.test.ts',
 ]);
 
 const PRODUCTION_AND_FIXTURE_FILES = [
