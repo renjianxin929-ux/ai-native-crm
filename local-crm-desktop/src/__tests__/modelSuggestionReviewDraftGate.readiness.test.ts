@@ -30,6 +30,9 @@ const LOOP_47_ALLOWED_CHANGED_FILES = new Set([
   'src/lib/modelSuggestionReviewDraftGateReadiness.ts',
   'src/lib/modelSuggestionReviewDraftGate/modelSuggestionReviewDraftGateFixturesV1.ts',
   'src/__tests__/modelSuggestionReviewDraftGate.readiness.test.ts',
+  'src/lib/reviewDraftQueueBoundaryReadiness.ts',
+  'src/lib/reviewDraftQueueBoundary/reviewDraftQueueBoundaryFixturesV1.ts',
+  'src/__tests__/reviewDraftQueueBoundary.readiness.test.ts',
   'src/__tests__/actionRunnerBoundaryContract.readiness.test.ts',
   'src/__tests__/confirmedActionLiveDryRun.readiness.test.ts',
   'src/__tests__/confirmedActionReviewQueue.readiness.test.ts',
@@ -44,6 +47,18 @@ const LOOP_47_ALLOWED_CHANGED_FILES = new Set([
   'src/__tests__/modelSuggestionAdapterBoundary.readiness.test.ts',
   'src/__tests__/safeWriteRunnerGate.readiness.test.ts',
 ]);
+
+const LOOP_47_REQUIRED_CHANGED_FILES = [
+  'src/lib/modelSuggestionReviewDraftGateReadiness.ts',
+  'src/lib/modelSuggestionReviewDraftGate/modelSuggestionReviewDraftGateFixturesV1.ts',
+  'src/__tests__/modelSuggestionReviewDraftGate.readiness.test.ts',
+];
+
+const LOOP_48_REQUIRED_CHANGED_FILES = [
+  'src/lib/reviewDraftQueueBoundaryReadiness.ts',
+  'src/lib/reviewDraftQueueBoundary/reviewDraftQueueBoundaryFixturesV1.ts',
+  'src/__tests__/reviewDraftQueueBoundary.readiness.test.ts',
+];
 
 const PRODUCTION_AND_FIXTURE_FILES = [
   'src/lib/modelSuggestionReviewDraftGateReadiness.ts',
@@ -531,6 +546,25 @@ describe('Model suggestion review draft gate readiness', () => {
     }
   });
 
+  it('keeps the file-scope guard limited to complete Loop 47 or Loop 48 file sets', () => {
+    expect(isLoop47FileScopeGuardSatisfied(LOOP_47_REQUIRED_CHANGED_FILES)).toBe(true);
+    expect(isLoop47FileScopeGuardSatisfied(LOOP_48_REQUIRED_CHANGED_FILES)).toBe(true);
+    expect(isLoop47FileScopeGuardSatisfied(LOOP_47_REQUIRED_CHANGED_FILES.slice(0, 2))).toBe(false);
+    expect(isLoop47FileScopeGuardSatisfied(LOOP_48_REQUIRED_CHANGED_FILES.slice(0, 2))).toBe(false);
+    expect(isLoop47FileScopeGuardSatisfied([
+      LOOP_47_REQUIRED_CHANGED_FILES[0],
+      LOOP_48_REQUIRED_CHANGED_FILES[0],
+    ])).toBe(false);
+    expect(isLoop47FileScopeGuardSatisfied([
+      ...LOOP_48_REQUIRED_CHANGED_FILES,
+      'src/lib/reviewDraftQueueBoundaryLoop49Readiness.ts',
+    ])).toBe(false);
+    expect(isLoop47FileScopeGuardSatisfied([
+      ...LOOP_48_REQUIRED_CHANGED_FILES,
+      'src/lib/foo.ts',
+    ])).toBe(false);
+  });
+
   it('does not modify files outside the Loop 47 allowed change set', () => {
     const changedFiles = [
       ...gitLines(['diff', '--name-only']),
@@ -539,10 +573,7 @@ describe('Model suggestion review draft gate readiness', () => {
     ].map(file => file.replace(/^local-crm-desktop\//, ''))
       .filter(file => file.startsWith('src/') || file === 'package.json' || file.endsWith('lock.yaml'));
 
-    expect(changedFiles.filter(file => !LOOP_47_ALLOWED_CHANGED_FILES.has(file))).toEqual([]);
-    expect(changedFiles).toContain('src/lib/modelSuggestionReviewDraftGateReadiness.ts');
-    expect(changedFiles).toContain('src/lib/modelSuggestionReviewDraftGate/modelSuggestionReviewDraftGateFixturesV1.ts');
-    expect(changedFiles).toContain('src/__tests__/modelSuggestionReviewDraftGate.readiness.test.ts');
+    expect(isLoop47FileScopeGuardSatisfied(changedFiles)).toBe(true);
     expect(changedFiles.filter(file => file.startsWith('src/tests/'))).toEqual([]);
     expect(changedFiles.filter(file => file.startsWith('src/pages/'))).toEqual([]);
     expect(changedFiles.filter(file => file.startsWith('src/components/'))).toEqual([]);
@@ -599,4 +630,16 @@ function findDangerousTrueStates(value: unknown, path = '$'): string[] {
 
 function gitLines(args: readonly string[]): string[] {
   return execFileSync('git', args, { encoding: 'utf8' }).trim().split(/\r?\n/).filter(Boolean);
+}
+
+function isLoop47FileScopeGuardSatisfied(changedFiles: readonly string[]): boolean {
+  return changedFiles.every(file => LOOP_47_ALLOWED_CHANGED_FILES.has(file))
+    && (
+      hasCompleteChangedFileSet(changedFiles, LOOP_47_REQUIRED_CHANGED_FILES)
+      || hasCompleteChangedFileSet(changedFiles, LOOP_48_REQUIRED_CHANGED_FILES)
+    );
+}
+
+function hasCompleteChangedFileSet(changedFiles: readonly string[], expectedFiles: readonly string[]): boolean {
+  return expectedFiles.every(file => changedFiles.includes(file));
 }

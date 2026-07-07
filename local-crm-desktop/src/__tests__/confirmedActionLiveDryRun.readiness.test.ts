@@ -62,6 +62,9 @@ const ALLOWED_CHANGED_FILES = new Set([
   'src/lib/modelSuggestionReviewDraftGateReadiness.ts',
   'src/lib/modelSuggestionReviewDraftGate/modelSuggestionReviewDraftGateFixturesV1.ts',
   'src/__tests__/modelSuggestionReviewDraftGate.readiness.test.ts',
+  'src/lib/reviewDraftQueueBoundaryReadiness.ts',
+  'src/lib/reviewDraftQueueBoundary/reviewDraftQueueBoundaryFixturesV1.ts',
+  'src/__tests__/reviewDraftQueueBoundary.readiness.test.ts',
 ]);
 
 describe('Confirmed Action live dry-run readiness gate', () => {
