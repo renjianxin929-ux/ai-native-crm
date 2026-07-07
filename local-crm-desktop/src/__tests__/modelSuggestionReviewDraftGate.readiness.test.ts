@@ -46,6 +46,10 @@ const LOOP_47_ALLOWED_CHANGED_FILES = new Set([
   'src/__tests__/modelSuggestOnlyOutputGate.readiness.test.ts',
   'src/__tests__/modelSuggestionAdapterBoundary.readiness.test.ts',
   'src/__tests__/safeWriteRunnerGate.readiness.test.ts',
+  'src/lib/liveProviderSandboxCallReadiness.ts',
+  'src/lib/liveProviderSandboxCall/liveProviderSandboxCallFixturesV1.ts',
+  'src/lib/liveProviderSandboxCall/liveProviderSandboxTransport.ts',
+  'src/__tests__/liveProviderSandboxCall.readiness.test.ts',
 ]);
 
 const LOOP_47_REQUIRED_CHANGED_FILES = [
@@ -58,6 +62,13 @@ const LOOP_48_REQUIRED_CHANGED_FILES = [
   'src/lib/reviewDraftQueueBoundaryReadiness.ts',
   'src/lib/reviewDraftQueueBoundary/reviewDraftQueueBoundaryFixturesV1.ts',
   'src/__tests__/reviewDraftQueueBoundary.readiness.test.ts',
+];
+
+const LOOP_49_REQUIRED_CHANGED_FILES = [
+  'src/lib/liveProviderSandboxCallReadiness.ts',
+  'src/lib/liveProviderSandboxCall/liveProviderSandboxCallFixturesV1.ts',
+  'src/lib/liveProviderSandboxCall/liveProviderSandboxTransport.ts',
+  'src/__tests__/liveProviderSandboxCall.readiness.test.ts',
 ];
 
 const PRODUCTION_AND_FIXTURE_FILES = [
@@ -549,20 +560,24 @@ describe('Model suggestion review draft gate readiness', () => {
   it('keeps the file-scope guard limited to complete Loop 47 or Loop 48 file sets', () => {
     expect(isLoop47FileScopeGuardSatisfied(LOOP_47_REQUIRED_CHANGED_FILES)).toBe(true);
     expect(isLoop47FileScopeGuardSatisfied(LOOP_48_REQUIRED_CHANGED_FILES)).toBe(true);
+    expect(isLoop47FileScopeGuardSatisfied(LOOP_49_REQUIRED_CHANGED_FILES)).toBe(true);
     expect(isLoop47FileScopeGuardSatisfied(LOOP_47_REQUIRED_CHANGED_FILES.slice(0, 2))).toBe(false);
     expect(isLoop47FileScopeGuardSatisfied(LOOP_48_REQUIRED_CHANGED_FILES.slice(0, 2))).toBe(false);
+    expect(isLoop47FileScopeGuardSatisfied(LOOP_49_REQUIRED_CHANGED_FILES.slice(0, 3))).toBe(false);
     expect(isLoop47FileScopeGuardSatisfied([
       LOOP_47_REQUIRED_CHANGED_FILES[0],
       LOOP_48_REQUIRED_CHANGED_FILES[0],
+      LOOP_49_REQUIRED_CHANGED_FILES[0],
     ])).toBe(false);
     expect(isLoop47FileScopeGuardSatisfied([
-      ...LOOP_48_REQUIRED_CHANGED_FILES,
-      'src/lib/reviewDraftQueueBoundaryLoop49Readiness.ts',
+      ...LOOP_49_REQUIRED_CHANGED_FILES,
+      'src/lib/liveProviderSandboxCallLoop50Readiness.ts',
     ])).toBe(false);
     expect(isLoop47FileScopeGuardSatisfied([
-      ...LOOP_48_REQUIRED_CHANGED_FILES,
+      ...LOOP_49_REQUIRED_CHANGED_FILES,
       'src/lib/foo.ts',
     ])).toBe(false);
+    expect(isLoop47FileScopeGuardSatisfied([])).toBe(false);
   });
 
   it('does not modify files outside the Loop 47 allowed change set', () => {
@@ -637,6 +652,7 @@ function isLoop47FileScopeGuardSatisfied(changedFiles: readonly string[]): boole
     && (
       hasCompleteChangedFileSet(changedFiles, LOOP_47_REQUIRED_CHANGED_FILES)
       || hasCompleteChangedFileSet(changedFiles, LOOP_48_REQUIRED_CHANGED_FILES)
+      || hasCompleteChangedFileSet(changedFiles, LOOP_49_REQUIRED_CHANGED_FILES)
     );
 }
 

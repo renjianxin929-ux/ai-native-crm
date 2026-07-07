@@ -51,6 +51,10 @@ const LOOP_41_CHANGED_FILES = new Set([
   'src/lib/reviewDraftQueueBoundaryReadiness.ts',
   'src/lib/reviewDraftQueueBoundary/reviewDraftQueueBoundaryFixturesV1.ts',
   'src/__tests__/reviewDraftQueueBoundary.readiness.test.ts',
+  'src/lib/liveProviderSandboxCallReadiness.ts',
+  'src/lib/liveProviderSandboxCall/liveProviderSandboxCallFixturesV1.ts',
+  'src/lib/liveProviderSandboxCall/liveProviderSandboxTransport.ts',
+  'src/__tests__/liveProviderSandboxCall.readiness.test.ts',
 ]);
 
 const PRODUCTION_FILES = [

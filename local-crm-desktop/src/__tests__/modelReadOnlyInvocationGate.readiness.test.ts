@@ -43,6 +43,10 @@ const LOOP_44_ALLOWED_CHANGED_FILES = new Set([
   'src/__tests__/humanConfirmationContract.readiness.test.ts',
   'src/__tests__/confirmedActionReviewQueue.readiness.test.ts',
   'src/__tests__/confirmedActionLiveDryRun.readiness.test.ts',
+  'src/lib/liveProviderSandboxCallReadiness.ts',
+  'src/lib/liveProviderSandboxCall/liveProviderSandboxCallFixturesV1.ts',
+  'src/lib/liveProviderSandboxCall/liveProviderSandboxTransport.ts',
+  'src/__tests__/liveProviderSandboxCall.readiness.test.ts',
 ]);
 
 const PRODUCTION_AND_FIXTURE_FILES = [

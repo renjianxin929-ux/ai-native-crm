@@ -42,7 +42,24 @@ const LOOP_45_ALLOWED_CHANGED_FILES = new Set([
   'src/__tests__/humanConfirmationContract.readiness.test.ts',
   'src/__tests__/confirmedActionReviewQueue.readiness.test.ts',
   'src/__tests__/confirmedActionLiveDryRun.readiness.test.ts',
+  'src/lib/liveProviderSandboxCallReadiness.ts',
+  'src/lib/liveProviderSandboxCall/liveProviderSandboxCallFixturesV1.ts',
+  'src/lib/liveProviderSandboxCall/liveProviderSandboxTransport.ts',
+  'src/__tests__/liveProviderSandboxCall.readiness.test.ts',
 ]);
+
+const LOOP_45_REQUIRED_CHANGED_FILES = [
+  'src/lib/modelSuggestOnlyOutputGateReadiness.ts',
+  'src/lib/modelSuggestOnlyOutputGate/modelSuggestOnlyOutputGateFixturesV1.ts',
+  'src/__tests__/modelSuggestOnlyOutputGate.readiness.test.ts',
+];
+
+const LOOP_49_REQUIRED_CHANGED_FILES = [
+  'src/lib/liveProviderSandboxCallReadiness.ts',
+  'src/lib/liveProviderSandboxCall/liveProviderSandboxCallFixturesV1.ts',
+  'src/lib/liveProviderSandboxCall/liveProviderSandboxTransport.ts',
+  'src/__tests__/liveProviderSandboxCall.readiness.test.ts',
+];
 
 const PRODUCTION_AND_FIXTURE_FILES = [
   'src/lib/modelSuggestOnlyOutputGateReadiness.ts',
@@ -483,6 +500,26 @@ describe('Model suggest-only output gate readiness', () => {
     }
   });
 
+  it('keeps the file-scope guard limited to complete Loop 45 or Loop 49 file sets', () => {
+    expect(isLoop45FileScopeGuardSatisfied(LOOP_45_REQUIRED_CHANGED_FILES)).toBe(true);
+    expect(isLoop45FileScopeGuardSatisfied(LOOP_49_REQUIRED_CHANGED_FILES)).toBe(true);
+    expect(isLoop45FileScopeGuardSatisfied(LOOP_45_REQUIRED_CHANGED_FILES.slice(0, 2))).toBe(false);
+    expect(isLoop45FileScopeGuardSatisfied(LOOP_49_REQUIRED_CHANGED_FILES.slice(0, 3))).toBe(false);
+    expect(isLoop45FileScopeGuardSatisfied([
+      LOOP_45_REQUIRED_CHANGED_FILES[0],
+      LOOP_49_REQUIRED_CHANGED_FILES[0],
+    ])).toBe(false);
+    expect(isLoop45FileScopeGuardSatisfied([
+      ...LOOP_49_REQUIRED_CHANGED_FILES,
+      'src/lib/liveProviderSandboxCallLoop50Readiness.ts',
+    ])).toBe(false);
+    expect(isLoop45FileScopeGuardSatisfied([
+      ...LOOP_49_REQUIRED_CHANGED_FILES,
+      'src/lib/foo.ts',
+    ])).toBe(false);
+    expect(isLoop45FileScopeGuardSatisfied([])).toBe(false);
+  });
+
   it('does not modify files outside the Loop 45 allowed change set', () => {
     const changedFiles = [
       ...gitLines(['diff', '--name-only']),
@@ -491,7 +528,7 @@ describe('Model suggest-only output gate readiness', () => {
     ].map(file => file.replace(/^local-crm-desktop\//, ''))
       .filter(file => file.startsWith('src/') || file === 'package.json' || file.endsWith('lock.yaml'));
 
-    expect(changedFiles.filter(file => !LOOP_45_ALLOWED_CHANGED_FILES.has(file))).toEqual([]);
+    expect(isLoop45FileScopeGuardSatisfied(changedFiles)).toBe(true);
     expect(changedFiles.filter(file => file.startsWith('src/tests/'))).toEqual([]);
     expect(changedFiles.filter(file => file.startsWith('src/pages/'))).toEqual([]);
     expect(changedFiles.filter(file => file.startsWith('src/components/'))).toEqual([]);
@@ -572,4 +609,17 @@ function findDangerousTrueStates(value: unknown, path = '$'): string[] {
 
 function gitLines(args: readonly string[]): string[] {
   return execFileSync('git', args, { encoding: 'utf8' }).trim().split(/\r?\n/).filter(Boolean);
+}
+
+function isLoop45FileScopeGuardSatisfied(changedFiles: readonly string[]): boolean {
+  return changedFiles.length > 0
+    && changedFiles.every(file => LOOP_45_ALLOWED_CHANGED_FILES.has(file))
+    && (
+      hasCompleteChangedFileSet(changedFiles, LOOP_45_REQUIRED_CHANGED_FILES)
+      || hasCompleteChangedFileSet(changedFiles, LOOP_49_REQUIRED_CHANGED_FILES)
+    );
+}
+
+function hasCompleteChangedFileSet(changedFiles: readonly string[], expectedFiles: readonly string[]): boolean {
+  return expectedFiles.every(file => changedFiles.includes(file));
 }

@@ -44,7 +44,24 @@ const LOOP_48_ALLOWED_CHANGED_FILES = new Set([
   'src/__tests__/modelSuggestionAdapterBoundary.readiness.test.ts',
   'src/__tests__/modelSuggestionReviewDraftGate.readiness.test.ts',
   'src/__tests__/safeWriteRunnerGate.readiness.test.ts',
+  'src/lib/liveProviderSandboxCallReadiness.ts',
+  'src/lib/liveProviderSandboxCall/liveProviderSandboxCallFixturesV1.ts',
+  'src/lib/liveProviderSandboxCall/liveProviderSandboxTransport.ts',
+  'src/__tests__/liveProviderSandboxCall.readiness.test.ts',
 ]);
+
+const LOOP_48_REQUIRED_CHANGED_FILES = [
+  'src/lib/reviewDraftQueueBoundaryReadiness.ts',
+  'src/lib/reviewDraftQueueBoundary/reviewDraftQueueBoundaryFixturesV1.ts',
+  'src/__tests__/reviewDraftQueueBoundary.readiness.test.ts',
+];
+
+const LOOP_49_REQUIRED_CHANGED_FILES = [
+  'src/lib/liveProviderSandboxCallReadiness.ts',
+  'src/lib/liveProviderSandboxCall/liveProviderSandboxCallFixturesV1.ts',
+  'src/lib/liveProviderSandboxCall/liveProviderSandboxTransport.ts',
+  'src/__tests__/liveProviderSandboxCall.readiness.test.ts',
+];
 
 const PRODUCTION_AND_FIXTURE_FILES = [
   'src/lib/reviewDraftQueueBoundaryReadiness.ts',
@@ -579,6 +596,26 @@ describe('Review draft queue boundary readiness', () => {
     }
   });
 
+  it('keeps the file-scope guard limited to complete Loop 48 or Loop 49 file sets', () => {
+    expect(isLoop48FileScopeGuardSatisfied(LOOP_48_REQUIRED_CHANGED_FILES)).toBe(true);
+    expect(isLoop48FileScopeGuardSatisfied(LOOP_49_REQUIRED_CHANGED_FILES)).toBe(true);
+    expect(isLoop48FileScopeGuardSatisfied(LOOP_48_REQUIRED_CHANGED_FILES.slice(0, 2))).toBe(false);
+    expect(isLoop48FileScopeGuardSatisfied(LOOP_49_REQUIRED_CHANGED_FILES.slice(0, 3))).toBe(false);
+    expect(isLoop48FileScopeGuardSatisfied([
+      LOOP_48_REQUIRED_CHANGED_FILES[0],
+      LOOP_49_REQUIRED_CHANGED_FILES[0],
+    ])).toBe(false);
+    expect(isLoop48FileScopeGuardSatisfied([
+      ...LOOP_49_REQUIRED_CHANGED_FILES,
+      'src/lib/liveProviderSandboxCallLoop50Readiness.ts',
+    ])).toBe(false);
+    expect(isLoop48FileScopeGuardSatisfied([
+      ...LOOP_49_REQUIRED_CHANGED_FILES,
+      'src/lib/foo.ts',
+    ])).toBe(false);
+    expect(isLoop48FileScopeGuardSatisfied([])).toBe(false);
+  });
+
   it('does not modify files outside the Loop 48 allowed change set', () => {
     const changedFiles = [
       ...gitLines(['diff', '--name-only']),
@@ -587,10 +624,7 @@ describe('Review draft queue boundary readiness', () => {
     ].map(file => file.replace(/^local-crm-desktop\//, ''))
       .filter(file => file.startsWith('src/') || file === 'package.json' || file.endsWith('lock.yaml'));
 
-    expect(changedFiles.filter(file => !LOOP_48_ALLOWED_CHANGED_FILES.has(file))).toEqual([]);
-    expect(changedFiles).toContain('src/lib/reviewDraftQueueBoundaryReadiness.ts');
-    expect(changedFiles).toContain('src/lib/reviewDraftQueueBoundary/reviewDraftQueueBoundaryFixturesV1.ts');
-    expect(changedFiles).toContain('src/__tests__/reviewDraftQueueBoundary.readiness.test.ts');
+    expect(isLoop48FileScopeGuardSatisfied(changedFiles)).toBe(true);
     expect(changedFiles.filter(file => file.startsWith('src/tests/'))).toEqual([]);
     expect(changedFiles.filter(file => file.startsWith('src/pages/'))).toEqual([]);
     expect(changedFiles.filter(file => file.startsWith('src/components/'))).toEqual([]);
@@ -645,4 +679,17 @@ function findDangerousTrueStates(value: unknown, path = '$'): string[] {
 
 function gitLines(args: readonly string[]): string[] {
   return execFileSync('git', args, { encoding: 'utf8' }).trim().split(/\r?\n/).filter(Boolean);
+}
+
+function isLoop48FileScopeGuardSatisfied(changedFiles: readonly string[]): boolean {
+  return changedFiles.length > 0
+    && changedFiles.every(file => LOOP_48_ALLOWED_CHANGED_FILES.has(file))
+    && (
+      hasCompleteChangedFileSet(changedFiles, LOOP_48_REQUIRED_CHANGED_FILES)
+      || hasCompleteChangedFileSet(changedFiles, LOOP_49_REQUIRED_CHANGED_FILES)
+    );
+}
+
+function hasCompleteChangedFileSet(changedFiles: readonly string[], expectedFiles: readonly string[]): boolean {
+  return expectedFiles.every(file => changedFiles.includes(file));
 }

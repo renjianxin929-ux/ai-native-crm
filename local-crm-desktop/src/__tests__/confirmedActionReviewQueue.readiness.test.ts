@@ -61,6 +61,10 @@ const ALLOWED_CHANGED_FILES = new Set([
   'src/lib/reviewDraftQueueBoundaryReadiness.ts',
   'src/lib/reviewDraftQueueBoundary/reviewDraftQueueBoundaryFixturesV1.ts',
   'src/__tests__/reviewDraftQueueBoundary.readiness.test.ts',
+  'src/lib/liveProviderSandboxCallReadiness.ts',
+  'src/lib/liveProviderSandboxCall/liveProviderSandboxCallFixturesV1.ts',
+  'src/lib/liveProviderSandboxCall/liveProviderSandboxTransport.ts',
+  'src/__tests__/liveProviderSandboxCall.readiness.test.ts',
 ]);
 
 describe('Confirmed Action review queue readiness gate', () => {
