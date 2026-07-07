@@ -40,7 +40,33 @@ const LOOP_50_ALLOWED_CHANGED_FILES = new Set([
   'src/lib/manualLiveProviderSmokeGateReadiness.ts',
   'src/lib/manualLiveProviderSmokeGate/manualLiveProviderSmokeGateFixturesV1.ts',
   'src/__tests__/manualLiveProviderSmokeGate.readiness.test.ts',
+  'src/lib/liveSandboxToSuggestOnlyBridgeReadiness.ts',
+  'src/lib/liveSandboxToSuggestOnlyBridge/liveSandboxToSuggestOnlyBridgeFixturesV1.ts',
+  'src/__tests__/liveSandboxToSuggestOnlyBridge.readiness.test.ts',
 ]);
+
+const LOOP_51_BRIDGE_WITH_GUARD_UPDATE_CHANGED_FILES = [
+  'src/__tests__/actionRunnerBoundaryContract.readiness.test.ts',
+  'src/__tests__/confirmedActionLiveDryRun.readiness.test.ts',
+  'src/__tests__/confirmedActionReviewQueue.readiness.test.ts',
+  'src/__tests__/dashboardDataProjection.readiness.test.ts',
+  'src/__tests__/dashboardProjectionPanel.readiness.test.ts',
+  'src/__tests__/dbWritePlanDryRun.readiness.test.ts',
+  'src/__tests__/humanConfirmationContract.readiness.test.ts',
+  'src/__tests__/liveProviderSandboxCall.readiness.test.ts',
+  'src/__tests__/manualLiveProviderSmokeGate.readiness.test.ts',
+  'src/__tests__/modelProviderBoundaryContract.readiness.test.ts',
+  'src/__tests__/modelProviderReadOnlySandbox.readiness.test.ts',
+  'src/__tests__/modelReadOnlyInvocationGate.readiness.test.ts',
+  'src/__tests__/modelSuggestOnlyOutputGate.readiness.test.ts',
+  'src/__tests__/modelSuggestionAdapterBoundary.readiness.test.ts',
+  'src/__tests__/modelSuggestionReviewDraftGate.readiness.test.ts',
+  'src/__tests__/reviewDraftQueueBoundary.readiness.test.ts',
+  'src/__tests__/safeWriteRunnerGate.readiness.test.ts',
+  'src/lib/liveSandboxToSuggestOnlyBridgeReadiness.ts',
+  'src/lib/liveSandboxToSuggestOnlyBridge/liveSandboxToSuggestOnlyBridgeFixturesV1.ts',
+  'src/__tests__/liveSandboxToSuggestOnlyBridge.readiness.test.ts',
+];
 
 const CORE_FILE = 'src/lib/manualLiveProviderSmokeGateReadiness.ts';
 const FIXTURE_FILE = 'src/lib/manualLiveProviderSmokeGate/manualLiveProviderSmokeGateFixturesV1.ts';
@@ -438,7 +464,7 @@ describe('Manual live provider smoke gate readiness', () => {
       .filter(file => file.startsWith('src/') || file === 'package.json' || file.endsWith('lock.yaml'));
 
     expect(changedFiles.filter(file => !LOOP_50_ALLOWED_CHANGED_FILES.has(file))).toEqual([]);
-    expect(changedFiles.sort()).toEqual([...LOOP_50_ALLOWED_CHANGED_FILES].sort());
+    expect(isAcceptedLoop50ChangedFileSet(changedFiles)).toBe(true);
     expect(changedFiles).not.toContain('package.json');
     expect(changedFiles.filter(file => file.endsWith('lock.yaml'))).toEqual([]);
     expect(changedFiles.filter(file => file.startsWith('src/pages/'))).toEqual([]);
@@ -540,4 +566,15 @@ function findDangerousTrueStates(value: unknown, path = '$'): string[] {
 
 function gitLines(args: readonly string[]): string[] {
   return execFileSync('git', args, { encoding: 'utf8' }).trim().split(/\r?\n/).filter(Boolean);
+}
+
+function isAcceptedLoop50ChangedFileSet(changedFiles: readonly string[]): boolean {
+  const loop50Allowed = [...LOOP_50_ALLOWED_CHANGED_FILES];
+  const loop51GuardUpdate = LOOP_51_BRIDGE_WITH_GUARD_UPDATE_CHANGED_FILES;
+  return hasCompleteChangedFileSet(changedFiles, loop50Allowed)
+    || hasCompleteChangedFileSet(changedFiles, loop51GuardUpdate);
+}
+
+function hasCompleteChangedFileSet(changedFiles: readonly string[], expectedFiles: readonly string[]): boolean {
+  return changedFiles.length === expectedFiles.length && expectedFiles.every(file => changedFiles.includes(file));
 }

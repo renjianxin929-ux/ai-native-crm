@@ -58,6 +58,9 @@ const LOOP_41_CHANGED_FILES = new Set([
   'src/lib/manualLiveProviderSmokeGateReadiness.ts',
   'src/lib/manualLiveProviderSmokeGate/manualLiveProviderSmokeGateFixturesV1.ts',
   'src/__tests__/manualLiveProviderSmokeGate.readiness.test.ts',
+  'src/lib/liveSandboxToSuggestOnlyBridgeReadiness.ts',
+  'src/lib/liveSandboxToSuggestOnlyBridge/liveSandboxToSuggestOnlyBridgeFixturesV1.ts',
+  'src/__tests__/liveSandboxToSuggestOnlyBridge.readiness.test.ts',
 ]);
 
 const PRODUCTION_FILES = [

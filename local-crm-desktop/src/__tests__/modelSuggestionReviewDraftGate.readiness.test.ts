@@ -53,6 +53,9 @@ const LOOP_47_ALLOWED_CHANGED_FILES = new Set([
   'src/lib/manualLiveProviderSmokeGateReadiness.ts',
   'src/lib/manualLiveProviderSmokeGate/manualLiveProviderSmokeGateFixturesV1.ts',
   'src/__tests__/manualLiveProviderSmokeGate.readiness.test.ts',
+  'src/lib/liveSandboxToSuggestOnlyBridgeReadiness.ts',
+  'src/lib/liveSandboxToSuggestOnlyBridge/liveSandboxToSuggestOnlyBridgeFixturesV1.ts',
+  'src/__tests__/liveSandboxToSuggestOnlyBridge.readiness.test.ts',
 ]);
 
 const LOOP_47_REQUIRED_CHANGED_FILES = [
@@ -100,6 +103,29 @@ const LOOP_50_BATCH_OLD_GUARD_RISK_CLOSE_CHANGED_FILES = [
   'src/lib/manualLiveProviderSmokeGateReadiness.ts',
   'src/lib/manualLiveProviderSmokeGate/manualLiveProviderSmokeGateFixturesV1.ts',
   'src/__tests__/manualLiveProviderSmokeGate.readiness.test.ts',
+];
+
+const LOOP_51_BRIDGE_WITH_GUARD_UPDATE_CHANGED_FILES = [
+  'src/__tests__/actionRunnerBoundaryContract.readiness.test.ts',
+  'src/__tests__/confirmedActionLiveDryRun.readiness.test.ts',
+  'src/__tests__/confirmedActionReviewQueue.readiness.test.ts',
+  'src/__tests__/dashboardDataProjection.readiness.test.ts',
+  'src/__tests__/dashboardProjectionPanel.readiness.test.ts',
+  'src/__tests__/dbWritePlanDryRun.readiness.test.ts',
+  'src/__tests__/humanConfirmationContract.readiness.test.ts',
+  'src/__tests__/liveProviderSandboxCall.readiness.test.ts',
+  'src/__tests__/manualLiveProviderSmokeGate.readiness.test.ts',
+  'src/__tests__/modelProviderBoundaryContract.readiness.test.ts',
+  'src/__tests__/modelProviderReadOnlySandbox.readiness.test.ts',
+  'src/__tests__/modelReadOnlyInvocationGate.readiness.test.ts',
+  'src/__tests__/modelSuggestOnlyOutputGate.readiness.test.ts',
+  'src/__tests__/modelSuggestionAdapterBoundary.readiness.test.ts',
+  'src/__tests__/modelSuggestionReviewDraftGate.readiness.test.ts',
+  'src/__tests__/reviewDraftQueueBoundary.readiness.test.ts',
+  'src/__tests__/safeWriteRunnerGate.readiness.test.ts',
+  'src/lib/liveSandboxToSuggestOnlyBridgeReadiness.ts',
+  'src/lib/liveSandboxToSuggestOnlyBridge/liveSandboxToSuggestOnlyBridgeFixturesV1.ts',
+  'src/__tests__/liveSandboxToSuggestOnlyBridge.readiness.test.ts',
 ];
 
 const PRODUCTION_AND_FIXTURE_FILES = [
@@ -594,10 +620,12 @@ describe('Model suggestion review draft gate readiness', () => {
     expect(isLoop47FileScopeGuardSatisfied(LOOP_49_REQUIRED_CHANGED_FILES)).toBe(true);
     expect(isLoop47FileScopeGuardSatisfied(LOOP_50_REQUIRED_CHANGED_FILES)).toBe(true);
     expect(isLoop47FileScopeGuardSatisfied(LOOP_50_BATCH_OLD_GUARD_RISK_CLOSE_CHANGED_FILES)).toBe(true);
+    expect(isLoop47FileScopeGuardSatisfied(LOOP_51_BRIDGE_WITH_GUARD_UPDATE_CHANGED_FILES)).toBe(true);
     expect(isLoop47FileScopeGuardSatisfied(LOOP_47_REQUIRED_CHANGED_FILES.slice(0, 2))).toBe(false);
     expect(isLoop47FileScopeGuardSatisfied(LOOP_48_REQUIRED_CHANGED_FILES.slice(0, 2))).toBe(false);
     expect(isLoop47FileScopeGuardSatisfied(LOOP_49_REQUIRED_CHANGED_FILES.slice(0, 3))).toBe(false);
     expect(isLoop47FileScopeGuardSatisfied(LOOP_50_REQUIRED_CHANGED_FILES.slice(0, 2))).toBe(false);
+    expect(isLoop47FileScopeGuardSatisfied(LOOP_51_BRIDGE_WITH_GUARD_UPDATE_CHANGED_FILES.slice(0, 8))).toBe(false);
     expect(isLoop47FileScopeGuardSatisfied([
       LOOP_47_REQUIRED_CHANGED_FILES[0],
       LOOP_48_REQUIRED_CHANGED_FILES[0],
@@ -692,6 +720,7 @@ function isLoop47FileScopeGuardSatisfied(changedFiles: readonly string[]): boole
       || hasCompleteChangedFileSet(changedFiles, LOOP_49_REQUIRED_CHANGED_FILES)
       || hasCompleteChangedFileSet(changedFiles, LOOP_50_REQUIRED_CHANGED_FILES)
       || hasCompleteChangedFileSet(changedFiles, LOOP_50_BATCH_OLD_GUARD_RISK_CLOSE_CHANGED_FILES)
+      || hasCompleteChangedFileSet(changedFiles, LOOP_51_BRIDGE_WITH_GUARD_UPDATE_CHANGED_FILES)
     );
 }
 
