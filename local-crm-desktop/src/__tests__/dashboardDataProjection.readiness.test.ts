@@ -65,6 +65,9 @@ const ALLOWED_CHANGED_FILES = new Set([
   'src/lib/readOnlyAISuggestionServiceReadiness.ts',
   'src/lib/readOnlyAISuggestionService/readOnlyAISuggestionServiceFixturesV1.ts',
   'src/__tests__/readOnlyAISuggestionService.readiness.test.ts',
+  'src/components/aiSuggestions/ReadOnlyAISuggestionPanel.tsx',
+  'src/components/aiSuggestions/readOnlyAISuggestionViewModel.ts',
+  'src/__tests__/readOnlyAISuggestionPanel.readiness.test.ts',
 ]);
 
 const ACTIVE_TRUE_STATE_KEYS = [

@@ -42,6 +42,9 @@ const LOOP_51_ALLOWED_CHANGED_FILES = new Set([
   'src/lib/readOnlyAISuggestionServiceReadiness.ts',
   'src/lib/readOnlyAISuggestionService/readOnlyAISuggestionServiceFixturesV1.ts',
   'src/__tests__/readOnlyAISuggestionService.readiness.test.ts',
+  'src/components/aiSuggestions/ReadOnlyAISuggestionPanel.tsx',
+  'src/components/aiSuggestions/readOnlyAISuggestionViewModel.ts',
+  'src/__tests__/readOnlyAISuggestionPanel.readiness.test.ts',
 ]);
 
 const LOOP_51_BRIDGE_WITH_GUARD_UPDATE_CHANGED_FILES = [
@@ -68,6 +71,9 @@ const LOOP_51_BRIDGE_WITH_GUARD_UPDATE_CHANGED_FILES = [
   'src/lib/readOnlyAISuggestionServiceReadiness.ts',
   'src/lib/readOnlyAISuggestionService/readOnlyAISuggestionServiceFixturesV1.ts',
   'src/__tests__/readOnlyAISuggestionService.readiness.test.ts',
+  'src/components/aiSuggestions/ReadOnlyAISuggestionPanel.tsx',
+  'src/components/aiSuggestions/readOnlyAISuggestionViewModel.ts',
+  'src/__tests__/readOnlyAISuggestionPanel.readiness.test.ts',
 ];
 
 const LOOP_52_READ_ONLY_AI_SUGGESTION_SERVICE_CHANGED_FILES = [
@@ -92,6 +98,34 @@ const LOOP_52_READ_ONLY_AI_SUGGESTION_SERVICE_CHANGED_FILES = [
   'src/lib/readOnlyAISuggestionServiceReadiness.ts',
   'src/lib/readOnlyAISuggestionService/readOnlyAISuggestionServiceFixturesV1.ts',
   'src/__tests__/readOnlyAISuggestionService.readiness.test.ts',
+  'src/components/aiSuggestions/ReadOnlyAISuggestionPanel.tsx',
+  'src/components/aiSuggestions/readOnlyAISuggestionViewModel.ts',
+  'src/__tests__/readOnlyAISuggestionPanel.readiness.test.ts',
+];
+
+const LOOP_53_READ_ONLY_AI_SUGGESTION_PANEL_CHANGED_FILES = [
+  'src/__tests__/actionRunnerBoundaryContract.readiness.test.ts',
+  'src/__tests__/confirmedActionLiveDryRun.readiness.test.ts',
+  'src/__tests__/confirmedActionReviewQueue.readiness.test.ts',
+  'src/__tests__/dashboardDataProjection.readiness.test.ts',
+  'src/__tests__/dashboardProjectionPanel.readiness.test.ts',
+  'src/__tests__/dbWritePlanDryRun.readiness.test.ts',
+  'src/__tests__/humanConfirmationContract.readiness.test.ts',
+  'src/__tests__/liveProviderSandboxCall.readiness.test.ts',
+  'src/__tests__/liveSandboxToSuggestOnlyBridge.readiness.test.ts',
+  'src/__tests__/manualLiveProviderSmokeGate.readiness.test.ts',
+  'src/__tests__/modelProviderBoundaryContract.readiness.test.ts',
+  'src/__tests__/modelProviderReadOnlySandbox.readiness.test.ts',
+  'src/__tests__/modelReadOnlyInvocationGate.readiness.test.ts',
+  'src/__tests__/modelSuggestOnlyOutputGate.readiness.test.ts',
+  'src/__tests__/modelSuggestionAdapterBoundary.readiness.test.ts',
+  'src/__tests__/modelSuggestionReviewDraftGate.readiness.test.ts',
+  'src/components/aiSuggestions/ReadOnlyAISuggestionPanel.tsx',
+  'src/components/aiSuggestions/readOnlyAISuggestionViewModel.ts',
+  'src/__tests__/readOnlyAISuggestionPanel.readiness.test.ts',
+  'src/__tests__/readOnlyAISuggestionService.readiness.test.ts',
+  'src/__tests__/reviewDraftQueueBoundary.readiness.test.ts',
+  'src/__tests__/safeWriteRunnerGate.readiness.test.ts',
 ];
 
 const CORE_FILE = 'src/lib/liveSandboxToSuggestOnlyBridgeReadiness.ts';
@@ -459,13 +493,20 @@ describe('Live sandbox to suggest-only bridge readiness', () => {
       .filter(file => file.startsWith('src/') || file === 'package.json' || file.endsWith('lock.yaml'));
 
     expect(changedFiles.filter(file => !LOOP_51_ALLOWED_CHANGED_FILES.has(file))).toEqual([]);
-    expect(changedFiles.sort()).toEqual([...LOOP_52_READ_ONLY_AI_SUGGESTION_SERVICE_CHANGED_FILES].sort());
+    expect(
+      hasCompleteChangedFileSet(changedFiles, LOOP_52_READ_ONLY_AI_SUGGESTION_SERVICE_CHANGED_FILES)
+      || hasCompleteChangedFileSet(changedFiles, LOOP_53_READ_ONLY_AI_SUGGESTION_PANEL_CHANGED_FILES),
+    ).toBe(true);
     expect(LOOP_51_ALLOWED_CHANGED_FILES.has('src/lib/**')).toBe(false);
     expect(LOOP_51_ALLOWED_CHANGED_FILES.has('src/lib/liveSandboxToSuggestOnlyBridge/**')).toBe(false);
     expect(changedFiles).not.toContain('package.json');
     expect(changedFiles.filter(file => file.endsWith('lock.yaml'))).toEqual([]);
     expect(changedFiles.filter(file => file.startsWith('src/pages/'))).toEqual([]);
-    expect(changedFiles.filter(file => file.startsWith('src/components/'))).toEqual([]);
+    expect(changedFiles.filter(file => (
+      file.startsWith('src/components/')
+      && file !== 'src/components/aiSuggestions/ReadOnlyAISuggestionPanel.tsx'
+      && file !== 'src/components/aiSuggestions/readOnlyAISuggestionViewModel.ts'
+    ))).toEqual([]);
   });
 
   it('keeps forbidden runtime terms out of sources except the explicit marker list and assertions', () => {
@@ -614,4 +655,8 @@ function withoutUnsafeMarkerList(source: string): string {
 
 function gitLines(args: readonly string[]): string[] {
   return execFileSync('git', args, { encoding: 'utf8' }).trim().split(/\r?\n/).filter(Boolean);
+}
+
+function hasCompleteChangedFileSet(changedFiles: readonly string[], expectedFiles: readonly string[]): boolean {
+  return changedFiles.length === expectedFiles.length && expectedFiles.every(file => changedFiles.includes(file));
 }

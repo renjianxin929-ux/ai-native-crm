@@ -46,6 +46,9 @@ const LOOP_50_ALLOWED_CHANGED_FILES = new Set([
   'src/lib/readOnlyAISuggestionServiceReadiness.ts',
   'src/lib/readOnlyAISuggestionService/readOnlyAISuggestionServiceFixturesV1.ts',
   'src/__tests__/readOnlyAISuggestionService.readiness.test.ts',
+  'src/components/aiSuggestions/ReadOnlyAISuggestionPanel.tsx',
+  'src/components/aiSuggestions/readOnlyAISuggestionViewModel.ts',
+  'src/__tests__/readOnlyAISuggestionPanel.readiness.test.ts',
 ]);
 
 const LOOP_51_BRIDGE_WITH_GUARD_UPDATE_CHANGED_FILES = [
@@ -96,6 +99,31 @@ const LOOP_52_READ_ONLY_AI_SUGGESTION_SERVICE_CHANGED_FILES = [
   'src/lib/readOnlyAISuggestionServiceReadiness.ts',
   'src/lib/readOnlyAISuggestionService/readOnlyAISuggestionServiceFixturesV1.ts',
   'src/__tests__/readOnlyAISuggestionService.readiness.test.ts',
+];
+
+const LOOP_53_READ_ONLY_AI_SUGGESTION_PANEL_CHANGED_FILES = [
+  'src/__tests__/actionRunnerBoundaryContract.readiness.test.ts',
+  'src/__tests__/confirmedActionLiveDryRun.readiness.test.ts',
+  'src/__tests__/confirmedActionReviewQueue.readiness.test.ts',
+  'src/__tests__/dashboardDataProjection.readiness.test.ts',
+  'src/__tests__/dashboardProjectionPanel.readiness.test.ts',
+  'src/__tests__/dbWritePlanDryRun.readiness.test.ts',
+  'src/__tests__/humanConfirmationContract.readiness.test.ts',
+  'src/__tests__/liveProviderSandboxCall.readiness.test.ts',
+  'src/__tests__/liveSandboxToSuggestOnlyBridge.readiness.test.ts',
+  'src/__tests__/manualLiveProviderSmokeGate.readiness.test.ts',
+  'src/__tests__/modelProviderBoundaryContract.readiness.test.ts',
+  'src/__tests__/modelProviderReadOnlySandbox.readiness.test.ts',
+  'src/__tests__/modelReadOnlyInvocationGate.readiness.test.ts',
+  'src/__tests__/modelSuggestOnlyOutputGate.readiness.test.ts',
+  'src/__tests__/modelSuggestionAdapterBoundary.readiness.test.ts',
+  'src/__tests__/modelSuggestionReviewDraftGate.readiness.test.ts',
+  'src/components/aiSuggestions/ReadOnlyAISuggestionPanel.tsx',
+  'src/components/aiSuggestions/readOnlyAISuggestionViewModel.ts',
+  'src/__tests__/readOnlyAISuggestionPanel.readiness.test.ts',
+  'src/__tests__/readOnlyAISuggestionService.readiness.test.ts',
+  'src/__tests__/reviewDraftQueueBoundary.readiness.test.ts',
+  'src/__tests__/safeWriteRunnerGate.readiness.test.ts',
 ];
 
 const CORE_FILE = 'src/lib/manualLiveProviderSmokeGateReadiness.ts';
@@ -498,7 +526,11 @@ describe('Manual live provider smoke gate readiness', () => {
     expect(changedFiles).not.toContain('package.json');
     expect(changedFiles.filter(file => file.endsWith('lock.yaml'))).toEqual([]);
     expect(changedFiles.filter(file => file.startsWith('src/pages/'))).toEqual([]);
-    expect(changedFiles.filter(file => file.startsWith('src/components/'))).toEqual([]);
+    expect(changedFiles.filter(file => (
+      file.startsWith('src/components/')
+      && file !== 'src/components/aiSuggestions/ReadOnlyAISuggestionPanel.tsx'
+      && file !== 'src/components/aiSuggestions/readOnlyAISuggestionViewModel.ts'
+    ))).toEqual([]);
   });
 
   it('has mutation sentinels for the manual smoke gate', () => {
@@ -602,9 +634,11 @@ function isAcceptedLoop50ChangedFileSet(changedFiles: readonly string[]): boolea
   const loop50Allowed = [...LOOP_50_ALLOWED_CHANGED_FILES];
   const loop51GuardUpdate = LOOP_51_BRIDGE_WITH_GUARD_UPDATE_CHANGED_FILES;
   const loop52ReadOnlySuggestionService = LOOP_52_READ_ONLY_AI_SUGGESTION_SERVICE_CHANGED_FILES;
+  const loop53ReadOnlySuggestionPanel = LOOP_53_READ_ONLY_AI_SUGGESTION_PANEL_CHANGED_FILES;
   return hasCompleteChangedFileSet(changedFiles, loop50Allowed)
     || hasCompleteChangedFileSet(changedFiles, loop51GuardUpdate)
-    || hasCompleteChangedFileSet(changedFiles, loop52ReadOnlySuggestionService);
+    || hasCompleteChangedFileSet(changedFiles, loop52ReadOnlySuggestionService)
+    || hasCompleteChangedFileSet(changedFiles, loop53ReadOnlySuggestionPanel);
 }
 
 function hasCompleteChangedFileSet(changedFiles: readonly string[], expectedFiles: readonly string[]): boolean {

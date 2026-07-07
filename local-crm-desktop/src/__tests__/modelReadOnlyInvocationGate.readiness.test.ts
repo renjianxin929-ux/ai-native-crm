@@ -56,6 +56,9 @@ const LOOP_44_ALLOWED_CHANGED_FILES = new Set([
   'src/lib/readOnlyAISuggestionServiceReadiness.ts',
   'src/lib/readOnlyAISuggestionService/readOnlyAISuggestionServiceFixturesV1.ts',
   'src/__tests__/readOnlyAISuggestionService.readiness.test.ts',
+  'src/components/aiSuggestions/ReadOnlyAISuggestionPanel.tsx',
+  'src/components/aiSuggestions/readOnlyAISuggestionViewModel.ts',
+  'src/__tests__/readOnlyAISuggestionPanel.readiness.test.ts',
 ]);
 
 const PRODUCTION_AND_FIXTURE_FILES = [
@@ -490,7 +493,11 @@ describe('Model read-only invocation gate readiness', () => {
     expect(changedFiles.filter(file => !LOOP_44_ALLOWED_CHANGED_FILES.has(file))).toEqual([]);
     expect(changedFiles.filter(file => file.startsWith('src/tests/'))).toEqual([]);
     expect(changedFiles.filter(file => file.startsWith('src/pages/'))).toEqual([]);
-    expect(changedFiles.filter(file => file.startsWith('src/components/'))).toEqual([]);
+    expect(changedFiles.filter(file => (
+      file.startsWith('src/components/')
+      && file !== 'src/components/aiSuggestions/ReadOnlyAISuggestionPanel.tsx'
+      && file !== 'src/components/aiSuggestions/readOnlyAISuggestionViewModel.ts'
+    ))).toEqual([]);
     expect(changedFiles.filter(file => file.startsWith('src/lib/leadWorkbench/'))).toEqual([]);
     expect(changedFiles.filter(file => file.startsWith('src-tauri/'))).toEqual([]);
     expect(changedFiles.filter(file => file.includes('schema'))).toEqual([]);
