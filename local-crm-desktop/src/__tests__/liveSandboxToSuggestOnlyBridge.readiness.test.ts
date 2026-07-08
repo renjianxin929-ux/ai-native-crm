@@ -141,6 +141,13 @@ const LOOP_53A_OLDER_READINESS_GUARD_COMPATIBILITY_PATCH_FILES = [
   'src/__tests__/readOnlyAISuggestionService.readiness.test.ts',
   'src/__tests__/reviewDraftQueueBoundary.readiness.test.ts',
 ];
+const LOOP_53A_SELF_TEST_EXPECTATION_ALIGNMENT_PATCH_FILES = [
+  'src/__tests__/liveProviderSandboxCall.readiness.test.ts',
+  'src/__tests__/modelSuggestOnlyOutputGate.readiness.test.ts',
+  'src/__tests__/modelSuggestionAdapterBoundary.readiness.test.ts',
+  'src/__tests__/modelSuggestionReviewDraftGate.readiness.test.ts',
+  'src/__tests__/reviewDraftQueueBoundary.readiness.test.ts',
+];
 
 const CORE_FILE = 'src/lib/liveSandboxToSuggestOnlyBridgeReadiness.ts';
 const FIXTURE_FILE = 'src/lib/liveSandboxToSuggestOnlyBridge/liveSandboxToSuggestOnlyBridgeFixturesV1.ts';
@@ -514,7 +521,8 @@ describe('Live sandbox to suggest-only bridge readiness', () => {
         hasCompleteChangedFileSet(changedFiles, LOOP_52_READ_ONLY_AI_SUGGESTION_SERVICE_CHANGED_FILES)
         || hasCompleteChangedFileSet(changedFiles, LOOP_53_READ_ONLY_AI_SUGGESTION_PANEL_CHANGED_FILES)
         || hasCompleteChangedFileSet(changedFiles, LOOP_53A_READINESS_CLEAN_BASELINE_PATCH_FILES)
-        || hasCompleteChangedFileSet(changedFiles, LOOP_53A_OLDER_READINESS_GUARD_COMPATIBILITY_PATCH_FILES),
+        || hasCompleteChangedFileSet(changedFiles, LOOP_53A_OLDER_READINESS_GUARD_COMPATIBILITY_PATCH_FILES)
+        || hasCompleteChangedFileSet(changedFiles, LOOP_53A_SELF_TEST_EXPECTATION_ALIGNMENT_PATCH_FILES),
       ).toBe(true);
     }
     expect(LOOP_51_ALLOWED_CHANGED_FILES.has('src/lib/**')).toBe(false);

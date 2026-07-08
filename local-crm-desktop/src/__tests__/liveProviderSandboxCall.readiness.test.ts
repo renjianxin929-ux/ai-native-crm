@@ -179,6 +179,13 @@ const LOOP_53A_OLDER_READINESS_GUARD_COMPATIBILITY_PATCH_FILES = [
   'src/__tests__/readOnlyAISuggestionService.readiness.test.ts',
   'src/__tests__/reviewDraftQueueBoundary.readiness.test.ts',
 ];
+const LOOP_53A_SELF_TEST_EXPECTATION_ALIGNMENT_PATCH_FILES = [
+  'src/__tests__/liveProviderSandboxCall.readiness.test.ts',
+  'src/__tests__/modelSuggestOnlyOutputGate.readiness.test.ts',
+  'src/__tests__/modelSuggestionAdapterBoundary.readiness.test.ts',
+  'src/__tests__/modelSuggestionReviewDraftGate.readiness.test.ts',
+  'src/__tests__/reviewDraftQueueBoundary.readiness.test.ts',
+];
 
 const ACCEPTED_CHANGED_FILE_SETS = [
   LOOP_49_REQUIRED_CHANGED_FILES,
@@ -189,6 +196,7 @@ const ACCEPTED_CHANGED_FILE_SETS = [
   LOOP_53_READ_ONLY_AI_SUGGESTION_PANEL_CHANGED_FILES,
   LOOP_53A_READINESS_CLEAN_BASELINE_PATCH_FILES,
   LOOP_53A_OLDER_READINESS_GUARD_COMPATIBILITY_PATCH_FILES,
+  LOOP_53A_SELF_TEST_EXPECTATION_ALIGNMENT_PATCH_FILES,
 ];
 
 const CORE_FILE = 'src/lib/liveProviderSandboxCallReadiness.ts';
@@ -679,7 +687,11 @@ describe('Live provider sandbox call readiness', () => {
       ...LOOP_50_REQUIRED_CHANGED_FILES,
       'src/lib/foo.ts',
     ])).toBe(false);
-    expect(matchesAllowedChangedFileSet([])).toBe(false);
+    expect(isProvenCleanGitBaselineFromParts([], [], [])).toBe(true);
+    expect(isProvenCleanGitBaselineFromParts([' M x'], [], [])).toBe(false);
+    expect(isProvenCleanGitBaselineFromParts([], ['x'], [])).toBe(false);
+    expect(isProvenCleanGitBaselineFromParts([], [], ['x'])).toBe(false);
+    expect(isProvenCleanGitBaselineFromParts([], [], [])).toBe(true);
     expect(LOOP_49_ALLOWED_CHANGED_FILES.has('src/lib/**')).toBe(false);
     expect(LOOP_49_ALLOWED_CHANGED_FILES.has('src/lib/manualLiveProviderSmokeGate/**')).toBe(false);
     expect(matchesAllowedChangedFileSet([

@@ -139,6 +139,13 @@ const LOOP_53A_OLDER_READINESS_GUARD_COMPATIBILITY_PATCH_FILES = [
   'src/__tests__/readOnlyAISuggestionService.readiness.test.ts',
   'src/__tests__/reviewDraftQueueBoundary.readiness.test.ts',
 ];
+const LOOP_53A_SELF_TEST_EXPECTATION_ALIGNMENT_PATCH_FILES = [
+  'src/__tests__/liveProviderSandboxCall.readiness.test.ts',
+  'src/__tests__/modelSuggestOnlyOutputGate.readiness.test.ts',
+  'src/__tests__/modelSuggestionAdapterBoundary.readiness.test.ts',
+  'src/__tests__/modelSuggestionReviewDraftGate.readiness.test.ts',
+  'src/__tests__/reviewDraftQueueBoundary.readiness.test.ts',
+];
 
 const CORE_FILE = 'src/lib/manualLiveProviderSmokeGateReadiness.ts';
 const FIXTURE_FILE = 'src/lib/manualLiveProviderSmokeGate/manualLiveProviderSmokeGateFixturesV1.ts';
@@ -656,7 +663,8 @@ function isAcceptedLoop50ChangedFileSet(changedFiles: readonly string[]): boolea
     || hasCompleteChangedFileSet(changedFiles, loop52ReadOnlySuggestionService)
     || hasCompleteChangedFileSet(changedFiles, loop53ReadOnlySuggestionPanel)
     || hasCompleteChangedFileSet(changedFiles, LOOP_53A_READINESS_CLEAN_BASELINE_PATCH_FILES)
-    || hasCompleteChangedFileSet(changedFiles, LOOP_53A_OLDER_READINESS_GUARD_COMPATIBILITY_PATCH_FILES);
+    || hasCompleteChangedFileSet(changedFiles, LOOP_53A_OLDER_READINESS_GUARD_COMPATIBILITY_PATCH_FILES)
+    || hasCompleteChangedFileSet(changedFiles, LOOP_53A_SELF_TEST_EXPECTATION_ALIGNMENT_PATCH_FILES);
 }
 
 function hasCompleteChangedFileSet(changedFiles: readonly string[], expectedFiles: readonly string[]): boolean {

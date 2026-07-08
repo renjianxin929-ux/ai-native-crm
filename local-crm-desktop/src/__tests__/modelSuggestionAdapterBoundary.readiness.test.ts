@@ -194,6 +194,13 @@ const LOOP_53A_OLDER_READINESS_GUARD_COMPATIBILITY_PATCH_FILES = [
   'src/__tests__/readOnlyAISuggestionService.readiness.test.ts',
   'src/__tests__/reviewDraftQueueBoundary.readiness.test.ts',
 ];
+const LOOP_53A_SELF_TEST_EXPECTATION_ALIGNMENT_PATCH_FILES = [
+  'src/__tests__/liveProviderSandboxCall.readiness.test.ts',
+  'src/__tests__/modelSuggestOnlyOutputGate.readiness.test.ts',
+  'src/__tests__/modelSuggestionAdapterBoundary.readiness.test.ts',
+  'src/__tests__/modelSuggestionReviewDraftGate.readiness.test.ts',
+  'src/__tests__/reviewDraftQueueBoundary.readiness.test.ts',
+];
 
 const PRODUCTION_AND_FIXTURE_FILES = [
   'src/lib/modelSuggestionAdapterBoundaryReadiness.ts',
@@ -665,7 +672,11 @@ describe('Model suggestion adapter boundary readiness', () => {
       ...LOOP_50_REQUIRED_CHANGED_FILES,
       'src/lib/foo.ts',
     ])).toBe(false);
-    expect(isLoop46FileScopeGuardSatisfied([])).toBe(false);
+    expect(isProvenCleanGitBaselineFromParts([], [], [])).toBe(true);
+    expect(isProvenCleanGitBaselineFromParts([' M x'], [], [])).toBe(false);
+    expect(isProvenCleanGitBaselineFromParts([], ['x'], [])).toBe(false);
+    expect(isProvenCleanGitBaselineFromParts([], [], ['x'])).toBe(false);
+    expect(isProvenCleanGitBaselineFromParts([], [], [])).toBe(true);
     expect(LOOP_46_ALLOWED_CHANGED_FILES.has('src/lib/**')).toBe(false);
     expect(LOOP_46_ALLOWED_CHANGED_FILES.has('src/lib/manualLiveProviderSmokeGate/**')).toBe(false);
   });
@@ -755,6 +766,7 @@ function isLoop46FileScopeGuardSatisfied(changedFiles: readonly string[]): boole
       || hasCompleteChangedFileSet(changedFiles, LOOP_53_READ_ONLY_AI_SUGGESTION_PANEL_CHANGED_FILES)
       || hasCompleteChangedFileSet(changedFiles, LOOP_53A_READINESS_CLEAN_BASELINE_PATCH_FILES)
       || hasCompleteChangedFileSet(changedFiles, LOOP_53A_OLDER_READINESS_GUARD_COMPATIBILITY_PATCH_FILES)
+      || hasCompleteChangedFileSet(changedFiles, LOOP_53A_SELF_TEST_EXPECTATION_ALIGNMENT_PATCH_FILES)
     );
 }
 
