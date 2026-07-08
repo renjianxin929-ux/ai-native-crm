@@ -40,6 +40,18 @@ const LOOP_53_FILES = [
   'src/__tests__/reviewDraftQueueBoundary.readiness.test.ts',
   'src/__tests__/safeWriteRunnerGate.readiness.test.ts',
 ];
+const LOOP_53A_FILES = [TEST_FILE];
+const LOOP_53A_OLDER_READINESS_GUARD_COMPATIBILITY_PATCH_FILES = [
+  'src/__tests__/liveProviderSandboxCall.readiness.test.ts',
+  'src/__tests__/liveSandboxToSuggestOnlyBridge.readiness.test.ts',
+  'src/__tests__/manualLiveProviderSmokeGate.readiness.test.ts',
+  'src/__tests__/modelSuggestOnlyOutputGate.readiness.test.ts',
+  'src/__tests__/modelSuggestionAdapterBoundary.readiness.test.ts',
+  'src/__tests__/modelSuggestionReviewDraftGate.readiness.test.ts',
+  'src/__tests__/readOnlyAISuggestionPanel.readiness.test.ts',
+  'src/__tests__/readOnlyAISuggestionService.readiness.test.ts',
+  'src/__tests__/reviewDraftQueueBoundary.readiness.test.ts',
+];
 const LOOP_53_ALLOWED_CHANGED_FILES = new Set(LOOP_53_FILES);
 
 const SAFETY_LABELS = [
@@ -327,11 +339,33 @@ describe('Read-only AI suggestion panel readiness', () => {
       .filter(file => file.startsWith('src/') || file === 'package.json' || file.endsWith('lock.yaml'));
 
     expect(changedFiles.filter(file => !LOOP_53_ALLOWED_CHANGED_FILES.has(file))).toEqual([]);
-    expect(changedFiles.sort()).toEqual([...LOOP_53_FILES].sort());
+    if (changedFiles.length === 0) {
+      expect(isProvenCleanGitBaseline()).toBe(true);
+    } else {
+      expect(
+        hasCompleteChangedFileSet(changedFiles, LOOP_53_FILES)
+        || hasCompleteChangedFileSet(changedFiles, LOOP_53A_FILES)
+        || hasCompleteChangedFileSet(changedFiles, LOOP_53A_OLDER_READINESS_GUARD_COMPATIBILITY_PATCH_FILES),
+      ).toBe(true);
+    }
     expect(LOOP_53_ALLOWED_CHANGED_FILES.has('src/components/**')).toBe(false);
     expect(LOOP_53_ALLOWED_CHANGED_FILES.has('src/__tests__/**')).toBe(false);
     expect(changedFiles).not.toContain('package.json');
     expect(changedFiles.filter(file => file.endsWith('lock.yaml'))).toEqual([]);
+  });
+
+  it('recognizes only independently proven clean git baselines', () => {
+    expect(isProvenCleanGitBaselineFromParts([], [], [])).toBe(true);
+    expect(isProvenCleanGitBaselineFromParts([' M x'], [], [])).toBe(false);
+    expect(isProvenCleanGitBaselineFromParts([], ['x'], [])).toBe(false);
+    expect(isProvenCleanGitBaselineFromParts([], [], ['x'])).toBe(false);
+  });
+
+  it('requires exact cardinality for changed file cohorts', () => {
+    expect(hasCompleteChangedFileSet(['a'], ['a'])).toBe(true);
+    expect(hasCompleteChangedFileSet(['a'], ['a', 'b'])).toBe(false);
+    expect(hasCompleteChangedFileSet(['a', 'b'], ['a'])).toBe(false);
+    expect(hasCompleteChangedFileSet(['a', 'extra'], ['a', 'b'])).toBe(false);
   });
 
   it('mutation test fails forbidden button text', () => {
@@ -397,4 +431,27 @@ function assertNoForbiddenVisibleCopy(text: string): void {
 
 function gitLines(args: readonly string[]): string[] {
   return execFileSync('git', args, { encoding: 'utf8' }).trim().split(/\r?\n/).filter(Boolean);
+}
+
+function hasCompleteChangedFileSet(changedFiles: readonly string[], expectedFiles: readonly string[]): boolean {
+  return changedFiles.length === expectedFiles.length
+    && expectedFiles.every(file => changedFiles.includes(file));
+}
+
+function isProvenCleanGitBaselineFromParts(
+  statusLines: readonly string[],
+  cachedLines: readonly string[],
+  untrackedLines: readonly string[],
+): boolean {
+  return statusLines.length === 0
+    && cachedLines.length === 0
+    && untrackedLines.length === 0;
+}
+
+function isProvenCleanGitBaseline(): boolean {
+  return isProvenCleanGitBaselineFromParts(
+    gitLines(['status', '--short']),
+    gitLines(['diff', '--cached', '--name-only']),
+    gitLines(['ls-files', '--others', '--exclude-standard']),
+  );
 }

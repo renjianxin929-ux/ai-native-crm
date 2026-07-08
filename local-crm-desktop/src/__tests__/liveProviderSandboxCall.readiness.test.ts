@@ -165,6 +165,20 @@ const LOOP_53_READ_ONLY_AI_SUGGESTION_PANEL_CHANGED_FILES = [
   'src/__tests__/reviewDraftQueueBoundary.readiness.test.ts',
   'src/__tests__/safeWriteRunnerGate.readiness.test.ts',
 ];
+const LOOP_53A_READINESS_CLEAN_BASELINE_PATCH_FILES = [
+  'src/__tests__/readOnlyAISuggestionPanel.readiness.test.ts',
+];
+const LOOP_53A_OLDER_READINESS_GUARD_COMPATIBILITY_PATCH_FILES = [
+  'src/__tests__/liveProviderSandboxCall.readiness.test.ts',
+  'src/__tests__/liveSandboxToSuggestOnlyBridge.readiness.test.ts',
+  'src/__tests__/manualLiveProviderSmokeGate.readiness.test.ts',
+  'src/__tests__/modelSuggestOnlyOutputGate.readiness.test.ts',
+  'src/__tests__/modelSuggestionAdapterBoundary.readiness.test.ts',
+  'src/__tests__/modelSuggestionReviewDraftGate.readiness.test.ts',
+  'src/__tests__/readOnlyAISuggestionPanel.readiness.test.ts',
+  'src/__tests__/readOnlyAISuggestionService.readiness.test.ts',
+  'src/__tests__/reviewDraftQueueBoundary.readiness.test.ts',
+];
 
 const ACCEPTED_CHANGED_FILE_SETS = [
   LOOP_49_REQUIRED_CHANGED_FILES,
@@ -173,6 +187,8 @@ const ACCEPTED_CHANGED_FILE_SETS = [
   LOOP_51_BRIDGE_WITH_GUARD_UPDATE_CHANGED_FILES,
   LOOP_52_READ_ONLY_AI_SUGGESTION_SERVICE_CHANGED_FILES,
   LOOP_53_READ_ONLY_AI_SUGGESTION_PANEL_CHANGED_FILES,
+  LOOP_53A_READINESS_CLEAN_BASELINE_PATCH_FILES,
+  LOOP_53A_OLDER_READINESS_GUARD_COMPATIBILITY_PATCH_FILES,
 ];
 
 const CORE_FILE = 'src/lib/liveProviderSandboxCallReadiness.ts';
@@ -761,11 +777,29 @@ function gitLines(args: readonly string[]): string[] {
 }
 
 function matchesAllowedChangedFileSet(changedFiles: readonly string[]): boolean {
-  if (changedFiles.length === 0) return false;
+  if (changedFiles.length === 0) return isProvenCleanGitBaseline();
   if (changedFiles.some(file => !LOOP_49_ALLOWED_CHANGED_FILES.has(file))) return false;
 
   return ACCEPTED_CHANGED_FILE_SETS.some(requiredFiles => {
     const required = new Set(requiredFiles);
     return changedFiles.length === required.size && changedFiles.every(file => required.has(file));
   });
+}
+
+function isProvenCleanGitBaselineFromParts(
+  statusLines: readonly string[],
+  cachedLines: readonly string[],
+  untrackedLines: readonly string[],
+): boolean {
+  return statusLines.length === 0
+    && cachedLines.length === 0
+    && untrackedLines.length === 0;
+}
+
+function isProvenCleanGitBaseline(): boolean {
+  return isProvenCleanGitBaselineFromParts(
+    gitLines(['status', '--short']),
+    gitLines(['diff', '--cached', '--name-only']),
+    gitLines(['ls-files', '--others', '--exclude-standard']),
+  );
 }

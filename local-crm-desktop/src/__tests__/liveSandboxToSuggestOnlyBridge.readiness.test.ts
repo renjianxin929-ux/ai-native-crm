@@ -127,6 +127,20 @@ const LOOP_53_READ_ONLY_AI_SUGGESTION_PANEL_CHANGED_FILES = [
   'src/__tests__/reviewDraftQueueBoundary.readiness.test.ts',
   'src/__tests__/safeWriteRunnerGate.readiness.test.ts',
 ];
+const LOOP_53A_READINESS_CLEAN_BASELINE_PATCH_FILES = [
+  'src/__tests__/readOnlyAISuggestionPanel.readiness.test.ts',
+];
+const LOOP_53A_OLDER_READINESS_GUARD_COMPATIBILITY_PATCH_FILES = [
+  'src/__tests__/liveProviderSandboxCall.readiness.test.ts',
+  'src/__tests__/liveSandboxToSuggestOnlyBridge.readiness.test.ts',
+  'src/__tests__/manualLiveProviderSmokeGate.readiness.test.ts',
+  'src/__tests__/modelSuggestOnlyOutputGate.readiness.test.ts',
+  'src/__tests__/modelSuggestionAdapterBoundary.readiness.test.ts',
+  'src/__tests__/modelSuggestionReviewDraftGate.readiness.test.ts',
+  'src/__tests__/readOnlyAISuggestionPanel.readiness.test.ts',
+  'src/__tests__/readOnlyAISuggestionService.readiness.test.ts',
+  'src/__tests__/reviewDraftQueueBoundary.readiness.test.ts',
+];
 
 const CORE_FILE = 'src/lib/liveSandboxToSuggestOnlyBridgeReadiness.ts';
 const FIXTURE_FILE = 'src/lib/liveSandboxToSuggestOnlyBridge/liveSandboxToSuggestOnlyBridgeFixturesV1.ts';
@@ -493,10 +507,16 @@ describe('Live sandbox to suggest-only bridge readiness', () => {
       .filter(file => file.startsWith('src/') || file === 'package.json' || file.endsWith('lock.yaml'));
 
     expect(changedFiles.filter(file => !LOOP_51_ALLOWED_CHANGED_FILES.has(file))).toEqual([]);
-    expect(
-      hasCompleteChangedFileSet(changedFiles, LOOP_52_READ_ONLY_AI_SUGGESTION_SERVICE_CHANGED_FILES)
-      || hasCompleteChangedFileSet(changedFiles, LOOP_53_READ_ONLY_AI_SUGGESTION_PANEL_CHANGED_FILES),
-    ).toBe(true);
+    if (changedFiles.length === 0) {
+      expect(isProvenCleanGitBaseline()).toBe(true);
+    } else {
+      expect(
+        hasCompleteChangedFileSet(changedFiles, LOOP_52_READ_ONLY_AI_SUGGESTION_SERVICE_CHANGED_FILES)
+        || hasCompleteChangedFileSet(changedFiles, LOOP_53_READ_ONLY_AI_SUGGESTION_PANEL_CHANGED_FILES)
+        || hasCompleteChangedFileSet(changedFiles, LOOP_53A_READINESS_CLEAN_BASELINE_PATCH_FILES)
+        || hasCompleteChangedFileSet(changedFiles, LOOP_53A_OLDER_READINESS_GUARD_COMPATIBILITY_PATCH_FILES),
+      ).toBe(true);
+    }
     expect(LOOP_51_ALLOWED_CHANGED_FILES.has('src/lib/**')).toBe(false);
     expect(LOOP_51_ALLOWED_CHANGED_FILES.has('src/lib/liveSandboxToSuggestOnlyBridge/**')).toBe(false);
     expect(changedFiles).not.toContain('package.json');
@@ -659,4 +679,22 @@ function gitLines(args: readonly string[]): string[] {
 
 function hasCompleteChangedFileSet(changedFiles: readonly string[], expectedFiles: readonly string[]): boolean {
   return changedFiles.length === expectedFiles.length && expectedFiles.every(file => changedFiles.includes(file));
+}
+
+function isProvenCleanGitBaselineFromParts(
+  statusLines: readonly string[],
+  cachedLines: readonly string[],
+  untrackedLines: readonly string[],
+): boolean {
+  return statusLines.length === 0
+    && cachedLines.length === 0
+    && untrackedLines.length === 0;
+}
+
+function isProvenCleanGitBaseline(): boolean {
+  return isProvenCleanGitBaselineFromParts(
+    gitLines(['status', '--short']),
+    gitLines(['diff', '--cached', '--name-only']),
+    gitLines(['ls-files', '--others', '--exclude-standard']),
+  );
 }

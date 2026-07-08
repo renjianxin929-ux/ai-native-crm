@@ -177,6 +177,20 @@ const LOOP_53_READ_ONLY_AI_SUGGESTION_PANEL_CHANGED_FILES = [
   'src/__tests__/reviewDraftQueueBoundary.readiness.test.ts',
   'src/__tests__/safeWriteRunnerGate.readiness.test.ts',
 ];
+const LOOP_53A_READINESS_CLEAN_BASELINE_PATCH_FILES = [
+  'src/__tests__/readOnlyAISuggestionPanel.readiness.test.ts',
+];
+const LOOP_53A_OLDER_READINESS_GUARD_COMPATIBILITY_PATCH_FILES = [
+  'src/__tests__/liveProviderSandboxCall.readiness.test.ts',
+  'src/__tests__/liveSandboxToSuggestOnlyBridge.readiness.test.ts',
+  'src/__tests__/manualLiveProviderSmokeGate.readiness.test.ts',
+  'src/__tests__/modelSuggestOnlyOutputGate.readiness.test.ts',
+  'src/__tests__/modelSuggestionAdapterBoundary.readiness.test.ts',
+  'src/__tests__/modelSuggestionReviewDraftGate.readiness.test.ts',
+  'src/__tests__/readOnlyAISuggestionPanel.readiness.test.ts',
+  'src/__tests__/readOnlyAISuggestionService.readiness.test.ts',
+  'src/__tests__/reviewDraftQueueBoundary.readiness.test.ts',
+];
 
 const PRODUCTION_AND_FIXTURE_FILES = [
   'src/lib/reviewDraftQueueBoundaryReadiness.ts',
@@ -809,8 +823,9 @@ function gitLines(args: readonly string[]): string[] {
 }
 
 function isLoop48FileScopeGuardSatisfied(changedFiles: readonly string[]): boolean {
-  return changedFiles.length > 0
-    && changedFiles.every(file => LOOP_48_ALLOWED_CHANGED_FILES.has(file))
+  if (changedFiles.length === 0) return isProvenCleanGitBaseline();
+
+  return changedFiles.every(file => LOOP_48_ALLOWED_CHANGED_FILES.has(file))
     && (
       hasCompleteChangedFileSet(changedFiles, LOOP_48_REQUIRED_CHANGED_FILES)
       || hasCompleteChangedFileSet(changedFiles, LOOP_49_REQUIRED_CHANGED_FILES)
@@ -819,9 +834,29 @@ function isLoop48FileScopeGuardSatisfied(changedFiles: readonly string[]): boole
       || hasCompleteChangedFileSet(changedFiles, LOOP_51_BRIDGE_WITH_GUARD_UPDATE_CHANGED_FILES)
       || hasCompleteChangedFileSet(changedFiles, LOOP_52_READ_ONLY_AI_SUGGESTION_SERVICE_CHANGED_FILES)
       || hasCompleteChangedFileSet(changedFiles, LOOP_53_READ_ONLY_AI_SUGGESTION_PANEL_CHANGED_FILES)
+      || hasCompleteChangedFileSet(changedFiles, LOOP_53A_READINESS_CLEAN_BASELINE_PATCH_FILES)
+      || hasCompleteChangedFileSet(changedFiles, LOOP_53A_OLDER_READINESS_GUARD_COMPATIBILITY_PATCH_FILES)
     );
 }
 
 function hasCompleteChangedFileSet(changedFiles: readonly string[], expectedFiles: readonly string[]): boolean {
   return changedFiles.length === expectedFiles.length && expectedFiles.every(file => changedFiles.includes(file));
+}
+
+function isProvenCleanGitBaselineFromParts(
+  statusLines: readonly string[],
+  cachedLines: readonly string[],
+  untrackedLines: readonly string[],
+): boolean {
+  return statusLines.length === 0
+    && cachedLines.length === 0
+    && untrackedLines.length === 0;
+}
+
+function isProvenCleanGitBaseline(): boolean {
+  return isProvenCleanGitBaselineFromParts(
+    gitLines(['status', '--short']),
+    gitLines(['diff', '--cached', '--name-only']),
+    gitLines(['ls-files', '--others', '--exclude-standard']),
+  );
 }
