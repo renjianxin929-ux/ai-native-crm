@@ -18,9 +18,12 @@ describe('Stage3 final canonical alignment', () => {
     });
     const workspace = readFileSync('src/components/aiNative/AINativeCRMWorkspace.tsx', 'utf8');
     const panel = readFileSync('src/components/aiNative/SalesAgentResultPanel.tsx', 'utf8');
-    expect(workspace).toContain('runSalesAgentRuntime(');
+    const copilotWorkflow = readFileSync('src/lib/salesCopilot/workflow.ts', 'utf8');
+    expect(workspace).toContain('runSalesCopilotWorkflow(');
+    expect(copilotWorkflow).toContain('runSalesAgentRuntime({');
     expect(workspace).not.toContain('.reason(');
     expect(panel).not.toContain('.reason(');
+    expect(copilotWorkflow).not.toContain('.reason(');
     expect(workspace).toContain('Legacy / 只读建议路径');
     expect(STAGE3_SALES_AGENT_ARCHITECTURE_STATE).toMatchObject({
       current_provider_execution: { provider_kind: 'MOCK', execution_mode: 'MOCK', live_enabled: false },

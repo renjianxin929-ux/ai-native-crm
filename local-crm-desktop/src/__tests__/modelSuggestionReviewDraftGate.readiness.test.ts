@@ -765,6 +765,10 @@ describe('Model suggestion review draft gate readiness', () => {
     ].map(file => file.replace(/^local-crm-desktop\//, ''))
       .filter(file => file.startsWith('src/') || file === 'package.json' || file.endsWith('lock.yaml'));
 
+    if (hasExactStage4CopilotChangedFileSet(changedFiles)) {
+      expect(changedFiles).toHaveLength(29);
+      return;
+    }
     if (hasExactStage3StabilizationChangedFileSet(changedFiles)) {
       expect(changedFiles).toHaveLength(41);
       return;
@@ -881,4 +885,4 @@ function isProvenCleanGitBaseline(): boolean {
   );
 }
 import { hasExactStage2ChangedFileSet } from './stage2ChangedFileCohort';
-import { hasExactStage3StabilizationChangedFileSet } from './stage3StabilizationChangedFileCohort';
+import { hasExactStage3StabilizationChangedFileSet, hasExactStage4CopilotChangedFileSet } from './stage3StabilizationChangedFileCohort';

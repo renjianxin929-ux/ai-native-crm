@@ -511,6 +511,10 @@ describe('Human Confirmation Contract readiness gate', () => {
       .map(file => file.replace(/^local-crm-desktop\//, ''))
       .filter(file => file.startsWith('src/'));
 
+    if (hasExactStage4CopilotChangedFileSet(changedFiles)) {
+      expect(changedFiles).toHaveLength(29);
+      return;
+    }
     if (hasExactStage3StabilizationChangedFileSet(changedFiles)) {
       expect(changedFiles).toHaveLength(41);
       return;
@@ -556,4 +560,4 @@ function withAliasState(
   } as unknown as ReturnType<typeof buildHumanConfirmationSourceCandidateFixtureV1>;
 }
 import { hasExactStage2ChangedFileSet } from './stage2ChangedFileCohort';
-import { hasExactStage3StabilizationChangedFileSet } from './stage3StabilizationChangedFileCohort';
+import { hasExactStage3StabilizationChangedFileSet, hasExactStage4CopilotChangedFileSet } from './stage3StabilizationChangedFileCohort';

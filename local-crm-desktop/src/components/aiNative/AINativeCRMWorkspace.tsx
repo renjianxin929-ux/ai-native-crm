@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import { ReadOnlyAISuggestionPanel } from '../aiSuggestions/ReadOnlyAISuggestionPanel';
 import { Stage2ArchitectureStatus } from './Stage2ArchitectureStatus';
-import { SalesAgentResultPanel } from './SalesAgentResultPanel';
+import { SalesCopilotPanel } from './SalesCopilotPanel';
 import { getDb } from '../../lib/db';
 import { getActiveVerticalProfile } from '../../lib/verticalProfiles';
 import { buildWorkspaceContextSnapshot } from '../../lib/context/workspaceContextAdapter';
@@ -34,8 +34,10 @@ import {
   type ReadOnlyAISuggestionServiceResponse,
 } from '../../lib/readOnlyAISuggestionServiceReadiness';
 import { createMockReasoningProvider } from '../../lib/salesAgent/provider';
-import { runSalesAgentRuntime } from '../../lib/salesAgent/runtime';
-import type { SalesAgentRuntimeResult } from '../../lib/salesAgent/types';
+import { createAgentTriggerBoundary } from '../../lib/salesAgent/triggerSeam';
+import { runSalesCopilotWorkflow } from '../../lib/salesCopilot/workflow';
+import type { SalesCopilotWorkflowResult } from '../../lib/salesCopilot/types';
+import { buildBoundedWorkspaceSalesPriority, MAX_WORKSPACE_PRIORITY_CANDIDATES } from '../../lib/salesCopilot/workspacePriority';
 
 const profile = getActiveVerticalProfile();
 const stage2Profile = resolveVerticalAIProfile();
@@ -58,7 +60,7 @@ export default function AINativeCRMWorkspace() {
   const [safety, setSafety] = useState<ReadOnlySnapshotLoaderSafety | null>(null);
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
   const [suggestionResponse, setSuggestionResponse] = useState<ReadOnlyAISuggestionServiceResponse | null>(null);
-  const [salesAgentResult, setSalesAgentResult] = useState<SalesAgentRuntimeResult | null>(null);
+  const [copilotResults, setCopilotResults] = useState<readonly SalesCopilotWorkflowResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -91,7 +93,7 @@ export default function AINativeCRMWorkspace() {
     setError('');
     setSnapshot(null);
     setSuggestionResponse(null);
-    setSalesAgentResult(null);
+    setCopilotResults([]);
     try {
       const now = new Date().toISOString();
       const plan = buildReadOnlySnapshotLoaderPlan(
@@ -131,13 +133,74 @@ export default function AINativeCRMWorkspace() {
         allow_ui: false,
       }));
       const context = buildWorkspaceContextSnapshot(result.snapshot);
-      setSalesAgentResult(await runSalesAgentRuntime({
-        request_id: `${result.snapshot.snapshot_id}:sales-agent`,
-        objective: 'Assess the current sales situation and recommend an evidence-backed next action.',
+      const provider = createMockReasoningProvider();
+      const customerIntelligence = await runSalesCopilotWorkflow({
+        kind: 'customer_intelligence',
+        request_id: `${result.snapshot.snapshot_id}:customer-intelligence`,
         context,
         profile_id: stage2Profile.identity.id,
+        provider,
+      });
+      setCopilotResults(current => [customerIntelligence, ...current.filter(item => item.kind === 'sales_priority')]);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadSalesPriority = async () => {
+    const customerIds = (catalog?.customers ?? []).map(customer => customer.id);
+    if (customerIds.length < 2) return;
+    setLoading(true);
+    setError('');
+    try {
+      const db = await getDb();
+      const priority = await buildBoundedWorkspaceSalesPriority({
+        request_id: `workspace-priority:${new Date().toISOString()}`,
+        customer_ids: customerIds,
+        profile_id: stage2Profile.identity.id,
         provider: createMockReasoningProvider(),
-      }));
+        load_read_only_context: async customerId => {
+          const now = new Date().toISOString();
+          const plan = buildReadOnlySnapshotLoaderPlan(buildSelectedCRMContextRequest(profile.key, customerId, now));
+          const loaded = await loadReadOnlySnapshotFromDb(db, plan);
+          if (!isStrictReadOnlyWorkspaceSafety(loaded.safety)) throw new Error('Priority candidate failed the read-only safety contract.');
+          return buildWorkspaceContextSnapshot(loaded.snapshot);
+        },
+      });
+      setCopilotResults(current => [...current.filter(item => item.kind !== 'sales_priority'), priority]);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const reviewLatestInteraction = async () => {
+    if (!stage2Context || stage2Context.recentInteractions.length === 0) return;
+    setLoading(true);
+    setError('');
+    try {
+      const interaction = stage2Context.recentInteractions[0];
+      const occurredAt = interaction.occurredAt;
+      const trigger = createAgentTriggerBoundary({
+        kind: 'InteractionAddedEvent',
+        event_id: `workspace:${interaction.interactionId}`,
+        occurred_at: occurredAt,
+        customer_id: selectedCustomerId,
+        interaction_id: interaction.interactionId,
+      });
+      const interactionIntelligence = await runSalesCopilotWorkflow({
+        kind: 'interaction_intelligence',
+        request_id: `${stage2Context.snapshotId}:interaction-intelligence`,
+        context: stage2Context,
+        trigger,
+        explicitly_activated: true,
+        profile_id: stage2Profile.identity.id,
+        provider: createMockReasoningProvider(),
+      });
+      setCopilotResults(current => [...current.filter(item => item.kind !== 'interaction_intelligence'), interactionIntelligence]);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -190,7 +253,7 @@ export default function AINativeCRMWorkspace() {
                 setSelectedCustomerId(event.target.value);
                 setSnapshot(null);
                 setSuggestionResponse(null);
-                setSalesAgentResult(null);
+                setCopilotResults([]);
               }}
               aria-label="选择客户"
               style={{ minWidth: 260, padding: '9px 12px', border: '1px solid var(--border)', borderRadius: 8 }}
@@ -206,6 +269,9 @@ export default function AINativeCRMWorkspace() {
             </button>
             <button className="btn" onClick={() => void loadCatalog()} disabled={loading}>
               刷新客户列表
+            </button>
+            <button className="btn" onClick={() => void loadSalesPriority()} disabled={loading || (catalog?.customers.length ?? 0) < 2}>
+              Build Top-{MAX_WORKSPACE_PRIORITY_CANDIDATES} customer priority
             </button>
           </div>
           {!selectedCustomerId && (
@@ -267,9 +333,14 @@ export default function AINativeCRMWorkspace() {
           </section>
         )}
 
-        {salesAgentResult && (
-          <section style={panelStyle} aria-label="AI Sales Agent Runtime result">
-            <SalesAgentResultPanel runtime={salesAgentResult} />
+        {copilotResults.length > 0 && (
+          <section style={panelStyle} aria-label="AI Sales Copilot workflow result">
+            <SalesCopilotPanel results={copilotResults} />
+            {stage2Context && stage2Context.recentInteractions.length > 0 && !copilotResults.some(item => item.kind === 'interaction_intelligence') && (
+              <button className="btn" onClick={() => void reviewLatestInteraction()} disabled={loading}>
+                Review latest interaction
+              </button>
+            )}
           </section>
         )}
 
