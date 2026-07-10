@@ -745,6 +745,10 @@ describe('Safe write runner gate readiness', () => {
       .map(file => file.replace(/^local-crm-desktop\//, ''))
       .filter(file => file.startsWith('src/'));
 
+    if (hasExactStage3StabilizationChangedFileSet(changedFiles)) {
+      expect(changedFiles).toHaveLength(41);
+      return;
+    }
     if (hasExactStage2ChangedFileSet(changedFiles)) {
       expect(changedFiles).toHaveLength(46);
       return;
@@ -776,3 +780,4 @@ function findActiveTrueStates(value: unknown, path = '$'): string[] {
   });
 }
 import { hasExactStage2ChangedFileSet } from './stage2ChangedFileCohort';
+import { hasExactStage3StabilizationChangedFileSet } from './stage3StabilizationChangedFileCohort';

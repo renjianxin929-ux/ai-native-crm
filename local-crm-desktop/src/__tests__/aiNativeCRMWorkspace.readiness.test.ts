@@ -115,7 +115,9 @@ describe('AI Native CRM workspace Target Phase 1-2 readiness', () => {
     expect(source).toContain('ReadOnlyAISuggestionPanel');
     expect(source).toContain('runReadOnlySnapshotAISuggestionService');
     expect(source).toContain('未调用 Provider 或模型');
-    expect(source).toContain('不代表已执行动作');
+    expect(source).toContain('也不会执行动作');
+    expect(source).toContain('确定性 Mock 推理');
+    expect(source).toContain('所有结果必须人工复核');
 
     for (const forbidden of [
       'createAIDraft',

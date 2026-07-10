@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { ReadOnlyAISuggestionPanel } from '../aiSuggestions/ReadOnlyAISuggestionPanel';
 import { Stage2ArchitectureStatus } from './Stage2ArchitectureStatus';
+import { SalesAgentResultPanel } from './SalesAgentResultPanel';
 import { getDb } from '../../lib/db';
 import { getActiveVerticalProfile } from '../../lib/verticalProfiles';
 import { buildWorkspaceContextSnapshot } from '../../lib/context/workspaceContextAdapter';
@@ -32,6 +33,9 @@ import {
   runReadOnlySnapshotAISuggestionService,
   type ReadOnlyAISuggestionServiceResponse,
 } from '../../lib/readOnlyAISuggestionServiceReadiness';
+import { createMockReasoningProvider } from '../../lib/salesAgent/provider';
+import { runSalesAgentRuntime } from '../../lib/salesAgent/runtime';
+import type { SalesAgentRuntimeResult } from '../../lib/salesAgent/types';
 
 const profile = getActiveVerticalProfile();
 const stage2Profile = resolveVerticalAIProfile();
@@ -54,6 +58,7 @@ export default function AINativeCRMWorkspace() {
   const [safety, setSafety] = useState<ReadOnlySnapshotLoaderSafety | null>(null);
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
   const [suggestionResponse, setSuggestionResponse] = useState<ReadOnlyAISuggestionServiceResponse | null>(null);
+  const [salesAgentResult, setSalesAgentResult] = useState<SalesAgentRuntimeResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -86,6 +91,7 @@ export default function AINativeCRMWorkspace() {
     setError('');
     setSnapshot(null);
     setSuggestionResponse(null);
+    setSalesAgentResult(null);
     try {
       const now = new Date().toISOString();
       const plan = buildReadOnlySnapshotLoaderPlan(
@@ -124,6 +130,14 @@ export default function AINativeCRMWorkspace() {
         allow_customer_status_change: false,
         allow_ui: false,
       }));
+      const context = buildWorkspaceContextSnapshot(result.snapshot);
+      setSalesAgentResult(await runSalesAgentRuntime({
+        request_id: `${result.snapshot.snapshot_id}:sales-agent`,
+        objective: 'Assess the current sales situation and recommend an evidence-backed next action.',
+        context,
+        profile_id: stage2Profile.identity.id,
+        provider: createMockReasoningProvider(),
+      }));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -143,7 +157,7 @@ export default function AINativeCRMWorkspace() {
         <div>
           <h2>AI 原生 CRM 工作台</h2>
           <p style={{ margin: '6px 0 0', color: 'var(--text-secondary)', fontSize: 13 }}>
-            真实 CRM 上下文 → 可审计建议 → 人工复核 → 明确确认 → 安全执行
+            真实 CRM 上下文 → SalesAgentRuntime Mock 推理 → 证据校验 → 人工复核
           </p>
         </div>
         <span className="badge" style={{ alignSelf: 'center', background: '#ecfdf5', color: '#047857' }}>
@@ -156,10 +170,10 @@ export default function AINativeCRMWorkspace() {
           <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
             <LockKeyhole size={22} color="#047857" />
             <div>
-              <strong style={{ color: '#065f46' }}>安全状态：只读 CRM 快照</strong>
+              <strong style={{ color: '#065f46' }}>安全状态：只读 Sandbox / Mock 推理</strong>
               <div style={{ color: '#047857', fontSize: 13, marginTop: 5 }}>
-                允许受限数据库读取；禁止 Provider 调用、网络请求、CRM 写入、自动执行与结果持久化。
-                所有未来动作必须经过人工复核与明确确认。
+                当前仅运行确定性 Mock Provider；不会调用外部 Provider 或真实模型。
+                禁止网络请求、CRM 写入、自动执行与结果持久化；所有结果必须人工复核。
               </div>
             </div>
           </div>
@@ -176,6 +190,7 @@ export default function AINativeCRMWorkspace() {
                 setSelectedCustomerId(event.target.value);
                 setSnapshot(null);
                 setSuggestionResponse(null);
+                setSalesAgentResult(null);
               }}
               aria-label="选择客户"
               style={{ minWidth: 260, padding: '9px 12px', border: '1px solid var(--border)', borderRadius: 8 }}
@@ -231,14 +246,14 @@ export default function AINativeCRMWorkspace() {
         )}
 
         {suggestionResponse ? (
-          <section style={panelStyle} aria-label="基于 CRM 快照的只读建议">
+          <section style={panelStyle} aria-label="Legacy 基于 CRM 快照的只读建议">
             <p style={{ color: '#475569', fontSize: 13, margin: '0 0 10px' }}>
-              来源：真实 CRM ContextSnapshot，经现有 ReadOnlyAgent 与 SuggestOnly dry-run 规则生成；
-              未调用 Provider 或模型，不代表已执行动作。
+              Legacy / 只读建议路径：真实 CRM ContextSnapshot 经现有 ReadOnlyAgent 与 SuggestOnly dry-run 规则生成；
+              不属于未来 AI 推理入口，未调用 Provider 或模型，也不会执行动作。
             </p>
             <ReadOnlyAISuggestionPanel
               response={suggestionResponse}
-              title="CRM 快照只读建议"
+              title="Legacy CRM 快照只读建议"
               showProvenance
               showTrace
             />
@@ -252,13 +267,19 @@ export default function AINativeCRMWorkspace() {
           </section>
         )}
 
+        {salesAgentResult && (
+          <section style={panelStyle} aria-label="AI Sales Agent Runtime result">
+            <SalesAgentResultPanel runtime={salesAgentResult} />
+          </section>
+        )}
+
         <section style={panelStyle} aria-label="人工复核与执行边界">
           <h3 className="section-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <UserRoundCheck size={18} /> 人工复核与执行边界
           </h3>
           <div style={{ display: 'grid', gap: 8, fontSize: 13 }}>
-            <span><CheckCircle2 size={14} color="#059669" /> 当前可用：真实上下文选择、来源与证据检查、快照新鲜度检查</span>
-            <span><LockKeyhole size={14} color="#d97706" /> 当前锁定：Provider/模型调用、ReviewDraft 确认、WritePlan 执行、任何 CRM 写入</span>
+            <span><CheckCircle2 size={14} color="#059669" /> 当前可用：真实上下文选择、确定性 Mock 推理、来源与证据检查、人工复核</span>
+            <span><LockKeyhole size={14} color="#d97706" /> 当前锁定：外部 Provider/真实模型、自动执行、Review Queue、WritePlan、任何 CRM 写入</span>
             <span style={{ color: '#64748b' }}>工作区契约：{AI_NATIVE_CRM_WORKSPACE_VERSION} · Vertical Profile：{profile.key} · Profile 版本：现有 Profile 未提供版本字段</span>
           </div>
         </section>
