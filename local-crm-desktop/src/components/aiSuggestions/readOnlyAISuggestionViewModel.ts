@@ -109,7 +109,7 @@ function validateResponse(response: ReadOnlyAISuggestionServiceResponse): { vali
     return { valid: false, reason: 'Invalid response kind' };
   }
   if (response.service_read_only !== true) return { valid: false, reason: 'Invalid read-only flag' };
-  if (response.bridge_reference_only !== true) return { valid: false, reason: 'Invalid bridge reference flag' };
+  if (response.source_reference_only !== true) return { valid: false, reason: 'Invalid source reference flag' };
   if (response.requires_human_review !== true) return { valid: false, reason: 'Invalid human review flag' };
   if (response.trusted_for_action !== false) return { valid: false, reason: 'Invalid trust flag' };
   if (response.executable !== false) return { valid: false, reason: 'Invalid executable flag' };

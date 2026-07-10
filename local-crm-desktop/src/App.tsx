@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Routes, Route, NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, Users, MessageSquare, MapPin,
-  Settings, Upload, Brain, ListChecks, BriefcaseBusiness
+  Settings, Upload, Brain, ListChecks, BriefcaseBusiness, ShieldCheck
 } from 'lucide-react';
 import TodayView from './pages/TodayView';
 import CustomerList from './pages/CustomerList';
@@ -15,6 +15,7 @@ import LeadImportCenterPage from './pages/LeadImportCenterPage';
 import LeadWorkbenchPage from './pages/LeadWorkbenchPage';
 import AISettingsPage from './pages/AISettingsPage';
 import AIAssistantPage from './pages/AIAssistantPage';
+import AINativeCRMWorkspace from './components/aiNative/AINativeCRMWorkspace';
 import type { Customer, Task } from './lib/types';
 import { listCustomers, listTasks } from './lib/db';
 import './App.css';
@@ -56,6 +57,7 @@ export default function App() {
     { to: '/follow-ups', icon: MessageSquare, label: '跟进记录' },
     { to: '/visits', icon: MapPin, label: '面访记录' },
     { to: '/assistant', icon: Brain, label: 'AI助手' },
+    { to: '/ai-workspace', icon: ShieldCheck, label: 'AI 工作台' },
     { to: '/import', icon: Upload, label: '数据导入' },
     { to: '/lead-import-center', icon: ListChecks, label: '导入分流' },
     { to: '/lead-workbench', icon: BriefcaseBusiness, label: '获客作业台' },
@@ -100,6 +102,7 @@ export default function App() {
           <Route path="/follow-ups" element={<FollowUpRecords />} />
           <Route path="/visits" element={<VisitRecords />} />
           <Route path="/assistant" element={<AIAssistantPage />} />
+          <Route path="/ai-workspace" element={<AINativeCRMWorkspace />} />
           <Route path="/import" element={<DataImportPage customers={customers} onRefresh={refreshAll} />} />
           <Route path="/lead-import-center" element={<LeadImportCenterPage />} />
           <Route path="/lead-workbench" element={<LeadWorkbenchPage />} />

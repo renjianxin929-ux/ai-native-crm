@@ -18,6 +18,35 @@ import {
 import { buildModelSuggestOnlyOutputGateRequestFixtureV1 } from '../lib/modelSuggestOnlyOutputGate/modelSuggestOnlyOutputGateFixturesV1';
 import type { ModelReadOnlyInvocationGateResult } from '../lib/modelReadOnlyInvocationGateReadiness';
 
+const LOOP_54_AI_NATIVE_CONTEXT_INTEGRATION_FILES = [
+  'src/App.tsx',
+  'src/__tests__/actionRunnerBoundaryContract.readiness.test.ts',
+  'src/__tests__/aiNativeCRMWorkspace.readiness.test.ts',
+  'src/__tests__/confirmedActionLiveDryRun.readiness.test.ts',
+  'src/__tests__/confirmedActionReviewQueue.readiness.test.ts',
+  'src/__tests__/dashboardDataProjection.readiness.test.ts',
+  'src/__tests__/dashboardProjectionPanel.readiness.test.ts',
+  'src/__tests__/dbWritePlanDryRun.readiness.test.ts',
+  'src/__tests__/humanConfirmationContract.readiness.test.ts',
+  'src/__tests__/liveProviderSandboxCall.readiness.test.ts',
+  'src/__tests__/liveSandboxToSuggestOnlyBridge.readiness.test.ts',
+  'src/__tests__/manualLiveProviderSmokeGate.readiness.test.ts',
+  'src/__tests__/modelProviderBoundaryContract.readiness.test.ts',
+  'src/__tests__/modelProviderReadOnlySandbox.readiness.test.ts',
+  'src/__tests__/modelReadOnlyInvocationGate.readiness.test.ts',
+  'src/__tests__/modelSuggestOnlyOutputGate.readiness.test.ts',
+  'src/__tests__/modelSuggestionAdapterBoundary.readiness.test.ts',
+  'src/__tests__/modelSuggestionReviewDraftGate.readiness.test.ts',
+  'src/__tests__/readOnlyAISuggestionPanel.readiness.test.ts',
+  'src/__tests__/readOnlyAISuggestionService.readiness.test.ts',
+  'src/__tests__/reviewDraftQueueBoundary.readiness.test.ts',
+  'src/__tests__/safeWriteRunnerGate.readiness.test.ts',
+  'src/components/aiNative/AINativeCRMWorkspace.tsx',
+  'src/components/aiSuggestions/readOnlyAISuggestionViewModel.ts',
+  'src/lib/aiNativeCRMWorkspaceReadiness.ts',
+  'src/lib/readOnlyAISuggestionServiceReadiness.ts',
+] as const;
+
 const LOOP_45_ALLOWED_CHANGED_FILES = new Set([
   'src/lib/modelSuggestOnlyOutputGateReadiness.ts',
   'src/lib/modelSuggestOnlyOutputGate/modelSuggestOnlyOutputGateFixturesV1.ts',
@@ -677,12 +706,14 @@ describe('Model suggest-only output gate readiness', () => {
       .filter(file => file.startsWith('src/') || file === 'package.json' || file.endsWith('lock.yaml'));
 
     expect(isLoop45FileScopeGuardSatisfied(changedFiles)).toBe(true);
+    const matchesLoop54 = hasCompleteChangedFileSet(changedFiles, LOOP_54_AI_NATIVE_CONTEXT_INTEGRATION_FILES);
     expect(changedFiles.filter(file => file.startsWith('src/tests/'))).toEqual([]);
     expect(changedFiles.filter(file => file.startsWith('src/pages/'))).toEqual([]);
     expect(changedFiles.filter(file => (
       file.startsWith('src/components/')
       && file !== 'src/components/aiSuggestions/ReadOnlyAISuggestionPanel.tsx'
       && file !== 'src/components/aiSuggestions/readOnlyAISuggestionViewModel.ts'
+      && !(matchesLoop54 && file === 'src/components/aiNative/AINativeCRMWorkspace.tsx')
     ))).toEqual([]);
     expect(changedFiles.filter(file => file.startsWith('src/lib/leadWorkbench/'))).toEqual([]);
     expect(changedFiles.filter(file => file.startsWith('src-tauri/'))).toEqual([]);
@@ -765,6 +796,7 @@ function gitLines(args: readonly string[]): string[] {
 
 function isLoop45FileScopeGuardSatisfied(changedFiles: readonly string[]): boolean {
   if (changedFiles.length === 0) return isProvenCleanGitBaseline();
+  if (hasCompleteChangedFileSet(changedFiles, LOOP_54_AI_NATIVE_CONTEXT_INTEGRATION_FILES)) return true;
 
   return changedFiles.every(file => LOOP_45_ALLOWED_CHANGED_FILES.has(file))
     && (

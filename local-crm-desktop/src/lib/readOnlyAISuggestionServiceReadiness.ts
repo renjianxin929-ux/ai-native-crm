@@ -3,6 +3,18 @@ import type {
   ModelSuggestOnlyCandidate,
   ModelSuggestOnlyStatus,
 } from './modelSuggestOnlyOutputGateReadiness';
+import {
+  buildReadOnlyAgentLiveDryRunPlan,
+  runReadOnlyAgentLiveDryRun,
+} from './readOnlyAgentLiveDryRunReadiness';
+import type { ReadOnlyAgentContext, ReadOnlyAgentIntent } from './readOnlyAgentReadiness';
+import type { LoadedReadOnlyAgentSnapshot } from './readOnlySnapshotLoaderReadiness';
+import type { SuggestOnlyAgentProposal } from './suggestOnlyAgentReadiness';
+import {
+  buildSuggestOnlyLiveDryRunPlan,
+  runSuggestOnlyLiveDryRun,
+  type SuggestOnlyLiveDryRunResult,
+} from './suggestOnlyLiveDryRunReadiness';
 
 export const READ_ONLY_AI_SUGGESTION_SERVICE_VERSION = 'v1';
 
@@ -51,7 +63,11 @@ export type ReadOnlyAISuggestionServiceBlockedReason =
   | 'illegal_customer_status_change_allowed'
   | 'illegal_ui_allowed'
   | 'disallowed_source_field'
-  | 'source_candidate_raw_payload';
+  | 'source_candidate_raw_payload'
+  | 'invalid_snapshot_request_kind'
+  | 'snapshot_dry_run_blocked'
+  | 'snapshot_suggest_only_answer_missing'
+  | 'snapshot_source_unsafe';
 
 export interface ReadOnlyAISuggestionServiceRequest {
   kind: 'READ_ONLY_AI_SUGGESTION_SERVICE_REQUEST';
@@ -61,6 +77,35 @@ export interface ReadOnlyAISuggestionServiceRequest {
   service_read_only: BoolTrue;
   caller_provided_only: BoolTrue;
   bridge_reference_only: BoolTrue;
+  allow_network: BoolFalse;
+  allow_model_call: BoolFalse;
+  allow_env_read: BoolFalse;
+  allow_db: BoolFalse;
+  allow_runner: BoolFalse;
+  allow_execution: BoolFalse;
+  allow_review_queue_entry: BoolFalse;
+  allow_confirmed_action: BoolFalse;
+  allow_human_confirmation: BoolFalse;
+  allow_write_plan_entry: BoolFalse;
+  allow_database_write: BoolFalse;
+  allow_task_create: BoolFalse;
+  allow_followup_create: BoolFalse;
+  allow_customer_status_change: BoolFalse;
+  allow_ui: BoolFalse;
+}
+
+export interface ReadOnlySnapshotAISuggestionServiceRequest {
+  kind: 'READ_ONLY_SNAPSHOT_AI_SUGGESTION_SERVICE_REQUEST';
+  version: typeof READ_ONLY_AI_SUGGESTION_SERVICE_VERSION;
+  request_id: string;
+  loaded_snapshot: LoadedReadOnlyAgentSnapshot;
+  intent: ReadOnlyAgentIntent;
+  context?: ReadOnlyAgentContext;
+  target_customer_id?: string;
+  target_work_item_id?: string;
+  service_read_only: BoolTrue;
+  caller_provided_only: BoolTrue;
+  source_reference_only: BoolTrue;
   allow_network: BoolFalse;
   allow_model_call: BoolFalse;
   allow_env_read: BoolFalse;
@@ -113,10 +158,12 @@ export interface ReadOnlyAISuggestionServiceSummary {
 export interface ReadOnlyAISuggestionSafetySummary {
   kind: 'READ_ONLY_AI_SUGGESTION_SERVICE_SAFETY_SUMMARY';
   version: typeof READ_ONLY_AI_SUGGESTION_SERVICE_VERSION;
-  source_bridge_checked: BoolTrue;
+  source_bridge_checked: boolean;
+  source_snapshot_dry_run_checked: boolean;
   source_candidates_checked: BoolTrue;
   service_read_only: BoolTrue;
-  bridge_reference_only: BoolTrue;
+  source_reference_only: BoolTrue;
+  bridge_reference_only: boolean;
   requires_human_review: BoolTrue;
   trusted_for_action: BoolFalse;
   executable: BoolFalse;
@@ -140,7 +187,8 @@ export interface ReadOnlyAISuggestionServiceAnswer {
   service_blocked: boolean;
   blocked_reason: ReadOnlyAISuggestionServiceBlockedReason | null;
   service_read_only: BoolTrue;
-  bridge_reference_only: BoolTrue;
+  source_reference_only: BoolTrue;
+  bridge_reference_only: boolean;
   source_bridge_request_id: string | null;
   source_kind: string | null;
   source_request_id: string | null;
@@ -166,7 +214,8 @@ export interface ReadOnlyAISuggestionServiceResponse {
   request_id: string;
   service_read_only: BoolTrue;
   caller_provided_only: BoolTrue;
-  bridge_reference_only: BoolTrue;
+  source_reference_only: BoolTrue;
+  bridge_reference_only: boolean;
   suggest_only: BoolTrue;
   requires_human_review: BoolTrue;
   trusted_for_action: BoolFalse;
@@ -198,6 +247,19 @@ interface BridgeProjectionMetadata {
   candidates: readonly ModelSuggestOnlyCandidate[];
 }
 
+interface SnapshotProjectionMetadata {
+  source_bridge_request_id: null;
+  source_kind: 'read_only_crm_snapshot';
+  source_request_id: string;
+  source_provider_kind: 'none_rule_based';
+  source_model_name: 'none';
+  source_was_live_sandbox: false;
+  proposals: readonly SuggestOnlyAgentProposal[];
+  source_snapshot_id: string;
+}
+
+type ServiceProjectionMetadata = BridgeProjectionMetadata | SnapshotProjectionMetadata;
+
 interface ServiceValidation {
   ok: boolean;
   blocked_reason: ReadOnlyAISuggestionServiceBlockedReason | null;
@@ -209,13 +271,112 @@ export function runReadOnlyAISuggestionService(
 ): ReadOnlyAISuggestionServiceResponse {
   const validation = validateReadOnlyAISuggestionServiceRequest(request);
   if (!validation.ok || validation.metadata === null) {
-    return buildResponse(request, validation.blocked_reason, null, []);
+    return buildResponse(request.request_id, validation.blocked_reason, null, [], true);
   }
 
   const cards = validation.metadata.candidates.map((candidate, index) => (
     projectSuggestionCard(candidate, validation.metadata as BridgeProjectionMetadata, index)
   ));
-  return buildResponse(request, null, validation.metadata, cards);
+  return buildResponse(request.request_id, null, validation.metadata, cards, true);
+}
+
+export function runReadOnlySnapshotAISuggestionService(
+  request: ReadOnlySnapshotAISuggestionServiceRequest,
+): ReadOnlyAISuggestionServiceResponse {
+  const requestValidation = validateReadOnlySnapshotAISuggestionServiceRequest(request);
+  if (requestValidation !== null) {
+    return buildResponse(request.request_id, requestValidation, null, [], false);
+  }
+
+  const readOnlyResult = runReadOnlyAgentLiveDryRun(buildReadOnlyAgentLiveDryRunPlan({
+    kind: 'READ_ONLY_AGENT_LIVE_DRY_RUN_REQUEST',
+    version: 'v1',
+    request_id: `${request.request_id}:read-only`,
+    intent: request.intent,
+    loaded_snapshot: request.loaded_snapshot,
+    context: request.context ?? request.loaded_snapshot.context,
+    target_customer_id: request.target_customer_id,
+    target_work_item_id: request.target_work_item_id,
+  }));
+  const suggestOnlyResult = runSuggestOnlyLiveDryRun(buildSuggestOnlyLiveDryRunPlan({
+    kind: 'SUGGEST_ONLY_LIVE_DRY_RUN_REQUEST',
+    version: 'v1',
+    request_id: `${request.request_id}:suggest-only`,
+    source_live_dry_run_result: readOnlyResult,
+  }));
+  const sourceValidation = validateSnapshotDryRunResult(suggestOnlyResult);
+  if (sourceValidation !== null || suggestOnlyResult.answer.suggest_only_answer === null) {
+    return buildResponse(
+      request.request_id,
+      sourceValidation ?? 'snapshot_suggest_only_answer_missing',
+      null,
+      [],
+      false,
+    );
+  }
+
+  const metadata: SnapshotProjectionMetadata = {
+    source_bridge_request_id: null,
+    source_kind: 'read_only_crm_snapshot',
+    source_request_id: request.request_id,
+    source_provider_kind: 'none_rule_based',
+    source_model_name: 'none',
+    source_was_live_sandbox: false,
+    proposals: suggestOnlyResult.answer.suggest_only_answer.proposals,
+    source_snapshot_id: suggestOnlyResult.answer.source_snapshot_id,
+  };
+  const cards = metadata.proposals.map((proposal, index) => (
+    projectSnapshotSuggestionCard(proposal, metadata, index)
+  ));
+  return buildResponse(request.request_id, null, metadata, cards, false);
+}
+
+function validateReadOnlySnapshotAISuggestionServiceRequest(
+  request: unknown,
+): ReadOnlyAISuggestionServiceBlockedReason | null {
+  const record = asRecord(request);
+  if (record?.kind !== 'READ_ONLY_SNAPSHOT_AI_SUGGESTION_SERVICE_REQUEST') {
+    return 'invalid_snapshot_request_kind';
+  }
+  for (const [key, reason] of PERMISSION_FLAG_BLOCKERS) {
+    if (record[key] === true) return reason;
+  }
+  if (record.source_reference_only !== true || record.service_read_only !== true) {
+    return 'snapshot_source_unsafe';
+  }
+  const snapshot = asRecord(record.loaded_snapshot);
+  if (
+    snapshot?.kind !== 'LOADED_READ_ONLY_AGENT_SNAPSHOT'
+    || snapshot.synthetic !== false
+    || snapshot.load_source !== 'sqlite_read_only'
+  ) {
+    return 'snapshot_source_unsafe';
+  }
+  return null;
+}
+
+function validateSnapshotDryRunResult(
+  result: SuggestOnlyLiveDryRunResult,
+): ReadOnlyAISuggestionServiceBlockedReason | null {
+  const answer = result.answer;
+  if (result.kind !== 'SUGGEST_ONLY_LIVE_DRY_RUN_RESULT' || answer.dry_run_blocked) {
+    return 'snapshot_dry_run_blocked';
+  }
+  if (answer.suggest_only_answer === null) return 'snapshot_suggest_only_answer_missing';
+  if (
+    result.persisted !== false
+    || result.represents_executed_action !== false
+    || answer.safety.reads_database !== false
+    || answer.safety.writes_database !== false
+    || answer.safety.no_provider_calls !== true
+    || answer.safety.no_network !== true
+    || answer.safety.executable !== false
+    || answer.safety.persisted !== false
+    || answer.generated_envelopes !== false
+  ) {
+    return 'snapshot_source_unsafe';
+  }
+  return null;
 }
 
 export function validateReadOnlyAISuggestionServiceRequest(
@@ -350,21 +511,58 @@ function projectSuggestionCard(
   };
 }
 
+function projectSnapshotSuggestionCard(
+  proposal: SuggestOnlyAgentProposal,
+  metadata: SnapshotProjectionMetadata,
+  index: number,
+): ReadOnlyAISuggestionCard {
+  return {
+    kind: 'READ_ONLY_AI_SUGGESTION_CARD',
+    version: READ_ONLY_AI_SUGGESTION_SERVICE_VERSION,
+    card_id: `READ_ONLY_AI_SUGGESTION_CARD_${String(index + 1).padStart(3, '0')}`,
+    title: proposal.title,
+    summary: proposal.summary,
+    suggestion_status: statusForSnapshotProposal(proposal),
+    requires_human_review: TRUE_VALUE,
+    source_output_id: metadata.source_snapshot_id,
+    source_candidate_id: proposal.proposal_id,
+    source_kind: metadata.source_kind,
+    source_request_id: metadata.source_request_id,
+    source_provider_kind: metadata.source_provider_kind,
+    trusted_for_action: FALSE_VALUE,
+    executable: FALSE_VALUE,
+    confirmed_action: FALSE_VALUE,
+    human_confirmed: FALSE_VALUE,
+    enters_review_queue: FALSE_VALUE,
+    writes_database: FALSE_VALUE,
+    persisted: FALSE_VALUE,
+  };
+}
+
+function statusForSnapshotProposal(proposal: SuggestOnlyAgentProposal): ModelSuggestOnlyStatus {
+  if (proposal.confidence_level === 'low' || proposal.risk_flags.includes('insufficient_evidence')) {
+    return 'blocked_missing_evidence';
+  }
+  return 'requires_human_review';
+}
+
 function buildResponse(
-  request: ReadOnlyAISuggestionServiceRequest,
+  requestId: string,
   blockedReason: ReadOnlyAISuggestionServiceBlockedReason | null,
-  metadata: BridgeProjectionMetadata | null,
+  metadata: ServiceProjectionMetadata | null,
   cards: readonly ReadOnlyAISuggestionCard[],
+  bridgeReferenceOnly: boolean,
 ): ReadOnlyAISuggestionServiceResponse {
   const serviceBlocked = blockedReason !== null;
   const visibleCards = serviceBlocked ? [] : cards;
   return {
     kind: 'READ_ONLY_AI_SUGGESTION_SERVICE_RESPONSE',
     version: READ_ONLY_AI_SUGGESTION_SERVICE_VERSION,
-    request_id: request.request_id,
+    request_id: requestId,
     service_read_only: TRUE_VALUE,
     caller_provided_only: TRUE_VALUE,
-    bridge_reference_only: TRUE_VALUE,
+    source_reference_only: TRUE_VALUE,
+    bridge_reference_only: bridgeReferenceOnly,
     suggest_only: TRUE_VALUE,
     requires_human_review: TRUE_VALUE,
     ...inactiveResponseFlags(),
@@ -373,7 +571,8 @@ function buildResponse(
       service_blocked: serviceBlocked,
       blocked_reason: blockedReason,
       service_read_only: TRUE_VALUE,
-      bridge_reference_only: TRUE_VALUE,
+      source_reference_only: TRUE_VALUE,
+      bridge_reference_only: bridgeReferenceOnly,
       source_bridge_request_id: metadata?.source_bridge_request_id ?? null,
       source_kind: metadata?.source_kind ?? null,
       source_request_id: metadata?.source_request_id ?? null,
@@ -384,8 +583,8 @@ function buildResponse(
       suggestion_cards: visibleCards,
       cards_count: visibleCards.length,
       suggest_only_summary: buildServiceSummary(visibleCards.length),
-      safety_summary: buildSafetySummary(),
-      trace_summary: buildTraceSummary(request.request_id, metadata),
+      safety_summary: buildSafetySummary(bridgeReferenceOnly),
+      trace_summary: buildTraceSummary(requestId, metadata),
       trusted_for_action: FALSE_VALUE,
       executable: FALSE_VALUE,
       enters_review_queue: FALSE_VALUE,
@@ -402,6 +601,7 @@ function inactiveResponseFlags(): Omit<
   | 'request_id'
   | 'service_read_only'
   | 'caller_provided_only'
+  | 'source_reference_only'
   | 'bridge_reference_only'
   | 'suggest_only'
   | 'requires_human_review'
@@ -439,14 +639,16 @@ function buildServiceSummary(cardsBuilt: number): ReadOnlyAISuggestionServiceSum
   };
 }
 
-function buildSafetySummary(): ReadOnlyAISuggestionSafetySummary {
+function buildSafetySummary(bridgeReferenceOnly: boolean): ReadOnlyAISuggestionSafetySummary {
   return {
     kind: 'READ_ONLY_AI_SUGGESTION_SERVICE_SAFETY_SUMMARY',
     version: READ_ONLY_AI_SUGGESTION_SERVICE_VERSION,
-    source_bridge_checked: TRUE_VALUE,
+    source_bridge_checked: bridgeReferenceOnly,
+    source_snapshot_dry_run_checked: !bridgeReferenceOnly,
     source_candidates_checked: TRUE_VALUE,
     service_read_only: TRUE_VALUE,
-    bridge_reference_only: TRUE_VALUE,
+    source_reference_only: TRUE_VALUE,
+    bridge_reference_only: bridgeReferenceOnly,
     requires_human_review: TRUE_VALUE,
     trusted_for_action: FALSE_VALUE,
     executable: FALSE_VALUE,
@@ -457,7 +659,7 @@ function buildSafetySummary(): ReadOnlyAISuggestionSafetySummary {
 
 function buildTraceSummary(
   requestId: string,
-  metadata: BridgeProjectionMetadata | null,
+  metadata: ServiceProjectionMetadata | null,
 ): ReadOnlyAISuggestionTraceSummary {
   return {
     kind: 'READ_ONLY_AI_SUGGESTION_SERVICE_TRACE_SUMMARY',
@@ -485,7 +687,7 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 }
 
 const PERMISSION_FLAG_BLOCKERS: readonly [
-  keyof ReadOnlyAISuggestionServiceRequest,
+  string,
   ReadOnlyAISuggestionServiceBlockedReason,
 ][] = [
   ['allow_network', 'illegal_network_allowed'],

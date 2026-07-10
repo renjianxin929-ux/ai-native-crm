@@ -9,9 +9,11 @@ import { ReadOnlyAISuggestionPanel } from '../components/aiSuggestions/ReadOnlyA
 import { buildReadOnlyAISuggestionViewModel } from '../components/aiSuggestions/readOnlyAISuggestionViewModel';
 import {
   runReadOnlyAISuggestionService,
+  runReadOnlySnapshotAISuggestionService,
   type ReadOnlyAISuggestionServiceResponse,
 } from '../lib/readOnlyAISuggestionServiceReadiness';
 import { buildReadOnlyAISuggestionServiceRequestFixtureV1 } from '../lib/readOnlyAISuggestionService/readOnlyAISuggestionServiceFixturesV1';
+import { buildLiveDryRunLoadedSnapshotFixtureV1 } from '../lib/readOnlyAgentLiveDryRun/readOnlyAgentLiveDryRunFixturesV1';
 
 const PANEL_FILE = 'src/components/aiSuggestions/ReadOnlyAISuggestionPanel.tsx';
 const VIEW_MODEL_FILE = 'src/components/aiSuggestions/readOnlyAISuggestionViewModel.ts';
@@ -59,7 +61,38 @@ const LOOP_53A_SELF_TEST_EXPECTATION_ALIGNMENT_PATCH_FILES = [
   'src/__tests__/modelSuggestionReviewDraftGate.readiness.test.ts',
   'src/__tests__/reviewDraftQueueBoundary.readiness.test.ts',
 ];
+const LOOP_54_AI_NATIVE_CONTEXT_INTEGRATION_FILES = [
+  'src/App.tsx',
+  'src/__tests__/actionRunnerBoundaryContract.readiness.test.ts',
+  'src/__tests__/aiNativeCRMWorkspace.readiness.test.ts',
+  'src/__tests__/confirmedActionLiveDryRun.readiness.test.ts',
+  'src/__tests__/confirmedActionReviewQueue.readiness.test.ts',
+  'src/__tests__/dashboardDataProjection.readiness.test.ts',
+  'src/__tests__/dashboardProjectionPanel.readiness.test.ts',
+  'src/__tests__/dbWritePlanDryRun.readiness.test.ts',
+  'src/__tests__/humanConfirmationContract.readiness.test.ts',
+  'src/__tests__/liveProviderSandboxCall.readiness.test.ts',
+  'src/__tests__/liveSandboxToSuggestOnlyBridge.readiness.test.ts',
+  'src/__tests__/manualLiveProviderSmokeGate.readiness.test.ts',
+  'src/__tests__/modelProviderBoundaryContract.readiness.test.ts',
+  'src/__tests__/modelProviderReadOnlySandbox.readiness.test.ts',
+  'src/__tests__/modelReadOnlyInvocationGate.readiness.test.ts',
+  'src/__tests__/modelSuggestOnlyOutputGate.readiness.test.ts',
+  'src/__tests__/modelSuggestionAdapterBoundary.readiness.test.ts',
+  'src/__tests__/modelSuggestionReviewDraftGate.readiness.test.ts',
+  'src/__tests__/readOnlyAISuggestionPanel.readiness.test.ts',
+  'src/__tests__/readOnlyAISuggestionService.readiness.test.ts',
+  'src/__tests__/reviewDraftQueueBoundary.readiness.test.ts',
+  'src/__tests__/safeWriteRunnerGate.readiness.test.ts',
+  'src/components/aiNative/AINativeCRMWorkspace.tsx',
+  'src/components/aiSuggestions/readOnlyAISuggestionViewModel.ts',
+  'src/lib/aiNativeCRMWorkspaceReadiness.ts',
+  'src/lib/readOnlyAISuggestionServiceReadiness.ts',
+] as const;
 const LOOP_53_ALLOWED_CHANGED_FILES = new Set(LOOP_53_FILES);
+for (const file of LOOP_54_AI_NATIVE_CONTEXT_INTEGRATION_FILES) {
+  LOOP_53_ALLOWED_CHANGED_FILES.add(file);
+}
 
 const SAFETY_LABELS = [
   'Read-only',
@@ -156,6 +189,44 @@ const FORBIDDEN_CALLBACK_PROPS = [
 ];
 
 describe('Read-only AI suggestion panel readiness', () => {
+  it('renders rule-based cards from a real loaded CRM snapshot without provider provenance', () => {
+    const loadedSnapshot = buildLiveDryRunLoadedSnapshotFixtureV1();
+    const response = runReadOnlySnapshotAISuggestionService({
+      kind: 'READ_ONLY_SNAPSHOT_AI_SUGGESTION_SERVICE_REQUEST',
+      version: 'v1',
+      request_id: 'SNAPSHOT_PANEL_TEST_REQUEST_A',
+      loaded_snapshot: loadedSnapshot,
+      intent: 'evidence_for_customer',
+      context: loadedSnapshot.context,
+      target_customer_id: 'LIVE_DRY_RUN_TEST_CUSTOMER_A',
+      service_read_only: true,
+      caller_provided_only: true,
+      source_reference_only: true,
+      allow_network: false,
+      allow_model_call: false,
+      allow_env_read: false,
+      allow_db: false,
+      allow_runner: false,
+      allow_execution: false,
+      allow_review_queue_entry: false,
+      allow_confirmed_action: false,
+      allow_human_confirmation: false,
+      allow_write_plan_entry: false,
+      allow_database_write: false,
+      allow_task_create: false,
+      allow_followup_create: false,
+      allow_customer_status_change: false,
+      allow_ui: false,
+    });
+    const markup = renderPanel(response);
+
+    expect(markup).toContain('read_only_crm_snapshot');
+    expect(markup).toContain('none_rule_based');
+    expect(markup).toContain('Requires human review');
+    expect(markup).toContain('Not executable');
+    expect(markup).not.toContain('live_provider_sandbox_call');
+  });
+
   it('renders fixture service response cards', () => {
     const response = buildResponseFixture();
     const markup = renderPanel(response);
@@ -353,7 +424,8 @@ describe('Read-only AI suggestion panel readiness', () => {
         hasCompleteChangedFileSet(changedFiles, LOOP_53_FILES)
         || hasCompleteChangedFileSet(changedFiles, LOOP_53A_FILES)
         || hasCompleteChangedFileSet(changedFiles, LOOP_53A_OLDER_READINESS_GUARD_COMPATIBILITY_PATCH_FILES)
-        || hasCompleteChangedFileSet(changedFiles, LOOP_53A_SELF_TEST_EXPECTATION_ALIGNMENT_PATCH_FILES),
+        || hasCompleteChangedFileSet(changedFiles, LOOP_53A_SELF_TEST_EXPECTATION_ALIGNMENT_PATCH_FILES)
+        || hasCompleteChangedFileSet(changedFiles, LOOP_54_AI_NATIVE_CONTEXT_INTEGRATION_FILES),
       ).toBe(true);
     }
     expect(LOOP_53_ALLOWED_CHANGED_FILES.has('src/components/**')).toBe(false);

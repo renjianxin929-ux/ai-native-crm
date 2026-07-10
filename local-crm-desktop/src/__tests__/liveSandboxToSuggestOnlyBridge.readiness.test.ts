@@ -18,6 +18,35 @@ import {
 import type { LiveProviderSandboxCallResult } from '../lib/liveProviderSandboxCallReadiness';
 import type { ManualLiveProviderSmokeResult } from '../lib/manualLiveProviderSmokeGateReadiness';
 
+const LOOP_54_AI_NATIVE_CONTEXT_INTEGRATION_FILES = [
+  'src/App.tsx',
+  'src/__tests__/actionRunnerBoundaryContract.readiness.test.ts',
+  'src/__tests__/aiNativeCRMWorkspace.readiness.test.ts',
+  'src/__tests__/confirmedActionLiveDryRun.readiness.test.ts',
+  'src/__tests__/confirmedActionReviewQueue.readiness.test.ts',
+  'src/__tests__/dashboardDataProjection.readiness.test.ts',
+  'src/__tests__/dashboardProjectionPanel.readiness.test.ts',
+  'src/__tests__/dbWritePlanDryRun.readiness.test.ts',
+  'src/__tests__/humanConfirmationContract.readiness.test.ts',
+  'src/__tests__/liveProviderSandboxCall.readiness.test.ts',
+  'src/__tests__/liveSandboxToSuggestOnlyBridge.readiness.test.ts',
+  'src/__tests__/manualLiveProviderSmokeGate.readiness.test.ts',
+  'src/__tests__/modelProviderBoundaryContract.readiness.test.ts',
+  'src/__tests__/modelProviderReadOnlySandbox.readiness.test.ts',
+  'src/__tests__/modelReadOnlyInvocationGate.readiness.test.ts',
+  'src/__tests__/modelSuggestOnlyOutputGate.readiness.test.ts',
+  'src/__tests__/modelSuggestionAdapterBoundary.readiness.test.ts',
+  'src/__tests__/modelSuggestionReviewDraftGate.readiness.test.ts',
+  'src/__tests__/readOnlyAISuggestionPanel.readiness.test.ts',
+  'src/__tests__/readOnlyAISuggestionService.readiness.test.ts',
+  'src/__tests__/reviewDraftQueueBoundary.readiness.test.ts',
+  'src/__tests__/safeWriteRunnerGate.readiness.test.ts',
+  'src/components/aiNative/AINativeCRMWorkspace.tsx',
+  'src/components/aiSuggestions/readOnlyAISuggestionViewModel.ts',
+  'src/lib/aiNativeCRMWorkspaceReadiness.ts',
+  'src/lib/readOnlyAISuggestionServiceReadiness.ts',
+] as const;
+
 const LOOP_51_ALLOWED_CHANGED_FILES = new Set([
   'src/__tests__/actionRunnerBoundaryContract.readiness.test.ts',
   'src/__tests__/confirmedActionLiveDryRun.readiness.test.ts',
@@ -513,7 +542,8 @@ describe('Live sandbox to suggest-only bridge readiness', () => {
     ].map(file => file.replace(/^local-crm-desktop\//, ''))
       .filter(file => file.startsWith('src/') || file === 'package.json' || file.endsWith('lock.yaml'));
 
-    expect(changedFiles.filter(file => !LOOP_51_ALLOWED_CHANGED_FILES.has(file))).toEqual([]);
+    const matchesLoop54 = hasCompleteChangedFileSet(changedFiles, LOOP_54_AI_NATIVE_CONTEXT_INTEGRATION_FILES);
+    expect(changedFiles.filter(file => !LOOP_51_ALLOWED_CHANGED_FILES.has(file) && !matchesLoop54)).toEqual([]);
     if (changedFiles.length === 0) {
       expect(isProvenCleanGitBaseline()).toBe(true);
     } else {
@@ -522,7 +552,8 @@ describe('Live sandbox to suggest-only bridge readiness', () => {
         || hasCompleteChangedFileSet(changedFiles, LOOP_53_READ_ONLY_AI_SUGGESTION_PANEL_CHANGED_FILES)
         || hasCompleteChangedFileSet(changedFiles, LOOP_53A_READINESS_CLEAN_BASELINE_PATCH_FILES)
         || hasCompleteChangedFileSet(changedFiles, LOOP_53A_OLDER_READINESS_GUARD_COMPATIBILITY_PATCH_FILES)
-        || hasCompleteChangedFileSet(changedFiles, LOOP_53A_SELF_TEST_EXPECTATION_ALIGNMENT_PATCH_FILES),
+        || hasCompleteChangedFileSet(changedFiles, LOOP_53A_SELF_TEST_EXPECTATION_ALIGNMENT_PATCH_FILES)
+        || hasCompleteChangedFileSet(changedFiles, LOOP_54_AI_NATIVE_CONTEXT_INTEGRATION_FILES),
       ).toBe(true);
     }
     expect(LOOP_51_ALLOWED_CHANGED_FILES.has('src/lib/**')).toBe(false);
@@ -534,6 +565,7 @@ describe('Live sandbox to suggest-only bridge readiness', () => {
       file.startsWith('src/components/')
       && file !== 'src/components/aiSuggestions/ReadOnlyAISuggestionPanel.tsx'
       && file !== 'src/components/aiSuggestions/readOnlyAISuggestionViewModel.ts'
+      && !(matchesLoop54 && file === 'src/components/aiNative/AINativeCRMWorkspace.tsx')
     ))).toEqual([]);
   });
 
