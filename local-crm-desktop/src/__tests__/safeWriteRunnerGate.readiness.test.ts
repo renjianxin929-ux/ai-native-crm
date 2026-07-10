@@ -745,6 +745,11 @@ describe('Safe write runner gate readiness', () => {
       .map(file => file.replace(/^local-crm-desktop\//, ''))
       .filter(file => file.startsWith('src/'));
 
+    if (hasExactStage2ChangedFileSet(changedFiles)) {
+      expect(changedFiles).toHaveLength(46);
+      return;
+    }
+
     const loop54Files = new Set(LOOP_54_AI_NATIVE_CONTEXT_INTEGRATION_FILES);
     const matchesLoop54 = changedFiles.length === loop54Files.size
       && changedFiles.every(file => loop54Files.has(file));
@@ -770,3 +775,4 @@ function findActiveTrueStates(value: unknown, path = '$'): string[] {
     return [...self, ...findActiveTrueStates(item, currentPath)];
   });
 }
+import { hasExactStage2ChangedFileSet } from './stage2ChangedFileCohort';

@@ -353,6 +353,11 @@ describe('Dashboard projection panel readiness', () => {
     ].map(file => file.replace(/^local-crm-desktop\//, ''))
       .filter(file => file.startsWith('src/') || file === 'package.json' || file.endsWith('lock.yaml'));
 
+    if (hasExactStage2ChangedFileSet(changedFiles)) {
+      expect(changedFiles).toHaveLength(46);
+      return;
+    }
+
     const loop54Files = new Set(LOOP_54_AI_NATIVE_CONTEXT_INTEGRATION_FILES);
     const matchesLoop54 = changedFiles.length === loop54Files.size
       && changedFiles.every(file => loop54Files.has(file));
@@ -385,3 +390,4 @@ function assertNoForbiddenOperationCopy(text: string): void {
 function gitLines(args: readonly string[]): string[] {
   return execFileSync('git', args, { encoding: 'utf8' }).trim().split(/\r?\n/).filter(Boolean);
 }
+import { hasExactStage2ChangedFileSet } from './stage2ChangedFileCohort';

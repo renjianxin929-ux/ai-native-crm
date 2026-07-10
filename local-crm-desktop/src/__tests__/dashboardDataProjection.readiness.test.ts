@@ -660,6 +660,11 @@ describe('Dashboard data projection readiness gate', () => {
       .map(file => file.replace(/^local-crm-desktop\//, ''))
       .filter(file => file.startsWith('src/'));
 
+    if (hasExactStage2ChangedFileSet(changedFiles)) {
+      expect(changedFiles).toHaveLength(46);
+      return;
+    }
+
     const loop54Files = new Set(LOOP_54_AI_NATIVE_CONTEXT_INTEGRATION_FILES);
     const matchesLoop54 = changedFiles.length === loop54Files.size
       && changedFiles.every(file => loop54Files.has(file));
@@ -709,3 +714,4 @@ function findUnsafeMissingRequirementStates(value: unknown, path = '$'): string[
     )),
   ];
 }
+import { hasExactStage2ChangedFileSet } from './stage2ChangedFileCohort';

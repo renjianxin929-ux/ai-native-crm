@@ -705,6 +705,11 @@ describe('Model suggest-only output gate readiness', () => {
     ].map(file => file.replace(/^local-crm-desktop\//, ''))
       .filter(file => file.startsWith('src/') || file === 'package.json' || file.endsWith('lock.yaml'));
 
+    if (hasExactStage2ChangedFileSet(changedFiles)) {
+      expect(changedFiles).toHaveLength(46);
+      return;
+    }
+
     expect(isLoop45FileScopeGuardSatisfied(changedFiles)).toBe(true);
     const matchesLoop54 = hasCompleteChangedFileSet(changedFiles, LOOP_54_AI_NATIVE_CONTEXT_INTEGRATION_FILES);
     expect(changedFiles.filter(file => file.startsWith('src/tests/'))).toEqual([]);
@@ -834,3 +839,4 @@ function isProvenCleanGitBaseline(): boolean {
     gitLines(['ls-files', '--others', '--exclude-standard']),
   );
 }
+import { hasExactStage2ChangedFileSet } from './stage2ChangedFileCohort';

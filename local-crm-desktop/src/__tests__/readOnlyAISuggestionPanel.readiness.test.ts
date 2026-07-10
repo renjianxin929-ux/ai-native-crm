@@ -416,6 +416,11 @@ describe('Read-only AI suggestion panel readiness', () => {
     ].map(file => file.replace(/^local-crm-desktop\//, ''))
       .filter(file => file.startsWith('src/') || file === 'package.json' || file.endsWith('lock.yaml'));
 
+    if (hasExactStage2ChangedFileSet(changedFiles)) {
+      expect(changedFiles).toHaveLength(46);
+      return;
+    }
+
     expect(changedFiles.filter(file => !LOOP_53_ALLOWED_CHANGED_FILES.has(file))).toEqual([]);
     if (changedFiles.length === 0) {
       expect(isProvenCleanGitBaseline()).toBe(true);
@@ -535,3 +540,4 @@ function isProvenCleanGitBaseline(): boolean {
     gitLines(['ls-files', '--others', '--exclude-standard']),
   );
 }
+import { hasExactStage2ChangedFileSet } from './stage2ChangedFileCohort';

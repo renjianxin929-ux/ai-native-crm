@@ -10,8 +10,11 @@ import {
   UserRoundCheck,
 } from 'lucide-react';
 import { ReadOnlyAISuggestionPanel } from '../aiSuggestions/ReadOnlyAISuggestionPanel';
+import { Stage2ArchitectureStatus } from './Stage2ArchitectureStatus';
 import { getDb } from '../../lib/db';
 import { getActiveVerticalProfile } from '../../lib/verticalProfiles';
+import { buildWorkspaceContextSnapshot } from '../../lib/context/workspaceContextAdapter';
+import { resolveVerticalAIProfile } from '../../lib/verticalAIProfiles/registry';
 import {
   buildReadOnlySnapshotLoaderPlan,
   loadReadOnlySnapshotFromDb,
@@ -31,6 +34,7 @@ import {
 } from '../../lib/readOnlyAISuggestionServiceReadiness';
 
 const profile = getActiveVerticalProfile();
+const stage2Profile = resolveVerticalAIProfile();
 
 const panelStyle = {
   border: '1px solid var(--border)',
@@ -131,6 +135,7 @@ export default function AINativeCRMWorkspace() {
   const summary = snapshot
     ? projectCRMContextSummary(snapshot, selectedCustomerId, new Date().toISOString())
     : null;
+  const stage2Context = snapshot ? buildWorkspaceContextSnapshot(snapshot) : null;
 
   return (
     <div>
@@ -199,6 +204,10 @@ export default function AINativeCRMWorkspace() {
             </p>
           )}
         </section>
+
+        {stage2Context && (
+          <Stage2ArchitectureStatus context={stage2Context} profile={stage2Profile} />
+        )}
 
         {snapshot && summary && (
           <section style={panelStyle} aria-label="CRM 上下文快照">

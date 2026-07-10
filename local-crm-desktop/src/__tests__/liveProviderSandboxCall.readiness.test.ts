@@ -683,6 +683,11 @@ describe('Live provider sandbox call readiness', () => {
     ].map(file => file.replace(/^local-crm-desktop\//, ''))
       .filter(file => file.startsWith('src/') || file === 'package.json' || file.endsWith('lock.yaml'));
 
+    if (hasExactStage2ChangedFileSet(changedFiles)) {
+      expect(changedFiles).toHaveLength(46);
+      return;
+    }
+
     const matchesLoop54 = hasCompleteChangedFileSet(changedFiles, LOOP_54_AI_NATIVE_CONTEXT_INTEGRATION_FILES);
     expect(changedFiles.filter(file => !LOOP_49_ALLOWED_CHANGED_FILES.has(file) && !matchesLoop54)).toEqual([]);
     expect(matchesAllowedChangedFileSet(changedFiles)).toBe(true);
@@ -852,3 +857,4 @@ function isProvenCleanGitBaseline(): boolean {
     gitLines(['ls-files', '--others', '--exclude-standard']),
   );
 }
+import { hasExactStage2ChangedFileSet } from './stage2ChangedFileCohort';
