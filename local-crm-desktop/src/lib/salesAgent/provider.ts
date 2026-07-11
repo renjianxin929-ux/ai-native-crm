@@ -4,9 +4,9 @@ export interface ReasoningProviderCapability {
   providerKind: SalesAgentProviderKind;
   modelIdentifier: string;
   executionMode: SalesAgentProviderExecutionMode;
-  networkAccess: false;
+  networkAccess: boolean;
   environmentAccess: false;
-  liveEnabled: false;
+  liveEnabled: boolean;
 }
 
 export interface ReasoningProvider {

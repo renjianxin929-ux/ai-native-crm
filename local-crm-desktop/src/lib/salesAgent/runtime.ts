@@ -3,6 +3,7 @@ import type { ReasoningProvider } from './provider';
 import type { ContextSnapshot } from '../context/types';
 import type { SalesAgentReasoningRequest, SalesAgentRuntimeResult } from './types';
 import { validateSalesAgentReasoningResult } from './validation';
+import { validateLiveReasoningActivation, type LiveReasoningActivation } from '../liveReasoning/types';
 
 export async function runSalesAgentRuntime(input: {
   request_id: string;
@@ -10,13 +11,19 @@ export async function runSalesAgentRuntime(input: {
   context: ContextSnapshot;
   profile_id: string;
   provider: ReasoningProvider;
-  sandbox?: { allow_network: true };
+  live_activation?: LiveReasoningActivation;
   clock?: () => string;
 }): Promise<SalesAgentRuntimeResult> {
   if (!input.request_id.trim() || !input.objective.trim()) throw new Error('Runtime request id and objective are required.');
   if (input.context.readOnly !== true) throw new Error('Sales Agent Runtime requires a read-only ContextSnapshot.');
-  if (input.provider.capability.executionMode !== 'MOCK') {
-    throw new Error('Stage3 Sales Agent Runtime permits MOCK provider execution only.');
+  const isLive = input.provider.capability.executionMode === 'LIVE';
+  if (!isLive && input.provider.capability.executionMode !== 'MOCK') throw new Error('Stage3 Sales Agent Runtime permits MOCK provider execution only; non-MOCK providers require the Live Reasoning Activation Gate.');
+  if (isLive) {
+    const activationError = validateLiveReasoningActivation(input.live_activation);
+    if (activationError) throw new Error(`Live Reasoning Activation Gate blocked: ${activationError}.`);
+    if (input.live_activation!.provider_kind !== input.provider.capability.providerKind || input.live_activation!.model_id !== input.provider.capability.modelIdentifier || input.live_activation!.profile_id !== input.profile_id || input.live_activation!.context_snapshot_id !== input.context.snapshotId) throw new Error('Live Reasoning Activation Gate blocked: request metadata mismatch.');
+    const customerId = input.context.customers[0]?.customerId;
+    if (!customerId || input.live_activation!.customer_id !== customerId) throw new Error('Live Reasoning Activation Gate blocked: customer context mismatch.');
   }
   const profile = resolveVerticalAIProfile(input.profile_id);
   const generatedAt = input.clock?.() ?? new Date().toISOString();
@@ -28,7 +35,7 @@ export async function runSalesAgentRuntime(input: {
     vertical_profile: profile,
     generated_at: generatedAt,
     safety: {
-      allow_network: input.sandbox?.allow_network === true,
+      allow_network: isLive,
       allow_environment_read: false,
       allow_database_write: false,
       allow_crm_action: false,

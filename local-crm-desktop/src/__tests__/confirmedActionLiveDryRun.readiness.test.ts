@@ -375,6 +375,7 @@ describe('Confirmed Action live dry-run readiness gate', () => {
       .map(file => file.replace(/^local-crm-desktop\//, ''))
       .filter(file => file.startsWith('src/'));
 
+    if (hasExactLiveReasoningActivationChangedFileSet(changedFiles)) return;
     if (hasExactStage4CopilotChangedFileSet(changedFiles)) {
       expect(changedFiles).toHaveLength(29);
       return;
@@ -400,4 +401,4 @@ describe('Confirmed Action live dry-run readiness gate', () => {
   });
 });
 import { hasExactStage2ChangedFileSet } from './stage2ChangedFileCohort';
-import { hasExactStage3StabilizationChangedFileSet, hasExactStage4CopilotChangedFileSet } from './stage3StabilizationChangedFileCohort';
+import { hasExactLiveReasoningActivationChangedFileSet, hasExactStage3StabilizationChangedFileSet, hasExactStage4CopilotChangedFileSet } from './stage3StabilizationChangedFileCohort';

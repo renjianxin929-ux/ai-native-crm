@@ -15,7 +15,7 @@ import { SalesCopilotPanel } from './SalesCopilotPanel';
 import { getDb } from '../../lib/db';
 import { getActiveVerticalProfile } from '../../lib/verticalProfiles';
 import { buildWorkspaceContextSnapshot } from '../../lib/context/workspaceContextAdapter';
-import { resolveVerticalAIProfile } from '../../lib/verticalAIProfiles/registry';
+import { listVerticalAIProfiles, resolveVerticalAIProfile } from '../../lib/verticalAIProfiles/registry';
 import {
   buildReadOnlySnapshotLoaderPlan,
   loadReadOnlySnapshotFromDb,
@@ -34,10 +34,12 @@ import {
   type ReadOnlyAISuggestionServiceResponse,
 } from '../../lib/readOnlyAISuggestionServiceReadiness';
 import { createMockReasoningProvider } from '../../lib/salesAgent/provider';
+import type { ReasoningProvider } from '../../lib/salesAgent/provider';
 import { createAgentTriggerBoundary } from '../../lib/salesAgent/triggerSeam';
 import { runSalesCopilotWorkflow } from '../../lib/salesCopilot/workflow';
 import type { SalesCopilotWorkflowResult } from '../../lib/salesCopilot/types';
 import { buildBoundedWorkspaceSalesPriority, MAX_WORKSPACE_PRIORITY_CANDIDATES } from '../../lib/salesCopilot/workspacePriority';
+import { LIVE_REASONING_AUTHORIZATION_PHRASE } from '../../lib/liveReasoning/types';
 
 const profile = getActiveVerticalProfile();
 const stage2Profile = resolveVerticalAIProfile();
@@ -54,7 +56,7 @@ function formatTimestamp(value: string): string {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString('zh-CN');
 }
 
-export default function AINativeCRMWorkspace() {
+export default function AINativeCRMWorkspace({ liveProviderFactory }: { liveProviderFactory?: () => ReasoningProvider } = {}) {
   const [catalog, setCatalog] = useState<LoadedReadOnlyAgentSnapshot | null>(null);
   const [snapshot, setSnapshot] = useState<LoadedReadOnlyAgentSnapshot | null>(null);
   const [safety, setSafety] = useState<ReadOnlySnapshotLoaderSafety | null>(null);
@@ -63,6 +65,11 @@ export default function AINativeCRMWorkspace() {
   const [copilotResults, setCopilotResults] = useState<readonly SalesCopilotWorkflowResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [liveWorkflow, setLiveWorkflow] = useState<'customer_intelligence' | 'interaction_intelligence'>('customer_intelligence');
+  const [liveProfileId, setLiveProfileId] = useState(stage2Profile.identity.id);
+  const [liveAuthorizationConfirmed, setLiveAuthorizationConfirmed] = useState(false);
+  const [liveAuthorizationPhrase, setLiveAuthorizationPhrase] = useState('');
+  const [liveStatus, setLiveStatus] = useState<'idle' | 'authorization incomplete' | 'request pending' | 'completed and validated' | 'blocked' | 'timeout' | 'provider error' | 'invalid model output'>('idle');
 
   const loadCatalog = useCallback(async () => {
     setLoading(true);
@@ -208,6 +215,29 @@ export default function AINativeCRMWorkspace() {
     }
   };
 
+  const runOneLiveReasoning = async () => {
+    if (!stage2Context || !selectedCustomerId || !liveAuthorizationConfirmed || liveAuthorizationPhrase !== LIVE_REASONING_AUTHORIZATION_PHRASE) {
+      setLiveStatus('authorization incomplete');
+      return;
+    }
+    if (!liveProviderFactory) { setLiveStatus('blocked'); return; }
+    setLoading(true); setError(''); setLiveStatus('request pending');
+    try {
+      const provider = liveProviderFactory();
+      const activation = { live_call_requested: true as const, user_explicitly_authorized: true as const, authorization_phrase: LIVE_REASONING_AUTHORIZATION_PHRASE, provider_kind: provider.capability.providerKind as 'OPENAI_COMPATIBLE' | 'DEEPSEEK_COMPATIBLE', model_id: provider.capability.modelIdentifier, profile_id: liveProfileId, workflow_kind: liveWorkflow, customer_id: selectedCustomerId, context_snapshot_id: stage2Context.snapshotId };
+      const requestId = `${stage2Context.snapshotId}:live:${liveWorkflow}:${new Date().toISOString()}`;
+      const result = liveWorkflow === 'customer_intelligence'
+        ? await runSalesCopilotWorkflow({ kind: 'customer_intelligence', request_id: requestId, context: stage2Context, profile_id: liveProfileId, provider, live_activation: activation })
+        : await runSalesCopilotWorkflow({ kind: 'interaction_intelligence', request_id: requestId, context: stage2Context, trigger: createAgentTriggerBoundary({ kind: 'InteractionAddedEvent', event_id: `workspace:${stage2Context.recentInteractions[0]?.interactionId ?? 'missing'}`, occurred_at: stage2Context.recentInteractions[0]?.occurredAt ?? new Date().toISOString(), customer_id: selectedCustomerId, interaction_id: stage2Context.recentInteractions[0]?.interactionId ?? 'missing' }), explicitly_activated: true, profile_id: liveProfileId, provider, live_activation: activation });
+      setCopilotResults(current => [...current.filter(item => item.kind !== result.kind), result]);
+      setLiveStatus('completed and validated');
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : String(cause);
+      setError(message);
+      setLiveStatus(message.includes('timed out') ? 'timeout' : message.includes('invalid structured') ? 'invalid model output' : 'provider error');
+    } finally { setLoading(false); }
+  };
+
   const selectedCustomer = snapshot?.customers[0] ?? null;
   const summary = snapshot
     ? projectCRMContextSummary(snapshot, selectedCustomerId, new Date().toISOString())
@@ -310,6 +340,20 @@ export default function AINativeCRMWorkspace() {
             </div>
           </section>
         )}
+
+        <section style={panelStyle} aria-label="Live reasoning activation gate">
+          <h3 className="section-title">Live model reasoning（单次明确授权）</h3>
+          <p style={{ color: '#64748b', fontSize: 13 }}>仅支持 Customer Intelligence 与 Interaction Intelligence；Sales Priority 保持 MOCK-only，禁止批量真实调用。</p>
+          <div style={{ display: 'grid', gap: 8, maxWidth: 560 }}>
+            <select aria-label="Live VerticalAIProfile" value={liveProfileId} onChange={event => setLiveProfileId(event.target.value)}><>{listVerticalAIProfiles().map(item => <option key={item.identity.id} value={item.identity.id}>{item.identity.name}</option>)}</></select>
+            <select aria-label="Live workflow" value={liveWorkflow} onChange={event => setLiveWorkflow(event.target.value as typeof liveWorkflow)}><option value="customer_intelligence">Customer Intelligence</option><option value="interaction_intelligence">Interaction Intelligence</option></select>
+            <label><input type="checkbox" checked={liveAuthorizationConfirmed} onChange={event => setLiveAuthorizationConfirmed(event.target.checked)} /> 我明确授权一次真实模型推理</label>
+            <input aria-label="Live authorization phrase" value={liveAuthorizationPhrase} onChange={event => setLiveAuthorizationPhrase(event.target.value)} placeholder={LIVE_REASONING_AUTHORIZATION_PHRASE} />
+            <button className="btn btn-primary" onClick={() => void runOneLiveReasoning()} disabled={loading}>Run one live reasoning request</button>
+            <span style={{ fontSize: 13 }}>状态：{liveStatus} · 未自动持久化 · Human review required · Evidence-backed · Not executable · No CRM write</span>
+            {!liveProviderFactory && <span style={{ color: '#92400e', fontSize: 13 }}>未注入受保护的 Live Provider 配置，已阻断且不会发起网络请求。</span>}
+          </div>
+        </section>
 
         {suggestionResponse ? (
           <section style={panelStyle} aria-label="Legacy 基于 CRM 快照的只读建议">

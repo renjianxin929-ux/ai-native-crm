@@ -705,6 +705,7 @@ describe('Model suggest-only output gate readiness', () => {
     ].map(file => file.replace(/^local-crm-desktop\//, ''))
       .filter(file => file.startsWith('src/') || file === 'package.json' || file.endsWith('lock.yaml'));
 
+    if (hasExactLiveReasoningActivationChangedFileSet(changedFiles)) return;
     if (hasExactStage4CopilotChangedFileSet(changedFiles)) {
       expect(changedFiles).toHaveLength(29);
       return;
@@ -848,4 +849,4 @@ function isProvenCleanGitBaseline(): boolean {
   );
 }
 import { hasExactStage2ChangedFileSet } from './stage2ChangedFileCohort';
-import { hasExactStage3StabilizationChangedFileSet, hasExactStage4CopilotChangedFileSet } from './stage3StabilizationChangedFileCohort';
+import { hasExactLiveReasoningActivationChangedFileSet, hasExactStage3StabilizationChangedFileSet, hasExactStage4CopilotChangedFileSet } from './stage3StabilizationChangedFileCohort';

@@ -2,16 +2,18 @@ import type { SalesCopilotWorkflowResult } from '../../lib/salesCopilot/types';
 import { SalesAgentResultPanel } from './SalesAgentResultPanel';
 
 export function SalesCopilotPanel({ results }: { results: readonly SalesCopilotWorkflowResult[] }) {
+  const hasLive = results.some(result => result.kind !== 'sales_priority' && result.runtime.result.reasoning_metadata.execution_mode === 'LIVE');
   return (
     <section aria-label="AI Sales Copilot Workflow">
       <header>
         <h3>AI Sales Copilot</h3>
-        <p>Mock reasoning · Read-only · Evidence-backed · Human review required · Not executable · No CRM write</p>
+        <p>{hasLive ? 'Live model reasoning' : 'Mock reasoning'} · Read-only · Evidence-backed · Human review required · Not executable · No CRM write · Not automatically persisted</p>
       </header>
       {results.map(result => {
         if (result.kind === 'customer_intelligence') return (
           <article key={result.kind} aria-label="Customer Intelligence">
             <h4>Customer Intelligence</h4>
+            <p>Provider kind: {result.runtime.result.reasoning_metadata.provider_kind} · Model ID: {result.runtime.result.reasoning_metadata.model_id}</p>
             <SalesAgentResultPanel runtime={result.runtime} />
           </article>
         );
@@ -29,6 +31,7 @@ export function SalesCopilotPanel({ results }: { results: readonly SalesCopilotW
         return (
           <article key={result.kind} aria-label="Interaction Intelligence">
             <h4>Interaction Intelligence</h4>
+            <p>Provider kind: {result.runtime.result.reasoning_metadata.provider_kind} · Model ID: {result.runtime.result.reasoning_metadata.model_id}</p>
             <p>Explicit manual reassessment · Source event: {result.source_event_id}</p>
             <p>Signals reviewed: {result.detection_categories.join(', ')}</p>
             <SalesAgentResultPanel runtime={result.runtime} />

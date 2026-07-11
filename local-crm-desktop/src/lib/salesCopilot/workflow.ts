@@ -19,6 +19,7 @@ const SAFE_RESULT: SalesCopilotSafetyBoundary = Object.freeze({
 
 export async function runSalesCopilotWorkflow(request: SalesCopilotWorkflowRequest): Promise<SalesCopilotWorkflowResult> {
   if (!request.request_id.trim()) throw new Error('Copilot workflow request id is required.');
+  if (request.kind === 'sales_priority' && request.provider.capability.executionMode === 'LIVE') throw new Error('Sales Priority remains MOCK-only in the Live Reasoning Activation Gate.');
   if (request.kind === 'customer_intelligence') {
     return {
       kind: request.kind,
@@ -66,7 +67,7 @@ export async function runSalesCopilotWorkflow(request: SalesCopilotWorkflowReque
 }
 
 function runRuntime(
-  request: Pick<SalesCopilotWorkflowRequest, 'request_id' | 'profile_id' | 'provider' | 'clock'>,
+  request: Pick<SalesCopilotWorkflowRequest, 'request_id' | 'profile_id' | 'provider' | 'clock' | 'live_activation'>,
   context: Parameters<typeof runSalesAgentRuntime>[0]['context'],
   objective: string,
 ) {
@@ -76,6 +77,7 @@ function runRuntime(
     context,
     profile_id: request.profile_id,
     provider: request.provider,
+    live_activation: request.live_activation,
     clock: request.clock,
   });
 }

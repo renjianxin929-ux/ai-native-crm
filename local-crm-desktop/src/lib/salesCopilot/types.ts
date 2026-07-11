@@ -2,6 +2,7 @@ import type { ContextSnapshot } from '../context/types';
 import type { ReasoningProvider } from '../salesAgent/provider';
 import type { AgentTriggerBoundaryResult } from '../salesAgent/triggerSeam';
 import type { SalesAgentRuntimeResult } from '../salesAgent/types';
+import type { LiveReasoningActivation } from '../liveReasoning/types';
 
 export type SalesCopilotWorkflowKind =
   | 'customer_intelligence'
@@ -12,6 +13,7 @@ interface SalesCopilotRequestBase {
   request_id: string;
   profile_id: string;
   provider: ReasoningProvider;
+  live_activation?: LiveReasoningActivation;
   clock?: () => string;
 }
 
