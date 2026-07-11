@@ -1,5 +1,6 @@
 import type { Customer, FollowUpRecord, VisitRecord, Task, AIDraft, AIDraftInput } from './types';
 import { ensureLeadWorkbenchSchema } from './leadWorkbench/db';
+import { ensureCustomerMemorySchema } from './customerMemory/migration';
 import { v4 as uuidv4 } from 'uuid';
 
 // 数据库抽象层 - 包装 @tauri-apps/plugin-sql
@@ -41,6 +42,7 @@ export async function initializeDatabaseSchema(db: DatabaseLike): Promise<void> 
   await ensureBaseSchema(db);
   await ensureCustomerSchema(db);
   await ensureLeadWorkbenchSchema(db);
+  await ensureCustomerMemorySchema(db);
 }
 
 const BASE_SCHEMA_SQL = [

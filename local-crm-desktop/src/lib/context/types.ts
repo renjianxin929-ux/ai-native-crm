@@ -1,3 +1,5 @@
+import type { CustomerMemoryContext } from '../customerMemory/types';
+
 export interface ContextTimeWindow {
   from: string;
   to: string;
@@ -45,6 +47,8 @@ export interface ContextSnapshot {
   bounded: true;
   maxInteractions: number;
   readOnly: true;
+  /** Optional, bounded projection of validated ACTIVE memory; never CRM data. */
+  customerMemory?: CustomerMemoryContext;
 }
 
 export interface ContextBuilderInput {

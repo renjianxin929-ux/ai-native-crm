@@ -83,13 +83,42 @@ const STAGE5_TO_7_UNTRACKED_FILES = new Set<string>([
 ]);
 const STAGE5_TO_7_TRACKED_CHANGED_FILES = STAGE5_TO_7_CHANGED_FILES.filter(file => !STAGE5_TO_7_UNTRACKED_FILES.has(file));
 
+export const STAGE8_CUSTOMER_MEMORY_FOUNDATION_CHANGED_FILES = [
+  'src/__tests__/customerMemoryPersistent.test.ts',
+  'src/__tests__/modelCapabilitiesChangedFileCohort.ts',
+  'src/lib/context/customerMemoryEnrichment.ts',
+  'src/lib/context/types.ts',
+  'src/lib/customerMemory/index.ts',
+  'src/lib/customerMemory/migration.ts',
+  'src/lib/customerMemory/repository.ts',
+  'src/lib/customerMemory/retrieval.ts',
+  'src/lib/customerMemory/types.ts',
+  'src/lib/db.ts',
+  'src-tauri/migrations/004_ai_customer_memory.sql',
+] as const;
+const STAGE8_CUSTOMER_MEMORY_FOUNDATION_SRC_CHANGED_FILES = STAGE8_CUSTOMER_MEMORY_FOUNDATION_CHANGED_FILES
+  .filter(file => file.startsWith('src/'));
+const STAGE8_CUSTOMER_MEMORY_FOUNDATION_TRACKED_CHANGED_FILES = [
+  'src/__tests__/modelCapabilitiesChangedFileCohort.ts',
+  'src/lib/context/types.ts',
+  'src/lib/customerMemory/index.ts',
+  'src/lib/customerMemory/types.ts',
+  'src/lib/db.ts',
+] as const;
+
 export function hasExactModelCapabilitiesPhase13ChangedFileSet(changedFiles: readonly string[]): boolean {
   return hasExactChangedFileSet(changedFiles, MODEL_CAPABILITIES_PHASE_1_3_CHANGED_FILES)
     || hasExactChangedFileSet(changedFiles, MODEL_CAPABILITIES_PHASE_4_TRUSTED_HOST_CHANGED_FILES)
     || hasExactChangedFileSet(changedFiles, MODEL_CAPABILITIES_PHASE_4_FRONTEND_CHANGED_FILES)
     || hasExactChangedFileSet(changedFiles, STAGE5_TO_7_CHANGED_FILES)
     || hasExactChangedFileSet(changedFiles, STAGE5_TO_7_FRONTEND_CHANGED_FILES)
-    || hasExactChangedFileSet(changedFiles, STAGE5_TO_7_TRACKED_CHANGED_FILES);
+    || hasExactChangedFileSet(changedFiles, STAGE5_TO_7_TRACKED_CHANGED_FILES)
+    || hasExactChangedFileSet(changedFiles, STAGE8_CUSTOMER_MEMORY_FOUNDATION_SRC_CHANGED_FILES)
+    || hasExactChangedFileSet(changedFiles, STAGE8_CUSTOMER_MEMORY_FOUNDATION_TRACKED_CHANGED_FILES);
+}
+
+export function hasExactStage8CustomerMemoryFoundationChangedFileSet(changedFiles: readonly string[]): boolean {
+  return hasExactChangedFileSet(changedFiles, STAGE8_CUSTOMER_MEMORY_FOUNDATION_CHANGED_FILES);
 }
 
 function hasExactChangedFileSet(changedFiles: readonly string[], expectedFiles: readonly string[]): boolean {
