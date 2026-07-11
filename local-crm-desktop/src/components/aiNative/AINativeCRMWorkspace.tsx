@@ -34,12 +34,13 @@ import {
   type ReadOnlyAISuggestionServiceResponse,
 } from '../../lib/readOnlyAISuggestionServiceReadiness';
 import { createMockReasoningProvider } from '../../lib/salesAgent/provider';
-import type { ReasoningProvider } from '../../lib/salesAgent/provider';
 import { createAgentTriggerBoundary } from '../../lib/salesAgent/triggerSeam';
 import { runSalesCopilotWorkflow } from '../../lib/salesCopilot/workflow';
 import type { SalesCopilotWorkflowResult } from '../../lib/salesCopilot/types';
 import { buildBoundedWorkspaceSalesPriority, MAX_WORKSPACE_PRIORITY_CANDIDATES } from '../../lib/salesCopilot/workspacePriority';
 import { LIVE_REASONING_AUTHORIZATION_PHRASE } from '../../lib/liveReasoning/types';
+import { createTrustedHostLiveReasoningProvider } from '../../lib/liveReasoning/provider';
+import { authorizeTrustedHostCapability } from '../../lib/modelCapabilities/trustedHost';
 
 const profile = getActiveVerticalProfile();
 const stage2Profile = resolveVerticalAIProfile();
@@ -56,7 +57,7 @@ function formatTimestamp(value: string): string {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString('zh-CN');
 }
 
-export default function AINativeCRMWorkspace({ liveProviderFactory }: { liveProviderFactory?: () => ReasoningProvider } = {}) {
+export default function AINativeCRMWorkspace() {
   const [catalog, setCatalog] = useState<LoadedReadOnlyAgentSnapshot | null>(null);
   const [snapshot, setSnapshot] = useState<LoadedReadOnlyAgentSnapshot | null>(null);
   const [safety, setSafety] = useState<ReadOnlySnapshotLoaderSafety | null>(null);
@@ -220,11 +221,21 @@ export default function AINativeCRMWorkspace({ liveProviderFactory }: { liveProv
       setLiveStatus('authorization incomplete');
       return;
     }
-    if (!liveProviderFactory) { setLiveStatus('blocked'); return; }
     setLoading(true); setError(''); setLiveStatus('request pending');
     try {
-      const provider = liveProviderFactory();
-      const activation = { live_call_requested: true as const, user_explicitly_authorized: true as const, authorization_phrase: LIVE_REASONING_AUTHORIZATION_PHRASE, provider_kind: provider.capability.providerKind as 'OPENAI_COMPATIBLE' | 'DEEPSEEK_COMPATIBLE', model_id: provider.capability.modelIdentifier, profile_id: liveProfileId, workflow_kind: liveWorkflow, customer_id: selectedCustomerId, context_snapshot_id: stage2Context.snapshotId };
+      const binding = {
+        capability: 'TEXT_REASONING' as const,
+        providerKind: 'DEEPSEEK_COMPATIBLE' as const,
+        modelId: 'deepseek-chat',
+        customerId: selectedCustomerId,
+        contextSnapshotId: stage2Context.snapshotId,
+        workflowKind: liveWorkflow,
+        profileId: liveProfileId,
+        requestedByUser: true as const,
+      };
+      const authorization = await authorizeTrustedHostCapability(binding);
+      const provider = createTrustedHostLiveReasoningProvider({ authorization, binding });
+      const activation = { live_call_requested: true as const, user_explicitly_authorized: true as const, authorization_phrase: LIVE_REASONING_AUTHORIZATION_PHRASE, provider_kind: provider.capability.providerKind as 'OPENAI_COMPATIBLE' | 'DEEPSEEK_COMPATIBLE', capability: 'TEXT_REASONING' as const, model_id: provider.capability.modelIdentifier, profile_id: liveProfileId, workflow_kind: liveWorkflow, customer_id: selectedCustomerId, context_snapshot_id: stage2Context.snapshotId };
       const requestId = `${stage2Context.snapshotId}:live:${liveWorkflow}:${new Date().toISOString()}`;
       const result = liveWorkflow === 'customer_intelligence'
         ? await runSalesCopilotWorkflow({ kind: 'customer_intelligence', request_id: requestId, context: stage2Context, profile_id: liveProfileId, provider, live_activation: activation })
@@ -351,7 +362,7 @@ export default function AINativeCRMWorkspace({ liveProviderFactory }: { liveProv
             <input aria-label="Live authorization phrase" value={liveAuthorizationPhrase} onChange={event => setLiveAuthorizationPhrase(event.target.value)} placeholder={LIVE_REASONING_AUTHORIZATION_PHRASE} />
             <button className="btn btn-primary" onClick={() => void runOneLiveReasoning()} disabled={loading}>Run one live reasoning request</button>
             <span style={{ fontSize: 13 }}>状态：{liveStatus} · 未自动持久化 · Human review required · Evidence-backed · Not executable · No CRM write</span>
-            {!liveProviderFactory && <span style={{ color: '#92400e', fontSize: 13 }}>未注入受保护的 Live Provider 配置，已阻断且不会发起网络请求。</span>}
+            <span style={{ color: '#92400e', fontSize: 13 }}>凭证、端点与网络仅由可信本地主机管理；未配置时请求会安全阻断。</span>
           </div>
         </section>
 

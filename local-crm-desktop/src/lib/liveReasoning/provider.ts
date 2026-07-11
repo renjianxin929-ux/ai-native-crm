@@ -1,34 +1,78 @@
+import {
+  executeTrustedHostCapability,
+  type TrustedHostAuthorizationResult,
+  type TrustedHostCapabilityBinding,
+  type TrustedHostCompletionResult,
+} from '../modelCapabilities/trustedHost';
 import type { ReasoningProvider } from '../salesAgent/provider';
 import type { SalesAgentReasoningRequest } from '../salesAgent/types';
-import type { LiveReasoningProviderConfig } from './config';
-import type { OpenAICompatibleTransport } from './transport';
 
-export function createLiveReasoningProvider(input: { id: string; config: LiveReasoningProviderConfig; transport: OpenAICompatibleTransport }): ReasoningProvider {
-  if (!input.id.trim() || !input.config.model_id.trim()) throw new Error('Live reasoning provider identity is required.');
+export interface TrustedHostLiveReasoningAuthorization {
+  readonly authorization: TrustedHostAuthorizationResult;
+  readonly binding: TrustedHostCapabilityBinding;
+}
+
+export type TrustedHostModelExecutor = (input: {
+  readonly authorizationId: string;
+  readonly binding: TrustedHostCapabilityBinding;
+  readonly input: unknown;
+}) => Promise<TrustedHostCompletionResult>;
+
+/**
+ * A generic provider adapter: Runtime supplies a capability and structured
+ * request, while only the native host resolves credentials and uses network.
+ */
+export function createTrustedHostCapabilityProvider(
+  input: TrustedHostLiveReasoningAuthorization & { readonly execute?: TrustedHostModelExecutor },
+): ReasoningProvider {
+  const { authorization, binding } = input;
+  if (authorization.state !== 'authorized' || binding.capability !== 'TEXT_REASONING' || authorization.providerKind !== 'DEEPSEEK_COMPATIBLE') {
+    throw new Error('Trusted-host live reasoning requires a TEXT_REASONING authorization.');
+  }
+  if (authorization.providerKind !== binding.providerKind || authorization.capability !== binding.capability) {
+    throw new Error('Trusted-host authorization capability mismatch.');
+  }
+  const execute = input.execute ?? executeTrustedHostCapability;
   return {
-    id: input.id,
-    capability: { providerKind: input.config.provider_kind, modelIdentifier: input.config.model_id, executionMode: 'LIVE', networkAccess: true, environmentAccess: false, liveEnabled: true },
-    async reason(request) {
-      return extractStructuredResult(await input.transport.complete({ config: input.config, body: buildOpenAICompatibleRequest(request, input.config.model_id) }));
+    id: `trusted-host:${authorization.providerKind}:${authorization.modelId}`,
+    capability: {
+      providerKind: 'DEEPSEEK_COMPATIBLE',
+      modelIdentifier: authorization.modelId,
+      executionMode: 'LIVE',
+      networkAccess: true,
+      environmentAccess: false,
+      liveEnabled: true,
+    },
+    async reason(request: SalesAgentReasoningRequest): Promise<unknown> {
+      const result = await execute({
+        authorizationId: authorization.authorizationId,
+        binding,
+        input: serializeReasoningRequest(request),
+      });
+      if (result.state !== 'completed' || result.providerKind !== authorization.providerKind || result.modelId !== authorization.modelId) {
+        throw new Error('Trusted host returned an invalid completion envelope.');
+      }
+      return result.output;
     },
   };
 }
 
-function buildOpenAICompatibleRequest(request: SalesAgentReasoningRequest, model: string): object {
+/** @deprecated Use createTrustedHostCapabilityProvider for explicit capability binding. */
+export const createTrustedHostLiveReasoningProvider = createTrustedHostCapabilityProvider;
+
+function serializeReasoningRequest(request: SalesAgentReasoningRequest): object {
   return {
-    model,
-    stream: false,
-    temperature: 0,
-    messages: [{ role: 'system', content: 'Return only JSON matching the required schema. Never claim execution, CRM writes, or automatic actions.' }, { role: 'user', content: JSON.stringify({ objective: request.objective, context: request.context, vertical_profile: request.vertical_profile, required_schema: 'AIReasoningResult v1 with evidence and decision_basis', safety: { human_review_required: true, executable: false, writes_crm: false } }) }],
+    objective: request.objective,
+    context: request.context,
+    memory: request.memory,
+    vertical_profile: request.vertical_profile,
+    required_schema: 'AIReasoningResult v1 with evidence and decision_basis',
+    safety: {
+      human_review_required: true,
+      executable: false,
+      writes_crm: false,
+      sends_message: false,
+      creates_task: false,
+    },
   };
 }
-
-function extractStructuredResult(payload: unknown): unknown {
-  if (!isRecord(payload)) throw new Error('Live provider returned an invalid response envelope.');
-  const choices = payload.choices;
-  const first = Array.isArray(choices) ? choices[0] : null;
-  const content = isRecord(first) && isRecord(first.message) ? first.message.content : null;
-  if (typeof content !== 'string') throw new Error('Live provider returned no structured content.');
-  try { return JSON.parse(content); } catch { throw new Error('Live provider returned invalid structured JSON.'); }
-}
-function isRecord(value: unknown): value is Record<string, any> { return typeof value === 'object' && value !== null; }

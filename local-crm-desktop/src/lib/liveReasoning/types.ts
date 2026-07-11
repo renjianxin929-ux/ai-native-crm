@@ -9,6 +9,7 @@ export interface LiveReasoningActivation {
   user_explicitly_authorized: true;
   authorization_phrase: typeof LIVE_REASONING_AUTHORIZATION_PHRASE;
   provider_kind: Extract<SalesAgentProviderKind, 'OPENAI_COMPATIBLE' | 'DEEPSEEK_COMPATIBLE'>;
+  capability: 'TEXT_REASONING';
   model_id: string;
   profile_id: string;
   workflow_kind: LiveReasoningWorkflowKind;
@@ -35,6 +36,7 @@ export function validateLiveReasoningActivation(value: unknown): string | null {
   if (value.live_call_requested !== true || value.user_explicitly_authorized !== true) return 'explicit live authorization is required';
   if (value.authorization_phrase !== LIVE_REASONING_AUTHORIZATION_PHRASE) return 'live authorization phrase is invalid';
   if (value.provider_kind !== 'OPENAI_COMPATIBLE' && value.provider_kind !== 'DEEPSEEK_COMPATIBLE') return 'live provider kind is invalid';
+  if (value.capability !== 'TEXT_REASONING') return 'live capability is invalid';
   if (!hasText(value.model_id) || !hasText(value.profile_id) || !hasText(value.customer_id) || !hasText(value.context_snapshot_id)) return 'live activation identity is incomplete';
   if (value.workflow_kind !== 'customer_intelligence' && value.workflow_kind !== 'interaction_intelligence') return 'live workflow is not supported';
   return null;

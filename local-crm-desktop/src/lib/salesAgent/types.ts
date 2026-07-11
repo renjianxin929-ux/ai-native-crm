@@ -1,4 +1,5 @@
 import type { ContextSnapshot } from '../context/types';
+import type { CustomerMemoryContext } from '../customerMemory';
 import type { VerticalProfile } from '../verticalAIProfiles/types';
 
 export type SalesAgentProviderKind = 'MOCK' | 'OPENAI_COMPATIBLE' | 'DEEPSEEK_COMPATIBLE' | 'LOCAL_MODEL' | 'STAGE2_COMPATIBILITY';
@@ -58,6 +59,7 @@ export interface SalesAgentReasoningRequest {
   request_id: string;
   objective: string;
   context: ContextSnapshot;
+  memory?: CustomerMemoryContext;
   vertical_profile: VerticalProfile;
   generated_at: string;
   safety: {

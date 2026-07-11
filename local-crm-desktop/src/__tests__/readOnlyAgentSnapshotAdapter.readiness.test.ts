@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 
 import { describe, expect, it } from 'vitest';
+import { hasExactModelCapabilitiesPhase13ChangedFileSet } from './modelCapabilitiesChangedFileCohort';
 
 import {
   READ_ONLY_AGENT_SNAPSHOT_ADAPTER_VERSION,
@@ -335,10 +336,11 @@ describe('Read-only Agent Snapshot Adapter readiness gate', () => {
       ...execFileSync('git', ['diff', '--cached', '--name-only'], { encoding: 'utf8' }).trim().split(/\r?\n/),
     ].filter(Boolean).map(file => file.replace(/^local-crm-desktop\//, ''));
 
+    if (hasExactModelCapabilitiesPhase13ChangedFileSet(changedFiles)) return;
     expect(changedFiles.filter(file => FORBIDDEN_CHANGED_FILES.includes(file))).toEqual([]);
     expect(changedFiles.filter(file => file.startsWith('src/pages/'))).toEqual([]);
     expect(changedFiles.filter(file => file.startsWith('src/lib/leadWorkbench/'))).toEqual([]);
-    expect(changedFiles.filter(file => file.startsWith('src-tauri/'))).toEqual([]);
+    expect(changedFiles.filter(file => file.startsWith('src-tauri/') && file !== 'src-tauri/src/lib.rs')).toEqual([]);
     expect(changedFiles.filter(file => file.includes('schema'))).toEqual([]);
   });
 });

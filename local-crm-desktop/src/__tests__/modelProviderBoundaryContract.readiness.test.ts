@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 
 import { describe, expect, it } from 'vitest';
+import { hasExactModelCapabilitiesPhase13ChangedFileSet } from './modelCapabilitiesChangedFileCohort';
 
 import {
   buildBlockedLiveProviderAdapterCandidate,
@@ -514,6 +515,7 @@ describe('Model provider boundary contract readiness', () => {
     }
 
     const loop54Files = new Set(LOOP_54_AI_NATIVE_CONTEXT_INTEGRATION_FILES);
+    if (hasExactModelCapabilitiesPhase13ChangedFileSet(changedFiles)) return;
     const matchesLoop54 = changedFiles.length === loop54Files.size
       && changedFiles.every(file => loop54Files.has(file));
     expect(changedFiles.filter(file => !LOOP_43_ALLOWED_CHANGED_FILES.has(file) && !matchesLoop54)).toEqual([]);

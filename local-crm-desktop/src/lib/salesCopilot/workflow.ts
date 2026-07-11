@@ -21,6 +21,7 @@ export async function runSalesCopilotWorkflow(request: SalesCopilotWorkflowReque
   if (!request.request_id.trim()) throw new Error('Copilot workflow request id is required.');
   if (request.kind === 'sales_priority' && request.provider.capability.executionMode === 'LIVE') throw new Error('Sales Priority remains MOCK-only in the Live Reasoning Activation Gate.');
   if (request.kind === 'customer_intelligence') {
+    if (request.live_activation?.workflow_kind && request.live_activation.workflow_kind !== request.kind) throw new Error('Live Reasoning Activation Gate blocked: workflow mismatch.');
     return {
       kind: request.kind,
       ...SAFE_RESULT,
@@ -45,6 +46,7 @@ export async function runSalesCopilotWorkflow(request: SalesCopilotWorkflowReque
     };
   }
   if (request.explicitly_activated !== true) throw new Error('Interaction Intelligence requires explicit manual activation.');
+  if (request.live_activation?.workflow_kind && request.live_activation.workflow_kind !== request.kind) throw new Error('Live Reasoning Activation Gate blocked: workflow mismatch.');
   if (request.trigger.status !== 'request_created_not_invoked' || request.trigger.runtime_request.runtime_invoked !== false) {
     throw new Error('Interaction trigger must remain inert before explicit Copilot activation.');
   }

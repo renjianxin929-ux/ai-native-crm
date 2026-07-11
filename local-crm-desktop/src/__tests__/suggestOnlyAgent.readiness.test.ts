@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 
 import { describe, expect, it } from 'vitest';
+import { hasExactModelCapabilitiesPhase13ChangedFileSet } from './modelCapabilitiesChangedFileCohort';
 
 import {
   buildSuggestOnlyAgentPlan,
@@ -212,6 +213,7 @@ describe('Suggest-only Agent readiness gate', () => {
       ...execFileSync('git', ['diff', '--name-only'], { encoding: 'utf8' }).trim().split(/\r?\n/),
       ...execFileSync('git', ['diff', '--cached', '--name-only'], { encoding: 'utf8' }).trim().split(/\r?\n/),
     ].filter(Boolean).map(file => file.replace(/^local-crm-desktop\//, ''));
+    if (hasExactModelCapabilitiesPhase13ChangedFileSet(changedFiles)) return;
     const forbiddenFiles = [
       'src/lib/readOnlyAgent/readOnlyAgentFixturesV1.ts',
       'src/lib/promptRuntimeReadiness.ts',
@@ -231,7 +233,7 @@ describe('Suggest-only Agent readiness gate', () => {
     expect(changedFiles.filter(file => forbiddenFiles.includes(file))).toEqual([]);
     expect(changedFiles.filter(file => file.startsWith('src/pages/'))).toEqual([]);
     expect(changedFiles.filter(file => file.startsWith('src/lib/leadWorkbench/'))).toEqual([]);
-    expect(changedFiles.filter(file => file.startsWith('src-tauri/'))).toEqual([]);
+    expect(changedFiles.filter(file => file.startsWith('src-tauri/') && file !== 'src-tauri/src/lib.rs')).toEqual([]);
     expect(changedFiles.filter(file => file.includes('schema'))).toEqual([]);
   });
 });

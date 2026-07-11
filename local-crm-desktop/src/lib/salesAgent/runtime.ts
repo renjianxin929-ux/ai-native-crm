@@ -4,6 +4,7 @@ import type { ContextSnapshot } from '../context/types';
 import type { SalesAgentReasoningRequest, SalesAgentRuntimeResult } from './types';
 import { validateSalesAgentReasoningResult } from './validation';
 import { validateLiveReasoningActivation, type LiveReasoningActivation } from '../liveReasoning/types';
+import type { CustomerMemoryContext } from '../customerMemory';
 
 export async function runSalesAgentRuntime(input: {
   request_id: string;
@@ -11,11 +12,15 @@ export async function runSalesAgentRuntime(input: {
   context: ContextSnapshot;
   profile_id: string;
   provider: ReasoningProvider;
+  memory?: CustomerMemoryContext;
   live_activation?: LiveReasoningActivation;
   clock?: () => string;
 }): Promise<SalesAgentRuntimeResult> {
   if (!input.request_id.trim() || !input.objective.trim()) throw new Error('Runtime request id and objective are required.');
   if (input.context.readOnly !== true) throw new Error('Sales Agent Runtime requires a read-only ContextSnapshot.');
+  if (input.memory && (input.memory.read_only !== true || input.memory.persisted !== false || input.memory.customer_id !== input.context.customers[0]?.customerId)) {
+    throw new Error('Sales Agent Runtime requires a read-only, customer-bound memory context.');
+  }
   const isLive = input.provider.capability.executionMode === 'LIVE';
   if (!isLive && input.provider.capability.executionMode !== 'MOCK') throw new Error('Stage3 Sales Agent Runtime permits MOCK provider execution only; non-MOCK providers require the Live Reasoning Activation Gate.');
   if (isLive) {
@@ -32,6 +37,7 @@ export async function runSalesAgentRuntime(input: {
     request_id: input.request_id,
     objective: input.objective,
     context: input.context,
+    memory: input.memory,
     vertical_profile: profile,
     generated_at: generatedAt,
     safety: {

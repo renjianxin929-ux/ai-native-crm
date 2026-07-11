@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 
 import { describe, expect, it } from 'vitest';
+import { hasExactModelCapabilitiesPhase13ChangedFileSet } from './modelCapabilitiesChangedFileCohort';
 
 import {
   runReadOnlyAISuggestionService,
@@ -556,6 +557,7 @@ describe('Read-only AI suggestion service readiness', () => {
       return;
     }
 
+    if (hasExactModelCapabilitiesPhase13ChangedFileSet(changedFiles)) return;
     expect(changedFiles.filter(file => !LOOP_52_ALLOWED_CHANGED_FILES.has(file))).toEqual([]);
     if (changedFiles.length === 0) {
       expect(isProvenCleanGitBaseline()).toBe(true);

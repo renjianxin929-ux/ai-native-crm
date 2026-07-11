@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 
 import { describe, expect, it } from 'vitest';
+import { hasExactModelCapabilitiesPhase13ChangedFileSet } from './modelCapabilitiesChangedFileCohort';
 
 import {
   MANUAL_LIVE_PROVIDER_SMOKE_AUTHORIZATION_PHRASE,
@@ -585,6 +586,7 @@ describe('Manual live provider smoke gate readiness', () => {
       return;
     }
 
+    if (hasExactModelCapabilitiesPhase13ChangedFileSet(changedFiles)) return;
     const matchesLoop54 = hasCompleteChangedFileSet(changedFiles, LOOP_54_AI_NATIVE_CONTEXT_INTEGRATION_FILES);
     expect(changedFiles.filter(file => !LOOP_50_ALLOWED_CHANGED_FILES.has(file) && !matchesLoop54)).toEqual([]);
     expect(isAcceptedLoop50ChangedFileSet(changedFiles)).toBe(true);

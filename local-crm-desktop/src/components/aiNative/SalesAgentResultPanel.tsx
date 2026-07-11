@@ -4,11 +4,12 @@ const sectionStyle = { borderTop: '1px solid #e2e8f0', paddingTop: 10, marginTop
 
 export function SalesAgentResultPanel({ runtime }: { runtime: SalesAgentRuntimeResult }) {
   const result = runtime.result;
+  const executionLabel = result.reasoning_metadata.execution_mode === 'LIVE' ? 'Live model reasoning' : 'Mock reasoning';
   return (
     <article aria-label="AI Sales Agent Result">
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
         <strong>AI Sales Agent Analysis</strong>
-        <span>Sandbox / Mock reasoning · Confidence: {Math.round(result.confidence.value * 100)}%</span>
+        <span>{executionLabel} · Confidence: {Math.round(result.confidence.value * 100)}%</span>
       </div>
       <div style={sectionStyle}><strong>Customer understanding</strong><div>{result.customer_summary.value}</div></div>
       <div style={sectionStyle}><strong>Current sales situation</strong><div>{result.customer_stage.value}</div></div>

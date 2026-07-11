@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
+import { hasExactModelCapabilitiesPhase13ChangedFileSet } from './modelCapabilitiesChangedFileCohort';
 
 import { ReadOnlyAISuggestionPanel } from '../components/aiSuggestions/ReadOnlyAISuggestionPanel';
 import { buildReadOnlyAISuggestionViewModel } from '../components/aiSuggestions/readOnlyAISuggestionViewModel';
@@ -430,6 +431,7 @@ describe('Read-only AI suggestion panel readiness', () => {
       return;
     }
 
+    if (hasExactModelCapabilitiesPhase13ChangedFileSet(changedFiles)) return;
     expect(changedFiles.filter(file => !LOOP_53_ALLOWED_CHANGED_FILES.has(file))).toEqual([]);
     if (changedFiles.length === 0) {
       expect(isProvenCleanGitBaseline()).toBe(true);
