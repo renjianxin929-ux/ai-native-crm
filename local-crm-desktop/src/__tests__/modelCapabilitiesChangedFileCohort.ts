@@ -138,6 +138,13 @@ export const STAGE10_SALES_AGENT_OPERATING_LAYER_CHANGED_FILES = [
   'src/lib/salesAgentTools/operatingLayer.ts',
   'src/lib/salesAgentTools/registry.ts',
 ] as const;
+export const STAGE10_5_AGENT_INTELLIGENCE_POLISH_CHANGED_FILES = [
+  'src/__tests__/modelCapabilitiesChangedFileCohort.ts',
+  'src/__tests__/stage10SalesAgentOperatingLayer.test.ts',
+  'src/components/aiNative/AINativeCRMWorkspace.tsx',
+  'src/components/aiNative/SalesAgentInteractionWorkspace.tsx',
+  'src/lib/salesAgentTools/operatingLayer.ts',
+] as const;
 
 export function hasExactModelCapabilitiesPhase13ChangedFileSet(changedFiles: readonly string[]): boolean {
   return hasExactChangedFileSet(changedFiles, MODEL_CAPABILITIES_PHASE_1_3_CHANGED_FILES)
@@ -150,7 +157,8 @@ export function hasExactModelCapabilitiesPhase13ChangedFileSet(changedFiles: rea
     || hasExactChangedFileSet(changedFiles, STAGE8_CUSTOMER_MEMORY_FOUNDATION_TRACKED_CHANGED_FILES)
     || hasExactChangedFileSet(changedFiles, STAGE9_PRODUCT_EXPERIENCE_LAYER_CHANGED_FILES)
     || hasExactChangedFileSet(changedFiles, STAGE9_PRODUCT_EXPERIENCE_LAYER_TRACKED_CHANGED_FILES)
-    || hasExactChangedFileSet(changedFiles, STAGE10_SALES_AGENT_OPERATING_LAYER_CHANGED_FILES);
+    || hasExactChangedFileSet(changedFiles, STAGE10_SALES_AGENT_OPERATING_LAYER_CHANGED_FILES)
+    || hasExactChangedFileSet(changedFiles, STAGE10_5_AGENT_INTELLIGENCE_POLISH_CHANGED_FILES);
 }
 
 export function hasExactStage8CustomerMemoryFoundationChangedFileSet(changedFiles: readonly string[]): boolean {

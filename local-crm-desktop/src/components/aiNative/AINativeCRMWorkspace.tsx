@@ -44,6 +44,7 @@ import { createTrustedHostLiveReasoningProvider } from '../../lib/liveReasoning/
 import { authorizeTrustedHostCapability } from '../../lib/modelCapabilities/trustedHost';
 import { readCustomerScopedSalesAgentEntry } from '../../lib/salesWorkspace/customerScopedSalesAgentEntry';
 import { SalesAgentInteractionWorkspace } from './SalesAgentInteractionWorkspace';
+import { SqliteCrmEvidenceResolver, SqliteMemoryRepository, type CustomerMemoryContext } from '../../lib/customerMemory';
 
 const profile = getActiveVerticalProfile();
 const stage2Profile = resolveVerticalAIProfile();
@@ -64,6 +65,7 @@ export default function AINativeCRMWorkspace() {
   const location = useLocation();
   const [catalog, setCatalog] = useState<LoadedReadOnlyAgentSnapshot | null>(null);
   const [snapshot, setSnapshot] = useState<LoadedReadOnlyAgentSnapshot | null>(null);
+  const [agentMemory, setAgentMemory] = useState<CustomerMemoryContext | undefined>(undefined);
   const [safety, setSafety] = useState<ReadOnlySnapshotLoaderSafety | null>(null);
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
   const [suggestionResponse, setSuggestionResponse] = useState<ReadOnlyAISuggestionServiceResponse | null>(null);
@@ -109,6 +111,7 @@ export default function AINativeCRMWorkspace() {
     setLoading(true);
     setError('');
     setSnapshot(null);
+    setAgentMemory(undefined);
     setSuggestionResponse(null);
     setCopilotResults([]);
     try {
@@ -121,6 +124,7 @@ export default function AINativeCRMWorkspace() {
         throw new Error('只读安全契约未通过，工作区已停止加载。');
       }
       setSnapshot(result.snapshot);
+      setAgentMemory(await new SqliteMemoryRepository(await getDb(), new SqliteCrmEvidenceResolver(await getDb())).getMemoryContext(selectedCustomerId));
       setSafety(result.safety);
       setSuggestionResponse(runReadOnlySnapshotAISuggestionService({
         kind: 'READ_ONLY_SNAPSHOT_AI_SUGGESTION_SERVICE_REQUEST',
@@ -316,6 +320,7 @@ export default function AINativeCRMWorkspace() {
               onChange={event => {
                 setSelectedCustomerId(event.target.value);
                 setSnapshot(null);
+                setAgentMemory(undefined);
                 setSuggestionResponse(null);
                 setCopilotResults([]);
               }}
@@ -355,7 +360,7 @@ export default function AINativeCRMWorkspace() {
         )}
 
         {snapshot && summary && stage2Context && (
-          <SalesAgentInteractionWorkspace customerId={selectedCustomerId} snapshot={snapshot} context={stage2Context} profileId={stage2Profile.identity.id} />
+          <SalesAgentInteractionWorkspace customerId={selectedCustomerId} snapshot={snapshot} context={stage2Context} memory={agentMemory} profileId={stage2Profile.identity.id} />
         )}
 
         {snapshot && summary && (
