@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
   AlertTriangle,
@@ -45,6 +45,10 @@ import { authorizeTrustedHostCapability } from '../../lib/modelCapabilities/trus
 import { readCustomerScopedSalesAgentEntry } from '../../lib/salesWorkspace/customerScopedSalesAgentEntry';
 import { SalesAgentInteractionWorkspace } from './SalesAgentInteractionWorkspace';
 import { SqliteCrmEvidenceResolver, SqliteMemoryRepository, type CustomerMemoryContext } from '../../lib/customerMemory';
+import { getCustomer } from '../../lib/db';
+import { createTrustedHostSalesAgentAdapter } from '../../lib/salesAgentTools/trustedHostAdapter';
+import { createSalesAgentMemoryRepository } from '../../lib/salesAgentTools/memoryRepositoryAdapter';
+import { createProductionRefreshCoordinator } from '../../lib/salesAgentTools/productionRefreshCoordinator';
 
 const profile = getActiveVerticalProfile();
 const stage2Profile = resolveVerticalAIProfile();
@@ -106,7 +110,7 @@ export default function AINativeCRMWorkspace() {
     if (customerScopedEntry) setSelectedCustomerId(customerScopedEntry.customer_id);
   }, [customerScopedEntry]);
 
-  const loadSelectedContext = async () => {
+  const loadSelectedContext = async (options: { readonly runCopilot?: boolean } = {}) => {
     if (!selectedCustomerId) return;
     setLoading(true);
     setError('');
@@ -154,15 +158,14 @@ export default function AINativeCRMWorkspace() {
         allow_ui: false,
       }));
       const context = buildWorkspaceContextSnapshot(result.snapshot);
-      const provider = createMockReasoningProvider();
-      const customerIntelligence = await runSalesCopilotWorkflow({
-        kind: 'customer_intelligence',
-        request_id: `${result.snapshot.snapshot_id}:customer-intelligence`,
-        context,
-        profile_id: stage2Profile.identity.id,
-        provider,
-      });
-      setCopilotResults(current => [customerIntelligence, ...current.filter(item => item.kind === 'sales_priority')]);
+      if (options.runCopilot !== false) {
+        const provider = createMockReasoningProvider();
+        const customerIntelligence = await runSalesCopilotWorkflow({
+          kind: 'customer_intelligence', request_id: `${result.snapshot.snapshot_id}:customer-intelligence`, context,
+          profile_id: stage2Profile.identity.id, provider,
+        });
+        setCopilotResults(current => [customerIntelligence, ...current.filter(item => item.kind === 'sales_priority')]);
+      }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -267,6 +270,8 @@ export default function AINativeCRMWorkspace() {
     ? projectCRMContextSummary(snapshot, selectedCustomerId, new Date().toISOString())
     : null;
   const stage2Context = snapshot ? buildWorkspaceContextSnapshot(snapshot) : null;
+  const salesAgentHost = useMemo(() => stage2Context ? createTrustedHostSalesAgentAdapter({ context_snapshot_id: stage2Context.snapshotId, profile_id: stage2Profile.identity.id }) : null, [stage2Context]);
+  const salesAgentMemoryRepository = useMemo(() => snapshot ? createSalesAgentMemoryRepository() : undefined, [snapshot]);
 
   return (
     <div>
@@ -332,7 +337,7 @@ export default function AINativeCRMWorkspace() {
                 <option key={customer.id} value={customer.id}>{customer.name}</option>
               ))}
             </select>
-            <button className="btn btn-primary" onClick={loadSelectedContext} disabled={!selectedCustomerId || loading}>
+            <button className="btn btn-primary" onClick={() => void loadSelectedContext()} disabled={!selectedCustomerId || loading}>
               {loading ? <RefreshCw size={14} /> : <FileSearch size={14} />}
               {loading ? '读取中…' : '读取只读快照'}
             </button>
@@ -360,7 +365,7 @@ export default function AINativeCRMWorkspace() {
         )}
 
         {snapshot && summary && stage2Context && (
-          <SalesAgentInteractionWorkspace customerId={selectedCustomerId} snapshot={snapshot} context={stage2Context} memory={agentMemory} profileId={stage2Profile.identity.id} />
+          <SalesAgentInteractionWorkspace customerId={selectedCustomerId} snapshot={snapshot} context={stage2Context} memory={agentMemory} profileId={stage2Profile.identity.id} host={salesAgentHost} memoryRepository={salesAgentMemoryRepository} loadCustomerSnapshot={getCustomer} onRefresh={createProductionRefreshCoordinator(loadSelectedContext)} />
         )}
 
         {snapshot && summary && (

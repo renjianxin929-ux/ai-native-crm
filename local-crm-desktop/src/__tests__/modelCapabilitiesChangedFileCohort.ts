@@ -145,6 +145,45 @@ export const STAGE10_5_AGENT_INTELLIGENCE_POLISH_CHANGED_FILES = [
   'src/components/aiNative/SalesAgentInteractionWorkspace.tsx',
   'src/lib/salesAgentTools/operatingLayer.ts',
 ] as const;
+export const STAGE11_TO_13_CHANGED_FILES = [
+  'src/__tests__/modelCapabilitiesChangedFileCohort.ts',
+  'src/__tests__/approvedCrmWriteBoundary.integration.test.ts',
+  'src/__tests__/confirmationReplayMismatch.integration.test.ts',
+  'src/__tests__/salesAgentConfirmationCard.test.ts',
+  'src/__tests__/salesAgentProductionHarness.ts',
+  'src/__tests__/salesAgentSessionRuntime.integration.test.ts',
+  'src/__tests__/salesAgentSessionWriteRouting.integration.test.ts',
+  'src/__tests__/salesAgentWriteRefresh.integration.test.ts',
+  'src/__tests__/stage11SemanticPlanning.test.ts',
+  'src/__tests__/stage12ConfirmedWrite.test.ts',
+  'src/__tests__/stage13CustomerCapture.test.ts',
+  'src/__tests__/stage11To13E2E.test.ts',
+  'src/__tests__/productionRefreshCoordinator.integration.test.ts',
+  'src/lib/customerCapture/review.ts',
+  'src/lib/salesAgentTools/confirmedWrite.ts',
+  'src/lib/salesAgentTools/semanticPlanning.ts',
+  'src/lib/salesAgentTools/agentSession.ts',
+  'src/lib/salesAgentTools/approvedCrmWriteBoundary.ts',
+  'src/components/aiNative/SalesAgentInteractionWorkspace.tsx',
+  'src/components/aiNative/AINativeCRMWorkspace.tsx',
+  'src/lib/salesAgentTools/trustedHostAdapter.ts',
+  'src/lib/salesAgentTools/memoryRepositoryAdapter.ts',
+  'src/lib/salesAgentTools/productionRefreshCoordinator.ts',
+  'src/lib/db.ts',
+  'src-tauri/src/trusted_host.rs',
+] as const;
+// `git diff --name-only` intentionally omits the new, untracked Stage 11-13
+// files while the readiness guards are running. Keep this exact tracked view
+// separate; it is not a wildcard or subset acceptance rule.
+export const STAGE11_TO_13_TRACKED_CHANGED_FILES = [
+  'src/__tests__/modelCapabilitiesChangedFileCohort.ts',
+  'src/components/aiNative/AINativeCRMWorkspace.tsx',
+  'src/components/aiNative/SalesAgentInteractionWorkspace.tsx',
+  'src/lib/db.ts',
+  'src-tauri/src/trusted_host.rs',
+] as const;
+export const STAGE11_TO_13_FRONTEND_CHANGED_FILES = STAGE11_TO_13_CHANGED_FILES
+  .filter(file => !file.startsWith('src-tauri/'));
 
 export function hasExactModelCapabilitiesPhase13ChangedFileSet(changedFiles: readonly string[]): boolean {
   return hasExactChangedFileSet(changedFiles, MODEL_CAPABILITIES_PHASE_1_3_CHANGED_FILES)
@@ -158,7 +197,10 @@ export function hasExactModelCapabilitiesPhase13ChangedFileSet(changedFiles: rea
     || hasExactChangedFileSet(changedFiles, STAGE9_PRODUCT_EXPERIENCE_LAYER_CHANGED_FILES)
     || hasExactChangedFileSet(changedFiles, STAGE9_PRODUCT_EXPERIENCE_LAYER_TRACKED_CHANGED_FILES)
     || hasExactChangedFileSet(changedFiles, STAGE10_SALES_AGENT_OPERATING_LAYER_CHANGED_FILES)
-    || hasExactChangedFileSet(changedFiles, STAGE10_5_AGENT_INTELLIGENCE_POLISH_CHANGED_FILES);
+    || hasExactChangedFileSet(changedFiles, STAGE10_5_AGENT_INTELLIGENCE_POLISH_CHANGED_FILES)
+    || hasExactChangedFileSet(changedFiles, STAGE11_TO_13_CHANGED_FILES)
+    || hasExactChangedFileSet(changedFiles, STAGE11_TO_13_TRACKED_CHANGED_FILES)
+    || hasExactChangedFileSet(changedFiles, STAGE11_TO_13_FRONTEND_CHANGED_FILES);
 }
 
 export function hasExactStage8CustomerMemoryFoundationChangedFileSet(changedFiles: readonly string[]): boolean {

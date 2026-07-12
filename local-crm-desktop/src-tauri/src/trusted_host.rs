@@ -195,9 +195,11 @@ fn validate_vision_facts(value: &Value) -> Result<(), TrustedHostBlockedResult> 
   let facts = object.get("visual_facts").and_then(Value::as_array).ok_or_else(|| blocked("host_provider_invalid_vision_output"))?;
   for fact in facts {
     let record = fact.as_object().ok_or_else(|| blocked("host_provider_invalid_vision_output"))?;
-    if record.len() != 2 || !record.contains_key("fact_type") || !record.contains_key("content")
-      || record.get("fact_type").and_then(Value::as_str).filter(|text| !text.trim().is_empty()).is_none()
-      || record.get("content").and_then(Value::as_str).filter(|text| !text.trim().is_empty()).is_none() {
+    let allowed = ["fact_id", "fact_type", "content", "source_reference", "confidence", "location"];
+    let allowed_type = matches!(record.get("fact_type").and_then(Value::as_str), Some("extracted_text" | "visible_product_attribute" | "company_contact_information" | "visible_requirement" | "visible_objection" | "document_field" | "date_quantity_specification"));
+    let has_text = |key: &str| record.get(key).and_then(Value::as_str).filter(|text| !text.trim().is_empty()).is_some();
+    let confidence_valid = record.get("confidence").and_then(Value::as_f64).map(|value| (0.0..=1.0).contains(&value)).unwrap_or(false);
+    if record.keys().any(|key| !allowed.contains(&key.as_str())) || !has_text("fact_id") || !allowed_type || !has_text("content") || !has_text("source_reference") || !confidence_valid || (record.contains_key("location") && !has_text("location")) {
       return Err(blocked("host_provider_invalid_vision_output"));
     }
   }
@@ -233,7 +235,7 @@ mod tests {
 
   #[test]
   fn vision_output_is_facts_only() {
-    assert_eq!(validate_vision_facts(&json!({"visual_facts":[{"fact_type":"extracted_text","content":"Invoice"}]})), Ok(()));
+    assert_eq!(validate_vision_facts(&json!({"visual_facts":[{"fact_id":"fact-1","fact_type":"extracted_text","content":"Invoice","source_reference":"image:1","confidence":0.9}]})), Ok(()));
     assert_eq!(validate_vision_facts(&json!({"visual_facts":[], "recommendation":"call"})), Err(blocked("host_provider_invalid_vision_output")));
     assert_eq!(validate_vision_facts(&json!({"visual_facts":[{"fact_type":"x","content":"y","risk":"z"}]})), Err(blocked("host_provider_invalid_vision_output")));
   }

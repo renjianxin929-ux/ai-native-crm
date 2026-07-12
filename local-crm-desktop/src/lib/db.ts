@@ -6,7 +6,7 @@ import { v4 as uuidv4 } from 'uuid';
 // 数据库抽象层 - 包装 @tauri-apps/plugin-sql
 // 生产环境下必须使用真实 SQLite，不允许静默回退到内存存储
 
-interface DatabaseLike {
+export interface DatabaseLike {
   execute(sql: string, bindings?: unknown[]): Promise<{ rowsAffected: number }>;
   select<T>(sql: string, bindings?: unknown[]): Promise<T[]>;
 }
@@ -423,25 +423,7 @@ const CUSTOMER_UPDATE_FIELDS = new Set([
 ]);
 
 export async function updateCustomer(id: string, updates: Partial<Customer>): Promise<void> {
-  const now = new Date().toISOString();
-  const db = await getDb();
-
-  const requestedFields = Object.keys(updates).filter(k => k !== 'id');
-  const fields = requestedFields.filter(k => CUSTOMER_UPDATE_FIELDS.has(k));
-  const unknownFields = requestedFields.filter(k => !CUSTOMER_UPDATE_FIELDS.has(k));
-
-  if (unknownFields.length > 0) {
-    console.warn('updateCustomer ignored unknown customer fields', unknownFields);
-  }
-
-  if (fields.length === 0) return;
-
-  const sets = fields.map(f => `${f} = ?`).join(', ');
-  const values = fields.map(f => (updates as Record<string, unknown>)[f]);
-  await db.execute(
-    `UPDATE customers SET ${sets}, updated_at = ? WHERE id = ?`,
-    [...values, now, id],
-  );
+  await createCrmRepository(await getDb()).updateCustomer(id, updates);
 }
 
 export async function deleteCustomer(id: string): Promise<void> {
@@ -453,8 +435,24 @@ export async function deleteCustomer(id: string): Promise<void> {
 }
 
 export async function createFollowUp(record: FollowUpRecord): Promise<void> {
-  const db = await getDb();
-  await db.execute(
+  await createCrmRepository(await getDb()).createFollowUp(record);
+}
+
+/** Shared production repository policy. Test transports must use this adapter rather than reimplement its mapping. */
+export function createCrmRepository(db: DatabaseLike, now: () => string = () => new Date().toISOString()) {
+  return {
+    async updateCustomer(id: string, updates: Partial<Customer> | Record<string, unknown>): Promise<void> {
+      const requestedFields = Object.keys(updates).filter(k => k !== 'id');
+      const fields = requestedFields.filter(k => CUSTOMER_UPDATE_FIELDS.has(k));
+      const unknownFields = requestedFields.filter(k => !CUSTOMER_UPDATE_FIELDS.has(k));
+      if (unknownFields.length > 0) console.warn('updateCustomer ignored unknown customer fields', unknownFields);
+      if (fields.length === 0) return;
+      const sets = fields.map(f => `${f} = ?`).join(', ');
+      const values = fields.map(f => (updates as Record<string, unknown>)[f]);
+      await db.execute(`UPDATE customers SET ${sets}, updated_at = ? WHERE id = ?`, [...values, now(), id]);
+    },
+    async createFollowUp(record: FollowUpRecord): Promise<void> {
+      await db.execute(
     `INSERT INTO follow_up_records (id, customer_id, title, contact_channel, contact_result,
      feedback_notes, intent_assessment, suggested_grade, next_action,
      next_follow_up_at, is_completed, created_at, updated_at)
@@ -462,7 +460,17 @@ export async function createFollowUp(record: FollowUpRecord): Promise<void> {
     [record.id, record.customer_id, record.title, record.contact_channel, record.contact_result,
      record.feedback_notes, record.intent_assessment, record.suggested_grade, record.next_action,
      record.next_follow_up_at, record.is_completed, record.created_at, record.updated_at],
-  );
+      );
+    },
+    async createTask(task: Task): Promise<void> {
+      await db.execute(
+        `INSERT INTO tasks (id, customer_id, title, due_at, status, priority, source, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [task.id, task.customer_id, task.title, task.due_at, task.status, task.priority, task.source,
+         task.created_at, task.updated_at],
+      );
+    },
+  };
 }
 
 export async function listFollowUps(customerId: string): Promise<FollowUpRecord[]> {
@@ -505,13 +513,7 @@ export async function listAllVisits(): Promise<VisitRecord[]> {
 }
 
 export async function createTask(task: Task): Promise<void> {
-  const db = await getDb();
-  await db.execute(
-    `INSERT INTO tasks (id, customer_id, title, due_at, status, priority, source, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [task.id, task.customer_id, task.title, task.due_at, task.status, task.priority, task.source,
-     task.created_at, task.updated_at],
-  );
+  await createCrmRepository(await getDb()).createTask(task);
 }
 
 export async function listTasks(): Promise<Task[]> {
@@ -759,4 +761,3 @@ export async function applyAIDraftToCustomer(id: string): Promise<{
 }
 
 export { getDb };
-export type { DatabaseLike };
