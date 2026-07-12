@@ -43,6 +43,7 @@ import { LIVE_REASONING_AUTHORIZATION_PHRASE } from '../../lib/liveReasoning/typ
 import { createTrustedHostLiveReasoningProvider } from '../../lib/liveReasoning/provider';
 import { authorizeTrustedHostCapability } from '../../lib/modelCapabilities/trustedHost';
 import { readCustomerScopedSalesAgentEntry } from '../../lib/salesWorkspace/customerScopedSalesAgentEntry';
+import { SalesAgentInteractionWorkspace } from './SalesAgentInteractionWorkspace';
 
 const profile = getActiveVerticalProfile();
 const stage2Profile = resolveVerticalAIProfile();
@@ -351,6 +352,10 @@ export default function AINativeCRMWorkspace() {
 
         {stage2Context && (
           <Stage2ArchitectureStatus context={stage2Context} profile={stage2Profile} />
+        )}
+
+        {snapshot && summary && stage2Context && (
+          <SalesAgentInteractionWorkspace customerId={selectedCustomerId} snapshot={snapshot} context={stage2Context} profileId={stage2Profile.identity.id} />
         )}
 
         {snapshot && summary && (
