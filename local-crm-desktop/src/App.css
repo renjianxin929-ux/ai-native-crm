@@ -398,6 +398,66 @@ tr.clickable {
   border-bottom: 2px solid var(--primary-light);
 }
 
+/* Stage 9 Sales Workspace: contextual, evidence-first, and read-only. */
+.sales-workspace-card {
+  display: grid;
+  gap: 20px;
+  margin-bottom: 16px;
+  background: linear-gradient(135deg, #ffffff 0%, #f8fbff 100%);
+}
+
+.sales-workspace-header,
+.sales-workspace-actions,
+.sales-workspace-columns,
+.sales-workspace-grid,
+.sales-capture-grid {
+  display: flex;
+  gap: 16px;
+}
+
+.sales-workspace-header {
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.sales-workspace-actions { align-items: center; flex-wrap: wrap; }
+.sales-workspace-entry-note { color: var(--text-secondary); font-size: 12px; }
+.sales-workspace-eyebrow { margin: 0 0 6px; color: var(--primary); font-size: 11px; font-weight: 700; letter-spacing: .08em; }
+.sales-workspace-summary { max-width: 68ch; margin: 0; color: var(--text); font-size: 14px; line-height: 1.6; }
+.sales-workspace-truth { margin: 0; padding: 10px 12px; border-left: 3px solid var(--primary); background: var(--primary-light); color: var(--text-secondary); font-size: 13px; line-height: 1.55; }
+
+.sales-workspace-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.sales-workspace-insight { display: grid; gap: 6px; min-width: 0; padding: 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+.sales-workspace-insight > span { color: var(--text-secondary); font-size: 12px; }
+.sales-workspace-insight > strong { overflow-wrap: anywhere; color: var(--text-heading); font-size: 14px; line-height: 1.45; }
+.sales-workspace-insight small, .sales-workspace-results small, .sales-workspace-timeline small, .sales-workspace-memory small { color: var(--text-secondary); font-size: 11px; overflow-wrap: anywhere; }
+
+.sales-workspace-columns { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, .8fr); }
+.sales-workspace-columns > section, .sales-workspace-results { min-width: 0; padding: 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+.sales-workspace-columns h4, .sales-workspace-results h4 { margin: 0 0 12px; color: var(--text-heading); font-size: 14px; }
+.sales-workspace-timeline, .sales-workspace-memory { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
+.sales-workspace-timeline li { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; }
+.sales-workspace-timeline p, .sales-workspace-memory p, .sales-workspace-results p { margin: 4px 0; color: var(--text); font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.sales-workspace-kind { align-self: start; padding: 3px 7px; border-radius: 999px; background: var(--primary-light); color: var(--primary); font-size: 11px; font-weight: 700; }
+.sales-workspace-memory li { padding-bottom: 10px; border-bottom: 1px solid var(--border); }
+.sales-workspace-memory li:last-child { padding-bottom: 0; border-bottom: none; }
+.sales-workspace-empty { margin: 0; color: var(--text-secondary); font-size: 13px; line-height: 1.5; }
+
+.sales-capture-contract { margin-bottom: 20px; padding: 12px 16px; color: var(--text-secondary); }
+.sales-capture-contract summary { cursor: pointer; color: var(--text-heading); font-size: 13px; font-weight: 600; }
+.sales-capture-contract p { max-width: 72ch; margin: 12px 0; font-size: 13px; line-height: 1.55; }
+.sales-capture-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.sales-brief-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-top: 16px; }
+.sales-brief-item { display: grid; gap: 8px; padding: 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+.sales-brief-item > div { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.sales-brief-item p { margin: 0; color: var(--text); font-size: 13px; line-height: 1.5; }
+.sales-brief-item small { color: var(--text-secondary); font-size: 11px; overflow-wrap: anywhere; }
+
+@media (max-width: 900px) {
+  .sales-workspace-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .sales-workspace-columns { grid-template-columns: 1fr; }
+}
+
 /* Empty state */
 .empty-state {
   text-align: center;
@@ -448,6 +508,8 @@ tr.clickable {
   .main-content { margin-left: 60px; }
   .form-row { grid-template-columns: 1fr; }
   .detail-grid { grid-template-columns: 1fr; }
+  .sales-workspace-header { flex-direction: column; }
+  .sales-workspace-grid, .sales-capture-grid { grid-template-columns: 1fr; }
 }
 
 /* Dropzone */

@@ -16,6 +16,10 @@ import FollowUpForm from '../components/FollowUpForm';
 import VisitForm from '../components/VisitForm';
 import { v4 as uuidv4 } from 'uuid';
 import { listFollowUps, listVisits } from '../lib/db';
+import { SqliteCrmEvidenceResolver, SqliteMemoryRepository } from '../lib/customerMemory';
+import type { CustomerMemoryEntry } from '../lib/customerMemory';
+import { buildCustomerScopedSalesAgentEntry, buildCustomerTimeline, CustomerIntelligencePanel } from '../components/salesWorkspace/CustomerIntelligencePanel';
+import { CustomerCaptureContract } from '../components/salesWorkspace/CustomerCaptureContract';
 
 interface Props {
   onRefresh: () => void;
@@ -226,6 +230,7 @@ export default function CustomerDetail({ onRefresh }: Props) {
   const [aiError, setAiError] = useState<string | null>(null);
   const [showDrafts, setShowDrafts] = useState(false);
   const [drafts, setDrafts] = useState<AIDraft[]>([]);
+  const [activeMemory, setActiveMemory] = useState<CustomerMemoryEntry[]>([]);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -235,8 +240,12 @@ export default function CustomerDetail({ onRefresh }: Props) {
       setFollowUps(await listFollowUps(id));
       setVisits(await listVisits(id));
       setDrafts(await listAIDrafts(id));
+      const memoryDb = await getDb();
+      const memory = await new SqliteMemoryRepository(memoryDb, new SqliteCrmEvidenceResolver(memoryDb)).listCustomerMemory(id);
+      setActiveMemory(memory.filter(item => item.validation_status === 'ACTIVE'));
     } else {
       setDrafts([]);
+      setActiveMemory([]);
     }
   }, [id]);
 
@@ -415,6 +424,7 @@ export default function CustomerDetail({ onRefresh }: Props) {
 
   const showContractActions = customer.stage === 'VISITED' || customer.stage === 'CONTRACTING' || customer.stage === 'PAYMENT_PENDING';
   const showPaymentActions = customer.stage === 'PAYMENT_PENDING' || customer.stage === 'PAID';
+  const customerScopedEntry = buildCustomerScopedSalesAgentEntry(customer, activeMemory, buildCustomerTimeline(followUps, visits));
 
   return (
     <div>
@@ -428,6 +438,9 @@ export default function CustomerDetail({ onRefresh }: Props) {
           <span className="badge badge-info">{STAGE_LABELS[customer.stage]}</span>
         </div>
         <div className="btn-group">
+          <button className="btn btn-primary" onClick={() => navigate('/ai-workspace', { state: { customerScopedEntry } })}>
+            <Brain size={16} /> Sales Agent
+          </button>
           {customer.wechat_add_status !== 'PASSED' && (
             <button className="btn btn-primary btn-sm" onClick={handleWechatPassed}>标记微信已通过</button>
           )}
@@ -447,7 +460,7 @@ export default function CustomerDetail({ onRefresh }: Props) {
             <MapPin size={14} /> 记录面访
           </button>
           <button className="btn btn-sm" onClick={() => navigate(`/assistant?customer_id=${customer.id}`)}>
-            <Brain size={14} /> AI 助手分析
+            <Brain size={14} /> Legacy AI tools
           </button>
           <button className="btn btn-sm" onClick={() => setShowEdit(true)}>
             <Edit3 size={14} /> 编辑
@@ -459,6 +472,14 @@ export default function CustomerDetail({ onRefresh }: Props) {
       </div>
 
       <div className="page-body">
+        <CustomerIntelligencePanel
+          customer={customer}
+          followUps={followUps}
+          visits={visits}
+          activeMemory={activeMemory}
+          drafts={drafts}
+        />
+        <CustomerCaptureContract />
         {/* 基础信息 */}
         <div className="card" style={{ marginBottom: 20 }}>
           <h3 className="section-title">基础信息</h3>
@@ -635,9 +656,9 @@ export default function CustomerDetail({ onRefresh }: Props) {
           )}
         </div>
 
-        {/* AI 分析 */}
+        {/* Legacy AI analysis */}
         <div className="card" style={{ marginBottom: 20 }}>
-          <h3 className="section-title">AI 分析</h3>
+          <h3 className="section-title">Legacy AI analysis（高级/旧工具）</h3>
           {aiResult ? (
             <div style={{ padding: '8px 0' }}>
               {aiResult.analysis ? (
@@ -655,10 +676,10 @@ export default function CustomerDetail({ onRefresh }: Props) {
             </div>
           ) : (
             <div style={{ textAlign: 'center', padding: 16 }}>
-              <p style={{ color: '#9ca3af', fontSize: 14, marginBottom: 12 }}>让 AI 分析客户状态并建议下一步动作</p>
+              <p style={{ color: '#9ca3af', fontSize: 14, marginBottom: 12 }}>旧版独立分析路径；不会替代页面顶部的 Sales Agent 客户上下文工作流。</p>
               <div className="btn-group" style={{ justifyContent: 'center' }}>
                 <button className="btn btn-primary" onClick={handleAIAnalyze}>
-                  <Brain size={14} /> AI 分析
+                  <Brain size={14} /> Run legacy analysis
                 </button>
                 <button className="btn" onClick={handleLoadDrafts}>
                   {formatAIDraftsButtonLabel(drafts.length)}

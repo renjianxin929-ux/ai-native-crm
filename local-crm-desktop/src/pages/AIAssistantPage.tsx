@@ -217,10 +217,14 @@ export default function AIAssistantPage() {
   return (
     <div>
       <div className="page-header">
-        <h2>AI 助手</h2>
+        <h2>Legacy AI Capture Tools</h2>
       </div>
 
       <div className="page-body">
+        <div className="card" style={{ marginTop: 20 }}>
+          <h3 className="section-title">Legacy capture analysis</h3>
+          <p style={{ color: 'var(--text-secondary)', fontSize: 13 }}>这是旧版截图和通话文本工具。Sales Agent 从客户详情页的主入口发起；此页面不代表自主 Agent。</p>
+        </div>
         {/* 关联客户提示 */}
         {linkedCustomer && (
           <div style={{

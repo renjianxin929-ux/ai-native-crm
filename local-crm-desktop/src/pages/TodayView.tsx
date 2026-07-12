@@ -1,10 +1,12 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, AlertCircle, Calendar, Clock, CheckSquare } from 'lucide-react';
 import { buildTodaySummary, getRecommendedAction } from '../lib/rules';
 import { GRADE_LABELS, INTENT_LABELS } from '../lib/types';
-import type { Customer, Task } from '../lib/types';
+import type { AIDraft, Customer, Task } from '../lib/types';
+import { listAIDrafts } from '../lib/db';
 import CustomerForm from '../components/CustomerForm';
+import { SalesCommandCenter } from '../components/salesWorkspace/SalesCommandCenter';
 
 interface Props {
   customers: Customer[];
@@ -15,7 +17,10 @@ interface Props {
 export default function TodayView({ customers, tasks, onRefresh }: Props) {
   const navigate = useNavigate();
   const [showNewCustomer, setShowNewCustomer] = useState(false);
+  const [existingInsights, setExistingInsights] = useState<AIDraft[]>([]);
   const summary = useMemo(() => buildTodaySummary(customers, tasks), [customers, tasks]);
+
+  useEffect(() => { void listAIDrafts().then(setExistingInsights).catch(() => setExistingInsights([])); }, []);
 
   const stats = [
     { label: '逾期跟进', count: summary.overdue_customers.length, color: '#ef4444', icon: AlertCircle },
@@ -36,6 +41,12 @@ export default function TodayView({ customers, tasks, onRefresh }: Props) {
       </div>
 
       <div className="page-body">
+        <SalesCommandCenter
+          priorityCustomers={[...summary.overdue_customers, ...summary.due_today_customers]}
+          riskCustomers={summary.long_time_no_contact}
+          pendingReviews={summary.tasks_due_today.filter(task => task.source === 'AI')}
+          existingInsights={existingInsights}
+        />
         <div className="summary-cards">
           {stats.map(s => (
             <div className="summary-card" key={s.label}>

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -41,6 +42,7 @@ import { buildBoundedWorkspaceSalesPriority, MAX_WORKSPACE_PRIORITY_CANDIDATES }
 import { LIVE_REASONING_AUTHORIZATION_PHRASE } from '../../lib/liveReasoning/types';
 import { createTrustedHostLiveReasoningProvider } from '../../lib/liveReasoning/provider';
 import { authorizeTrustedHostCapability } from '../../lib/modelCapabilities/trustedHost';
+import { readCustomerScopedSalesAgentEntry } from '../../lib/salesWorkspace/customerScopedSalesAgentEntry';
 
 const profile = getActiveVerticalProfile();
 const stage2Profile = resolveVerticalAIProfile();
@@ -58,6 +60,7 @@ function formatTimestamp(value: string): string {
 }
 
 export default function AINativeCRMWorkspace() {
+  const location = useLocation();
   const [catalog, setCatalog] = useState<LoadedReadOnlyAgentSnapshot | null>(null);
   const [snapshot, setSnapshot] = useState<LoadedReadOnlyAgentSnapshot | null>(null);
   const [safety, setSafety] = useState<ReadOnlySnapshotLoaderSafety | null>(null);
@@ -71,6 +74,7 @@ export default function AINativeCRMWorkspace() {
   const [liveAuthorizationConfirmed, setLiveAuthorizationConfirmed] = useState(false);
   const [liveAuthorizationPhrase, setLiveAuthorizationPhrase] = useState('');
   const [liveStatus, setLiveStatus] = useState<'idle' | 'authorization incomplete' | 'request pending' | 'completed and validated' | 'blocked' | 'timeout' | 'provider error' | 'invalid model output'>('idle');
+  const customerScopedEntry = readCustomerScopedSalesAgentEntry(location.state);
 
   const loadCatalog = useCallback(async () => {
     setLoading(true);
@@ -94,6 +98,10 @@ export default function AINativeCRMWorkspace() {
   useEffect(() => {
     void loadCatalog();
   }, [loadCatalog]);
+
+  useEffect(() => {
+    if (customerScopedEntry) setSelectedCustomerId(customerScopedEntry.customer_id);
+  }, [customerScopedEntry]);
 
   const loadSelectedContext = async () => {
     if (!selectedCustomerId) return;
@@ -270,6 +278,20 @@ export default function AINativeCRMWorkspace() {
       </div>
 
       <div className="page-body" style={{ display: 'grid', gap: 16 }}>
+        {customerScopedEntry && (
+          <section style={panelStyle} aria-label="Customer-scoped Sales Agent entry">
+            <h3 className="section-title">Customer-scoped Sales Agent</h3>
+            <p style={{ color: '#475569', fontSize: 13, margin: '0 0 10px' }}>客户上下文已带入工作台；尚未读取快照或运行推理。请明确选择“读取当前客户上下文”后继续。</p>
+            <div className="detail-grid">
+              <div className="detail-item"><div className="label">Customer ID</div><div className="value">{customerScopedEntry.customer_id}</div></div>
+              <div className="detail-item"><div className="label">ContextSnapshot reference</div><div className="value">{customerScopedEntry.context_snapshot_reference}</div></div>
+              <div className="detail-item"><div className="label">Active memory context</div><div className="value">{customerScopedEntry.active_memory_ids.length} references</div></div>
+              <div className="detail-item"><div className="label">Timeline reference</div><div className="value">{customerScopedEntry.timeline_evidence_ids.length} evidence references</div></div>
+              <div className="detail-item"><div className="label">Profile identity</div><div className="value">{customerScopedEntry.profile_identity}</div></div>
+            </div>
+            <p style={{ color: '#64748b', fontSize: 12, marginBottom: 0 }}>Read-only · No automatic model invocation · Human review required</p>
+          </section>
+        )}
         <section style={{ ...panelStyle, borderColor: '#86efac', background: '#f0fdf4' }} aria-label="当前权限状态">
           <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
             <LockKeyhole size={22} color="#047857" />

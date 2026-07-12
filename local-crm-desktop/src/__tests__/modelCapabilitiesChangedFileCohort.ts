@@ -106,6 +106,30 @@ const STAGE8_CUSTOMER_MEMORY_FOUNDATION_TRACKED_CHANGED_FILES = [
   'src/lib/db.ts',
 ] as const;
 
+const STAGE9_PRODUCT_EXPERIENCE_LAYER_CHANGED_FILES = [
+  'src/App.css',
+  'src/App.tsx',
+  'src/__tests__/modelCapabilitiesChangedFileCohort.ts',
+  'src/__tests__/stage9SalesWorkspace.test.ts',
+  'src/components/salesWorkspace/CustomerCaptureContract.tsx',
+  'src/components/salesWorkspace/CustomerIntelligencePanel.tsx',
+  'src/components/salesWorkspace/SalesCommandCenter.tsx',
+  'src/lib/salesWorkspace/customerScopedSalesAgentEntry.ts',
+  'src/components/aiNative/AINativeCRMWorkspace.tsx',
+  'src/pages/AIAssistantPage.tsx',
+  'src/pages/CustomerDetail.tsx',
+  'src/pages/TodayView.tsx',
+] as const;
+const STAGE9_PRODUCT_EXPERIENCE_LAYER_TRACKED_CHANGED_FILES = [
+  'src/App.css',
+  'src/App.tsx',
+  'src/__tests__/modelCapabilitiesChangedFileCohort.ts',
+  'src/components/aiNative/AINativeCRMWorkspace.tsx',
+  'src/pages/AIAssistantPage.tsx',
+  'src/pages/CustomerDetail.tsx',
+  'src/pages/TodayView.tsx',
+] as const;
+
 export function hasExactModelCapabilitiesPhase13ChangedFileSet(changedFiles: readonly string[]): boolean {
   return hasExactChangedFileSet(changedFiles, MODEL_CAPABILITIES_PHASE_1_3_CHANGED_FILES)
     || hasExactChangedFileSet(changedFiles, MODEL_CAPABILITIES_PHASE_4_TRUSTED_HOST_CHANGED_FILES)
@@ -114,7 +138,9 @@ export function hasExactModelCapabilitiesPhase13ChangedFileSet(changedFiles: rea
     || hasExactChangedFileSet(changedFiles, STAGE5_TO_7_FRONTEND_CHANGED_FILES)
     || hasExactChangedFileSet(changedFiles, STAGE5_TO_7_TRACKED_CHANGED_FILES)
     || hasExactChangedFileSet(changedFiles, STAGE8_CUSTOMER_MEMORY_FOUNDATION_SRC_CHANGED_FILES)
-    || hasExactChangedFileSet(changedFiles, STAGE8_CUSTOMER_MEMORY_FOUNDATION_TRACKED_CHANGED_FILES);
+    || hasExactChangedFileSet(changedFiles, STAGE8_CUSTOMER_MEMORY_FOUNDATION_TRACKED_CHANGED_FILES)
+    || hasExactChangedFileSet(changedFiles, STAGE9_PRODUCT_EXPERIENCE_LAYER_CHANGED_FILES)
+    || hasExactChangedFileSet(changedFiles, STAGE9_PRODUCT_EXPERIENCE_LAYER_TRACKED_CHANGED_FILES);
 }
 
 export function hasExactStage8CustomerMemoryFoundationChangedFileSet(changedFiles: readonly string[]): boolean {
