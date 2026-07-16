@@ -185,6 +185,119 @@ export const STAGE11_TO_13_TRACKED_CHANGED_FILES = [
 export const STAGE11_TO_13_FRONTEND_CHANGED_FILES = STAGE11_TO_13_CHANGED_FILES
   .filter(file => !file.startsWith('src-tauri/'));
 
+/** Exact UI rebuild + real Sales Agent functional closure cohort — not a wildcard, prefix, or subset match. */
+export const FINAL_UI_REBUILD_CHANGED_FILES = [
+  'package.json',
+  'src-tauri/tauri.e2e.conf.json',
+  'src/App.css',
+  'src/App.tsx',
+  'src/__tests__/SettingsPage.test.ts',
+  'src/__tests__/aiNativeCRMWorkspace.readiness.test.ts',
+  'src/__tests__/finalUiRebuild.focused.test.ts',
+  'src/__tests__/overnightFullStabilization.focused.test.ts',
+  'src/__tests__/modelCapabilitiesChangedFileCohort.ts',
+  'src/__tests__/approvedCrmWriteBoundary.integration.test.ts',
+  'src/__tests__/confirmationReplayMismatch.integration.test.ts',
+  'src/__tests__/salesAgentActionMatrix.focused.test.ts',
+  'src/__tests__/salesAgentConfirmationCard.test.ts',
+  'src/__tests__/salesAgentFunctionalFixture.ts',
+  'src/__tests__/salesAgentNoProductionHooks.focused.test.ts',
+  'src/__tests__/salesAgentPortfolioSearch.focused.test.ts',
+  'src/__tests__/salesAgentProductionHarness.ts',
+  'src/__tests__/salesAgentProposalOwnership.focused.test.ts',
+  'src/__tests__/salesAgentRealFunctional.focused.test.ts',
+  'src/__tests__/salesAgentRealWriteIntent.focused.test.ts',
+  'src/__tests__/salesAgentSessionWriteRouting.integration.test.ts',
+  'src/__tests__/salesAgentTauriDbAcceptance.evidence.test.ts',
+  'src/__tests__/salesAgentWriteRefresh.integration.test.ts',
+  'src/__tests__/stage10SalesAgentOperatingLayer.test.ts',
+  'src/__tests__/stage11To13E2E.test.ts',
+  'src/__tests__/tauriE2EIsolation.focused.test.ts',
+  'src/__tests__/unifiedAgentStage.focused.test.ts',
+  'src/components/aiNative/AINativeCRMWorkspace.tsx',
+  'src/components/aiNative/SalesAgentGlassOrb.tsx',
+  'src/components/aiNative/SalesAgentInteractionWorkspace.tsx',
+  'src/index.css',
+  'src/lib/customerCapture/review.ts',
+  'src/lib/db.ts',
+  'src/lib/salesAgent/evidenceIntegrity.ts',
+  'src/lib/salesAgent/validation.ts',
+  'src/lib/salesAgentTools/agentIntentEnvelope.ts',
+  'src/lib/salesAgentTools/agentSession.ts',
+  'src/lib/salesAgentTools/appClock.ts',
+  'src/lib/salesAgentTools/approvedCrmWriteBoundary.ts',
+  'src/lib/salesAgentTools/confirmedWrite.ts',
+  'src/lib/salesAgentTools/customerResolution.ts',
+  'src/lib/salesAgentTools/executeSearchCustomersTool.ts',
+  'src/lib/salesAgentTools/filterNormalization.ts',
+  'src/lib/salesAgentTools/interactionController.ts',
+  'src/lib/salesAgentTools/operatingLayer.ts',
+  'src/lib/salesAgentTools/registry.ts',
+  'src/lib/salesAgentTools/searchCustomers.ts',
+  'src/lib/salesAgentTools/semanticPlanning.ts',
+  'src/lib/salesAgentTools/sessionWriteStateStore.ts',
+  'src/lib/salesAgentTools/writeIntent.ts',
+  'src/lib/salesAgentUi/dailyFocus.ts',
+  'src/lib/salesAgentUi/formatUserFacingError.ts',
+  'src/lib/salesAgentUi/orbState.ts',
+  'src/lib/salesAgentUi/quickActions.ts',
+  'src/lib/salesAgentUi/resultCards.ts',
+  'src/lib/salesAgentUi/stageMode.ts',
+  'src/lib/salesAgentUi/workProcess.ts',
+  'src/pages/CustomerDetail.tsx',
+  'src/pages/CustomerList.tsx',
+  'src/pages/LeadWorkbenchPage.tsx',
+  'src/pages/SettingsPage.tsx',
+] as const;
+
+// Several legacy readiness guards intentionally observe only src/package paths.
+// Keep their exact projection explicit; this is still exact-cardinality and
+// exact-membership, never a prefix or subset exception.
+export const FINAL_UI_REBUILD_FRONTEND_CHANGED_FILES = FINAL_UI_REBUILD_CHANGED_FILES
+  .filter(file => !file.startsWith('src-tauri/'));
+export const FINAL_UI_REBUILD_SRC_CHANGED_FILES = FINAL_UI_REBUILD_CHANGED_FILES
+  .filter(file => file.startsWith('src/'));
+
+/** Exact UNIFIED_AGENT_STAGE morph cohort — supersedes final rebuild when morph files are included. */
+export const UNIFIED_AGENT_STAGE_MORPH_CHANGED_FILES = FINAL_UI_REBUILD_CHANGED_FILES;
+
+export const FINAL_UI_REBUILD_TRACKED_CHANGED_FILES = [
+  'package.json',
+  'src/App.css',
+  'src/App.tsx',
+  'src/__tests__/SettingsPage.test.ts',
+  'src/__tests__/aiNativeCRMWorkspace.readiness.test.ts',
+  'src/__tests__/modelCapabilitiesChangedFileCohort.ts',
+  'src/__tests__/approvedCrmWriteBoundary.integration.test.ts',
+  'src/__tests__/confirmationReplayMismatch.integration.test.ts',
+  'src/__tests__/salesAgentConfirmationCard.test.ts',
+  'src/__tests__/salesAgentProductionHarness.ts',
+  'src/__tests__/salesAgentSessionWriteRouting.integration.test.ts',
+  'src/__tests__/salesAgentWriteRefresh.integration.test.ts',
+  'src/__tests__/stage10SalesAgentOperatingLayer.test.ts',
+  'src/__tests__/stage11To13E2E.test.ts',
+  'src/components/aiNative/AINativeCRMWorkspace.tsx',
+  'src/components/aiNative/SalesAgentInteractionWorkspace.tsx',
+  'src/index.css',
+  'src/lib/customerCapture/review.ts',
+  'src/lib/db.ts',
+  'src/lib/salesAgent/validation.ts',
+  'src/lib/salesAgentTools/agentSession.ts',
+  'src/lib/salesAgentTools/approvedCrmWriteBoundary.ts',
+  'src/lib/salesAgentTools/confirmedWrite.ts',
+  'src/lib/salesAgentTools/operatingLayer.ts',
+  'src/lib/salesAgentTools/registry.ts',
+  'src/lib/salesAgentTools/semanticPlanning.ts',
+  'src/pages/CustomerDetail.tsx',
+  'src/pages/CustomerList.tsx',
+  'src/pages/LeadWorkbenchPage.tsx',
+  'src/pages/SettingsPage.tsx',
+] as const;
+
+export const SALES_AGENT_REAL_FUNCTIONAL_CHANGED_FILES = FINAL_UI_REBUILD_CHANGED_FILES;
+
+export const SALES_AGENT_REAL_FUNCTIONAL_TRACKED_CHANGED_FILES = FINAL_UI_REBUILD_TRACKED_CHANGED_FILES;
+
 export function hasExactModelCapabilitiesPhase13ChangedFileSet(changedFiles: readonly string[]): boolean {
   return hasExactChangedFileSet(changedFiles, MODEL_CAPABILITIES_PHASE_1_3_CHANGED_FILES)
     || hasExactChangedFileSet(changedFiles, MODEL_CAPABILITIES_PHASE_4_TRUSTED_HOST_CHANGED_FILES)
@@ -200,7 +313,14 @@ export function hasExactModelCapabilitiesPhase13ChangedFileSet(changedFiles: rea
     || hasExactChangedFileSet(changedFiles, STAGE10_5_AGENT_INTELLIGENCE_POLISH_CHANGED_FILES)
     || hasExactChangedFileSet(changedFiles, STAGE11_TO_13_CHANGED_FILES)
     || hasExactChangedFileSet(changedFiles, STAGE11_TO_13_TRACKED_CHANGED_FILES)
-    || hasExactChangedFileSet(changedFiles, STAGE11_TO_13_FRONTEND_CHANGED_FILES);
+    || hasExactChangedFileSet(changedFiles, STAGE11_TO_13_FRONTEND_CHANGED_FILES)
+    || hasExactChangedFileSet(changedFiles, FINAL_UI_REBUILD_CHANGED_FILES)
+    || hasExactChangedFileSet(changedFiles, FINAL_UI_REBUILD_FRONTEND_CHANGED_FILES)
+    || hasExactChangedFileSet(changedFiles, FINAL_UI_REBUILD_SRC_CHANGED_FILES)
+    || hasExactChangedFileSet(changedFiles, FINAL_UI_REBUILD_TRACKED_CHANGED_FILES)
+    || hasExactChangedFileSet(changedFiles, UNIFIED_AGENT_STAGE_MORPH_CHANGED_FILES)
+    || hasExactChangedFileSet(changedFiles, SALES_AGENT_REAL_FUNCTIONAL_CHANGED_FILES)
+    || hasExactChangedFileSet(changedFiles, SALES_AGENT_REAL_FUNCTIONAL_TRACKED_CHANGED_FILES);
 }
 
 export function hasExactStage8CustomerMemoryFoundationChangedFileSet(changedFiles: readonly string[]): boolean {

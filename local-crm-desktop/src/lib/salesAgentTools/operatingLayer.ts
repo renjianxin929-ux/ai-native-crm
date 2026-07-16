@@ -1,13 +1,36 @@
-import { SALES_AGENT_TOOL_REGISTRY, type SalesAgentReadToolContext, type SalesAgentToolId, type SalesAgentToolResult, executeSalesAgentReadTool } from './registry';
+import { SALES_AGENT_TOOL_REGISTRY, type SalesAgentCustomerScopedToolId, type SalesAgentReadToolContext, type SalesAgentToolResult, executeSalesAgentReadTool } from './registry';
 import { runSalesAgentRuntime } from '../salesAgent/runtime'; import { createMockReasoningProvider } from '../salesAgent/provider'; import type { SalesAgentRuntimeResult } from '../salesAgent/types';
-export interface SalesAgentPlanStep { readonly tool_id: SalesAgentToolId; readonly customer_id: string; }
+export interface SalesAgentPlanStep { readonly tool_id: SalesAgentCustomerScopedToolId; readonly customer_id: string; }
 export type SalesAgentIntent = 'CUSTOMER_SUMMARY' | 'CUSTOMER_RISK_ANALYSIS' | 'CUSTOMER_TIMELINE_REVIEW' | 'NEXT_ACTION_PREPARATION' | 'FOLLOW_UP_DRAFT' | 'SAFE_FALLBACK';
 export interface SalesAgentPlan { readonly kind: 'SALES_AGENT_PLAN'; readonly intent: SalesAgentIntent; readonly steps: readonly SalesAgentPlanStep[]; readonly max_steps: 5; readonly safe_fallback: boolean; }
 export interface SalesAgentResponseProjection { readonly customer_understanding: string; readonly recent_changes: string; readonly risks_and_opportunities: string; readonly recommended_next_step: string; readonly evidence_refs: readonly string[]; }
 export interface SalesAgentInteractionResult { readonly plan: SalesAgentPlan; readonly trace: readonly SalesAgentToolResult[]; readonly runtime: SalesAgentRuntimeResult; readonly response: SalesAgentResponseProjection; readonly evidence_refs: readonly string[]; readonly requires_human_review: true; readonly executable: false; readonly writes_crm: false; }
-export function validateSalesAgentPlan(plan: SalesAgentPlan, customerId: string): void { if (!Array.isArray(plan.steps) || plan.steps.length === 0 || plan.steps.length > 5) throw new Error('Sales Agent plan must contain one to five steps.'); plan.steps.forEach(step => { const toolId = step.tool_id as SalesAgentToolId; if (!SALES_AGENT_TOOL_REGISTRY[toolId]) throw new Error('Sales Agent plan contains an unknown tool.'); if (step.customer_id !== customerId) throw new Error('Sales Agent plan arguments must preserve current customer scope.'); }); }
-export function classifySalesAgentIntent(message: string): SalesAgentIntent { const text = message.trim().toLowerCase(); if (!text) return 'SAFE_FALLBACK'; if (/风险|risk|opportunity|机会/.test(text)) return 'CUSTOMER_RISK_ANALYSIS'; if (/时间线|timeline|最近|历史|沟通/.test(text)) return 'CUSTOMER_TIMELINE_REVIEW'; if (/下一步|next action|准备|prepare/.test(text)) return 'NEXT_ACTION_PREPARATION'; if (/跟进|follow.?up|draft|文案/.test(text)) return 'FOLLOW_UP_DRAFT'; if (/总结|summary|客户|customer/.test(text)) return 'CUSTOMER_SUMMARY'; return 'SAFE_FALLBACK'; }
-export function proposeSalesAgentPlan(message: string, customerId: string): SalesAgentPlan { if (!message.trim()) throw new Error('A user message is required before Sales Agent reasoning.'); const intent = classifySalesAgentIntent(message); const tools: Record<SalesAgentIntent, readonly SalesAgentToolId[]> = { CUSTOMER_SUMMARY: ['get_customer', 'get_customer_context', 'get_active_memory'], CUSTOMER_RISK_ANALYSIS: ['get_customer_context', 'get_customer_timeline', 'get_active_memory', 'get_today_priority'], CUSTOMER_TIMELINE_REVIEW: ['get_customer', 'get_customer_timeline', 'list_customer_followups', 'list_customer_visits'], NEXT_ACTION_PREPARATION: ['get_customer_context', 'get_customer_timeline', 'list_customer_tasks', 'get_active_memory'], FOLLOW_UP_DRAFT: ['get_customer', 'get_customer_timeline', 'get_active_memory', 'get_existing_ai_results'], SAFE_FALLBACK: ['get_customer_context', 'get_active_memory'] }; return { kind: 'SALES_AGENT_PLAN', intent, max_steps: 5, safe_fallback: intent === 'SAFE_FALLBACK', steps: tools[intent].map(tool_id => ({ tool_id, customer_id: customerId })) }; }
+export function validateSalesAgentPlan(plan: SalesAgentPlan, customerId: string): void {
+  if (!Array.isArray(plan.steps) || plan.steps.length === 0 || plan.steps.length > 5) {
+    throw new Error('Sales Agent plan must contain one to five steps.');
+  }
+  plan.steps.forEach(step => {
+    const toolId: SalesAgentCustomerScopedToolId = step.tool_id;
+    if (!SALES_AGENT_TOOL_REGISTRY[toolId]) throw new Error('Sales Agent plan contains an unknown tool.');
+    if (step.customer_id !== customerId) throw new Error('Sales Agent plan arguments must preserve current customer scope.');
+  });
+}
+export function classifySalesAgentIntent(message: string): SalesAgentIntent {
+  const text = message.trim().toLowerCase();
+  if (!text) return 'SAFE_FALLBACK';
+  // Closed write intents are owned by writeIntent/session — never collapse them to summary/draft.
+  if (/(写\s*(一\s*)?条\s*跟进|新增\s*.*跟进|添加\s*.*跟进|创建\s*.*任务|提醒我|更新\s*下次\s*跟进|修改\s*下次\s*跟进|create\s+task|log\s+a\s+follow)/i.test(text)) {
+    return 'SAFE_FALLBACK';
+  }
+  if (/风险|risk|opportunity|机会/.test(text)) return 'CUSTOMER_RISK_ANALYSIS';
+  if (/时间线|timeline|最近|历史|沟通/.test(text)) return 'CUSTOMER_TIMELINE_REVIEW';
+  if (/下一步|next action|准备|prepare/.test(text)) return 'NEXT_ACTION_PREPARATION';
+  // Draft wording only — not CRM write create/update.
+  if (/跟进文案|草拟跟进|follow.?up.?draft|draft|写跟进文案/.test(text)) return 'FOLLOW_UP_DRAFT';
+  if (/总结|summary|客户|customer/.test(text)) return 'CUSTOMER_SUMMARY';
+  return 'SAFE_FALLBACK';
+}
+export function proposeSalesAgentPlan(message: string, customerId: string): SalesAgentPlan { if (!message.trim()) throw new Error('A user message is required before Sales Agent reasoning.'); const intent = classifySalesAgentIntent(message); const tools: Record<SalesAgentIntent, readonly SalesAgentCustomerScopedToolId[]> = { CUSTOMER_SUMMARY: ['get_customer', 'get_customer_context', 'get_active_memory'], CUSTOMER_RISK_ANALYSIS: ['get_customer_context', 'get_customer_timeline', 'get_active_memory', 'get_today_priority'], CUSTOMER_TIMELINE_REVIEW: ['get_customer', 'get_customer_timeline', 'list_customer_followups', 'list_customer_visits'], NEXT_ACTION_PREPARATION: ['get_customer_context', 'get_customer_timeline', 'list_customer_tasks', 'get_active_memory'], FOLLOW_UP_DRAFT: ['get_customer', 'get_customer_timeline', 'get_active_memory', 'get_existing_ai_results'], SAFE_FALLBACK: ['get_customer_context', 'get_active_memory'] }; return { kind: 'SALES_AGENT_PLAN', intent, max_steps: 5, safe_fallback: intent === 'SAFE_FALLBACK', steps: tools[intent].map(tool_id => ({ tool_id, customer_id: customerId })) }; }
 export async function runSalesAgentInteraction(message: string, input: SalesAgentReadToolContext & { profile_id: string }): Promise<SalesAgentInteractionResult> { const plan = proposeSalesAgentPlan(message, input.customer_id); validateSalesAgentPlan(plan, input.customer_id); const trace = plan.steps.map(step => executeSalesAgentReadTool(step.tool_id, input)); const runtime = await runSalesAgentRuntime({ request_id: `${input.context.snapshotId}:sales-agent-interaction`, objective: message, context: input.context, memory: input.memory, profile_id: input.profile_id, provider: createMockReasoningProvider() }); const evidence_refs = [...new Set(trace.flatMap(item => item.evidence_refs))]; return { plan, trace, runtime, response: projectSalesAgentResponse(runtime, trace, evidence_refs), evidence_refs, requires_human_review: true, executable: false, writes_crm: false }; }
 export function projectSalesAgentResponse(runtime: SalesAgentRuntimeResult, trace: readonly SalesAgentToolResult[], evidence_refs: readonly string[]): SalesAgentResponseProjection { return { customer_understanding: runtime.result.customer_summary.value, recent_changes: `${trace.find(item => item.tool_id === 'get_customer_timeline')?.records.length ?? 0} bounded timeline record(s) reviewed.`, risks_and_opportunities: [...runtime.result.opportunities, ...runtime.result.risks].map(item => item.summary).join(' ') || 'No additional evidence-backed risk or opportunity was returned.', recommended_next_step: runtime.result.next_actions[0]?.summary ?? 'Human review is required before any next step.', evidence_refs }; }
 export type DraftKind = 'follow_up_wording' | 'customer_summary' | 'call_preparation' | 'visit_preparation';

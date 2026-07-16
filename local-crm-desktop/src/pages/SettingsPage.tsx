@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Database, FolderOpen, Brain, ArrowRight, Upload, AlertTriangle } from 'lucide-react';
+import { Database, FolderOpen, Brain, ArrowRight, Upload, AlertTriangle, Shield, Monitor, Info } from 'lucide-react';
 import { getDbPath } from '../lib/db';
 import { APP_VERSION } from '../lib/version';
 import {
@@ -253,122 +253,162 @@ export default function SettingsPage() {
     }
   };
   return (
-    <div>
+    <div className="product-page">
       <div className="page-header">
-        <h2>设置</h2>
-      </div>
-      <div className="page-body">
-        <div className="card" style={{ marginBottom: 20 }}>
-          <h3 className="section-title">数据库</h3>
-          <div style={{ marginBottom: 12, color: 'var(--text-secondary)' }}>
-            <p style={{ marginBottom: 8 }}>数据存储在本地 SQLite 数据库中。</p>
-            {dbPath ? (
-              <p style={{
-                fontSize: 13, fontFamily: 'monospace', background: 'var(--bg-secondary)',
-                padding: '6px 10px', borderRadius: 4, wordBreak: 'break-all',
-              }}>
-                <FolderOpen size={14} style={{ marginRight: 4, verticalAlign: 'middle' }} />
-                {dbPath}
-              </p>
-            ) : (
-              <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>正在加载数据库路径...</p>
-            )}
-          </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button className="btn" onClick={handleBackup}>
-              <Database size={16} /> 导出备份
-            </button>
-            <button className="btn" onClick={() => fileInputRef.current?.click()}>
-              <Upload size={16} /> 恢复备份
-            </button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".json"
-              style={{ display: 'none' }}
-              onChange={handleRestoreSelect}
-            />
-          </div>
-          {msg && (
-            <p style={{
-              marginTop: 12, padding: '8px 12px', borderRadius: 4, fontSize: 14,
-              background: isErrorMessage ? '#fef2f2' : '#f0fdf4',
-              color: isErrorMessage ? '#dc2626' : '#16a34a',
-            }}>
-              {msg}
-            </p>
-          )}
-          {restoreStatus === 'backing_up' && (
-            <p style={{ marginTop: 12, color: 'var(--text-secondary)', fontSize: 14 }}>
-              正在生成恢复前备份…
-            </p>
-          )}
-          {restoreStatus === 'restoring' && (
-            <p style={{ marginTop: 12, color: 'var(--text-secondary)', fontSize: 14 }}>
-              正在恢复数据…
-            </p>
-          )}
+        <div>
+          <p className="page-kicker">SETTINGS</p>
+          <h2>设置</h2>
+          <p className="page-subtitle">管理本地数据、备份恢复、Sales Agent 宿主状态与应用偏好。</p>
         </div>
+      </div>
 
-        {restoreWarning && restoreFile && (
-          <div style={{
-            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000,
-          }}>
-            <div className="card" style={{ maxWidth: 480, width: '90%' }}>
-              <h3 style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#f59e0b', marginBottom: 16 }}>
-                <AlertTriangle size={20} /> 确认恢复
-              </h3>
-              <p style={{ marginBottom: 12, color: 'var(--text-secondary)', fontSize: 14 }}>
-                从备份文件 <strong>{restoreFile.name}</strong> 恢复。
+      <div className="page-body">
+        <div className="settings-grid">
+          <section className="glass-card" aria-label="数据与备份">
+            <h3 className="section-title"><Database size={16} style={{ marginRight: 6, verticalAlign: 'middle' }} />数据与备份</h3>
+            <p style={{ color: 'var(--text-secondary)', fontSize: 14, marginBottom: 8 }}>数据库</p>
+            <p style={{ color: 'var(--text-secondary)', fontSize: 14, marginBottom: 12 }}>
+              数据存储在本地 SQLite 数据库中。导出完整业务备份，或在确认后从 JSON 恢复。
+            </p>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button className="btn btn-primary" onClick={handleBackup}>
+                <Database size={16} /> 导出备份
+              </button>
+              <button className="btn" onClick={() => fileInputRef.current?.click()}>
+                <Upload size={16} /> 恢复备份
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".json"
+                style={{ display: 'none' }}
+                onChange={handleRestoreSelect}
+              />
+            </div>
+            {msg && (
+              <p style={{
+                marginTop: 12, padding: '8px 12px', borderRadius: 8, fontSize: 14,
+                background: isErrorMessage ? '#fef2f2' : '#f0fdf4',
+                color: isErrorMessage ? '#dc2626' : '#16a34a',
+              }}>
+                {msg}
               </p>
-              {restorePreview && (
-                <pre style={{
-                  marginBottom: 12,
-                  whiteSpace: 'pre-wrap',
-                  fontSize: 13,
-                  color: restorePreview.validation.valid ? 'var(--text-secondary)' : '#dc2626',
-                  background: 'var(--bg-secondary)',
-                  padding: '8px 10px',
-                  borderRadius: 4,
-                }}>
-                  {buildRestoreConfirmationMessage(restorePreview)}
-                </pre>
-              )}
-              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                <button className="btn" onClick={() => { setRestoreWarning(false); setRestoreFile(null); setRestorePreview(null); }}>
-                  取消
-                </button>
-                <button
-                  className="btn btn-primary"
-                  onClick={handleRestoreConfirm}
-                  disabled={restoreStatus !== 'idle'}
-                >
-                  确认恢复
-                </button>
+            )}
+            {restoreStatus === 'backing_up' && (
+              <p style={{ marginTop: 12, color: 'var(--text-secondary)', fontSize: 14 }}>
+                正在生成恢复前备份…
+              </p>
+            )}
+            {restoreStatus === 'restoring' && (
+              <p style={{ marginTop: 12, color: 'var(--text-secondary)', fontSize: 14 }}>
+                正在恢复数据…
+              </p>
+            )}
+            <details style={{ marginTop: 12 }}>
+              <summary style={{ cursor: 'pointer', color: 'var(--text-muted)', fontSize: 13 }}>数据库路径</summary>
+              <div style={{ marginTop: 8, color: 'var(--text-secondary)' }}>
+                {dbPath ? (
+                  <p style={{
+                    fontSize: 12, fontFamily: 'monospace', background: 'var(--bg-secondary)',
+                    padding: '6px 10px', borderRadius: 8, wordBreak: 'break-all', margin: 0,
+                  }}>
+                    <FolderOpen size={14} style={{ marginRight: 4, verticalAlign: 'middle' }} />
+                    {dbPath}
+                  </p>
+                ) : (
+                  <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: 0 }}>正在加载数据库路径...</p>
+                )}
               </div>
+            </details>
+          </section>
+
+          <section className="glass-card" aria-label="AI 与 Trusted Host 状态">
+            <h3 className="section-title"><Brain size={16} style={{ marginRight: 6, verticalAlign: 'middle' }} />AI / Trusted Host 状态</h3>
+            <p style={{ color: 'var(--text-secondary)', fontSize: 14, marginBottom: 12 }}>
+              canonical Sales Agent 由宿主侧 Trusted Host 管理；未配置时请求会被安全阻断。前端页面不负责为 Agent 配置密钥。
+            </p>
+            <span className="status-pill info">Host-side Trusted Host</span>
+            <p style={{ color: 'var(--text-secondary)', fontSize: 13, margin: '12px 0' }}>
+              AI 设置（高级）：Legacy 分析与多模态调试入口；不改变 canonical Agent 的宿主边界。
+            </p>
+            <button className="btn btn-sm" onClick={() => navigate('/settings/ai')}>
+              <ArrowRight size={14} /> AI 设置
+            </button>
+          </section>
+
+          <section className="glass-card" aria-label="安全与确认策略">
+            <h3 className="section-title"><Shield size={16} style={{ marginRight: 6, verticalAlign: 'middle' }} />安全与确认策略</h3>
+            <p style={{ color: 'var(--text-secondary)', fontSize: 14, marginBottom: 12 }}>
+              恢复备份前会要求明确确认，并自动下载恢复前备份；失败时自动回滚，避免半恢复状态。
+            </p>
+            <ul style={{ margin: 0, paddingLeft: 18, color: 'var(--text-secondary)', fontSize: 13, lineHeight: 1.6 }}>
+              <li>恢复会覆盖当前本地 CRM 数据</li>
+              <li>AI 建议与草稿需人工复核后再应用</li>
+              <li>Sales Agent 客户范围入口保留上下文，不自动改写 CRM</li>
+            </ul>
+          </section>
+
+          <section className="glass-card" aria-label="外观与辅助功能">
+            <h3 className="section-title"><Monitor size={16} style={{ marginRight: 6, verticalAlign: 'middle' }} />外观与辅助功能</h3>
+            <p style={{ color: 'var(--text-secondary)', fontSize: 14, marginBottom: 12 }}>
+              界面采用 AI-native 浅色渐变设计系统，与 Sales Agent 工作台保持一致。
+            </p>
+            <span className="status-pill ok">减少动态效果遵循系统偏好</span>
+            <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: '12px 0 0' }}>
+              当操作系统开启「减少动态效果」时，Sales Agent 动效与过渡会自动降级。
+            </p>
+          </section>
+
+          <section className="glass-card" aria-label="关于" style={{ gridColumn: '1 / -1' }}>
+            <h3 className="section-title"><Info size={16} style={{ marginRight: 6, verticalAlign: 'middle' }} />关于</h3>
+            <p style={{ color: 'var(--text-secondary)', margin: 0 }}>
+              销售CRM个人版 v{APP_VERSION}<br />
+              本地桌面 CRM，数据保存在当前电脑。主入口为 Sales Agent。
+            </p>
+          </section>
+        </div>
+      </div>
+
+      {restoreWarning && restoreFile && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000,
+        }}>
+          <div className="glass-card" style={{ maxWidth: 480, width: '90%' }}>
+            <h3 style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#f59e0b', marginBottom: 16 }}>
+              <AlertTriangle size={20} /> 确认恢复
+            </h3>
+            <p style={{ marginBottom: 12, color: 'var(--text-secondary)', fontSize: 14 }}>
+              从备份文件 <strong>{restoreFile.name}</strong> 恢复。
+            </p>
+            {restorePreview && (
+              <pre style={{
+                marginBottom: 12,
+                whiteSpace: 'pre-wrap',
+                fontSize: 13,
+                color: restorePreview.validation.valid ? 'var(--text-secondary)' : '#dc2626',
+                background: 'var(--bg-secondary)',
+                padding: '8px 10px',
+                borderRadius: 8,
+              }}>
+                {buildRestoreConfirmationMessage(restorePreview)}
+              </pre>
+            )}
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button className="btn" onClick={() => { setRestoreWarning(false); setRestoreFile(null); setRestorePreview(null); }}>
+                取消
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={handleRestoreConfirm}
+                disabled={restoreStatus !== 'idle'}
+              >
+                确认恢复
+              </button>
             </div>
           </div>
-        )}
-
-        <div className="card" style={{ marginBottom: 20 }}>
-          <h3 className="section-title">关于</h3>
-          <p style={{ color: 'var(--text-secondary)' }}>
-            销售CRM个人版 v{APP_VERSION}<br />
-            本地桌面 CRM，数据保存在当前电脑。
-          </p>
         </div>
-
-        <div className="card" style={{ cursor: 'pointer' }} onClick={() => navigate('/settings/ai')}>
-          <h3 className="section-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span><Brain size={16} style={{ marginRight: 4, verticalAlign: 'middle' }} /> AI 设置</span>
-            <ArrowRight size={16} style={{ color: '#9ca3af' }} />
-          </h3>
-          <p style={{ color: 'var(--text-secondary)', marginBottom: 12 }}>
-            配置 AI 服务商与 API Key，用于分析、摘要和建议。
-          </p>
-        </div>
-      </div>
+      )}
     </div>
   );
 }

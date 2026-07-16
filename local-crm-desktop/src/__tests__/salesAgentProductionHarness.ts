@@ -23,11 +23,17 @@ export function sqliteRepository(db: DatabaseLike) {
   return createCrmRepository(db, () => '2026-07-12T00:01:00.000Z');
 }
 
-export function sessionForWrite(currentNextFollowUpAt = '2026-07-13T09:00:00Z'): SalesAgentSession {
-  const snapshot: LoadedReadOnlyAgentSnapshot = { kind: 'LOADED_READ_ONLY_AGENT_SNAPSHOT', version: 'v1', snapshot_id: 'write-fixture', synthetic: false, persisted: true, load_source: 'sqlite_read_only', loaded_at: '2026-07-12T00:00:00.000Z', context: { active_profile_id: 'foreign_trade_geo', now: '2026-07-12T00:00:00.000Z' }, customers: [{ id: 'customer-1', name: 'Ada', customer_grade: 'A', intent_level: 'HIGH', evidence_ref: { type: 'customer', id: 'customer-1', label: 'Ada', synthetic: false, persisted: true } }], tasks: [], work_items: [], collected_leads: [], replay_evidence: [], import_rows: [], capture_events: [], prompt_plans: [], model_invocations: [], eval_summaries: [] };
-  const context = buildContextSnapshot({ snapshotId: 'write-fixture', capturedAt: '2026-07-12T00:00:00.000Z', timeWindow: { from: '2026-07-01T00:00:00.000Z', to: '2026-07-12T00:00:00.000Z' }, customers: [{ customerId: 'customer-1', name: 'Ada', grade: 'A', intentLevel: 'HIGH', observedAt: '2026-07-12T00:00:00.000Z', evidenceIds: ['customer-1'] }], accounts: [], interactions: [] });
+export function sessionForWrite(currentNextFollowUpAt = '2026-07-13T09:00:00Z', now = '2026-07-12T00:00:00.000Z', withHost = true): SalesAgentSession {
+  const snapshot: LoadedReadOnlyAgentSnapshot = { kind: 'LOADED_READ_ONLY_AGENT_SNAPSHOT', version: 'v1', snapshot_id: 'write-fixture', synthetic: false, persisted: true, load_source: 'sqlite_read_only', loaded_at: now, context: { active_profile_id: 'foreign_trade_geo', now }, customers: [{ id: 'customer-1', name: 'Ada', customer_grade: 'A', intent_level: 'HIGH', evidence_ref: { type: 'customer', id: 'customer-1', label: 'Ada', synthetic: false, persisted: true } }], tasks: [], work_items: [], collected_leads: [], replay_evidence: [], import_rows: [], capture_events: [], prompt_plans: [], model_invocations: [], eval_summaries: [] };
+  const context = buildContextSnapshot({ snapshotId: 'write-fixture', capturedAt: now, timeWindow: { from: '2026-07-01T00:00:00.000Z', to: now }, customers: [{ customerId: 'customer-1', name: 'Ada', grade: 'A', intentLevel: 'HIGH', observedAt: now, evidenceIds: ['customer-1'] }], accounts: [], interactions: [] });
   const host: SalesAgentHost = { reason: async ({ message }) => ({ intent: /task|待办|提醒/i.test(message) ? 'CREATE_TASK_REQUEST' : /follow|跟进|2026-07-20/i.test(message) ? 'UPDATE_CUSTOMER_REQUEST' : 'CREATE_FOLLOW_UP_REQUEST', customer_id: 'customer-1', confidence: .9, provider_kind: 'DEEPSEEK_COMPATIBLE', steps: [{ tool_id: /task|待办|提醒/i.test(message) ? 'create_task' : /follow|跟进|2026-07-20/i.test(message) ? 'update_next_follow_up_time' : 'create_follow_up_record', customer_id: 'customer-1', access: 'write', requires_confirmation: true, reason: 'Explicit customer-scoped request.' }] }), capture: async () => ({ visual_facts: [] }) };
-  return new SalesAgentSession('customer-1', host, () => '2026-07-12T00:00:00.000Z', { snapshot, context, profile_id: 'foreign_trade_geo', loadCustomerSnapshot: async () => ({ next_follow_up_at: currentNextFollowUpAt }) });
+  return new SalesAgentSession('customer-1', withHost ? host : null, () => now, {
+    snapshot,
+    context,
+    profile_id: 'foreign_trade_geo',
+    loadCustomerSnapshot: async () => ({ next_follow_up_at: currentNextFollowUpAt }),
+    planning_mode: 'deterministic',
+  });
 }
 
 export async function proposalFor(session: SalesAgentSession, message: string) {

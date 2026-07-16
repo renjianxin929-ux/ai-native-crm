@@ -1,10 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Routes, Route, NavLink } from 'react-router-dom';
-import {
-  LayoutDashboard, Users, MessageSquare, MapPin,
-  Settings, Upload, Brain, ListChecks, BriefcaseBusiness, ShieldCheck
-} from 'lucide-react';
-import TodayView from './pages/TodayView';
+import { Routes, Route, NavLink, useLocation } from 'react-router-dom';
+import { Users, Settings, BriefcaseBusiness, Sparkles } from 'lucide-react';
 import CustomerList from './pages/CustomerList';
 import CustomerDetail from './pages/CustomerDetail';
 import FollowUpRecords from './pages/FollowUpRecords';
@@ -16,23 +12,23 @@ import LeadWorkbenchPage from './pages/LeadWorkbenchPage';
 import AISettingsPage from './pages/AISettingsPage';
 import AIAssistantPage from './pages/AIAssistantPage';
 import AINativeCRMWorkspace from './components/aiNative/AINativeCRMWorkspace';
-import type { Customer, Task } from './lib/types';
-import { listCustomers, listTasks } from './lib/db';
+import type { Customer } from './lib/types';
+import { listCustomers } from './lib/db';
 import './App.css';
 
+function isSalesAgentPath(pathname: string): boolean {
+  return pathname === '/' || pathname === '/ai-workspace';
+}
+
 export default function App() {
+  const location = useLocation();
   const [customers, setCustomers] = useState<Customer[]>([]);
-  const [tasks, setTasks] = useState<Task[]>([]);
   const [dbError, setDbError] = useState<string | null>(null);
 
   const refreshAll = useCallback(async () => {
     try {
-      const [customerList, taskList] = await Promise.all([
-        listCustomers(),
-        listTasks(),
-      ]);
+      const customerList = await listCustomers();
       setCustomers(customerList);
-      setTasks(taskList);
       setDbError(null);
     } catch (e) {
       const errMsg = e instanceof Error ? e.message : String(e);
@@ -52,51 +48,58 @@ export default function App() {
   }, [refreshAll]);
 
   const navItems = [
-    { to: '/', icon: LayoutDashboard, label: '今日跟进' },
-    { to: '/customers', icon: Users, label: '客户' },
-    { to: '/follow-ups', icon: MessageSquare, label: '跟进记录' },
-    { to: '/visits', icon: MapPin, label: '面访记录' },
-    { to: '/assistant', icon: Brain, label: 'Legacy AI Tools' },
-    { to: '/ai-workspace', icon: ShieldCheck, label: 'Sales Agent' },
-    { to: '/import', icon: Upload, label: '数据导入' },
-    { to: '/lead-import-center', icon: ListChecks, label: '导入分流' },
-    { to: '/lead-workbench', icon: BriefcaseBusiness, label: '获客作业台' },
-    { to: '/settings', icon: Settings, label: '设置' },
+    { to: '/ai-workspace', icon: Sparkles, label: 'Sales Agent', match: 'agent' as const },
+    { to: '/customers', icon: Users, label: '客户', match: 'exact' as const },
+    { to: '/lead-workbench', icon: BriefcaseBusiness, label: '获客作业台', match: 'exact' as const },
+    { to: '/settings', icon: Settings, label: '设置', match: 'settings' as const },
   ];
 
   return (
     <div className="app-layout">
-      <aside className="sidebar">
+      <aside className="sidebar" aria-label="主导航">
         <div className="sidebar-header">
-          <h1>销售CRM</h1>
-          <span>个人版</span>
+          <h1>销售 CRM</h1>
+          <span>AI 原生销售工作台</span>
         </div>
-        <nav className="sidebar-nav">
-          {navItems.map(item => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.to === '/'}
-              className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
-            >
-              <item.icon size={18} />
-              <span>{item.label}</span>
-            </NavLink>
-          ))}
+        <nav className="sidebar-nav" aria-label="一级导航">
+          {navItems.map(item => {
+            const active =
+              item.match === 'agent'
+                ? isSalesAgentPath(location.pathname)
+                : item.match === 'settings'
+                  ? location.pathname.startsWith('/settings')
+                  : location.pathname === item.to || location.pathname.startsWith(`${item.to}/`);
+            return (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                end={item.match === 'exact'}
+                className={`nav-item${active ? ' active' : ''}`}
+                aria-current={active ? 'page' : undefined}
+              >
+                <item.icon size={18} aria-hidden="true" />
+                <span>{item.label}</span>
+              </NavLink>
+            );
+          })}
         </nav>
+        <div className="sidebar-account" aria-label="本地工作区">
+          <span className="sidebar-avatar" aria-hidden="true">本</span>
+          <span>
+            <strong>本地工作区</strong>
+            <small>安全 · 仅本机</small>
+          </span>
+        </div>
       </aside>
 
       <main className="main-content">
         {dbError && (
-          <div style={{
-            background: '#fef2f2', color: '#dc2626', padding: '12px 24px',
-            borderBottom: '1px solid #fecaca', fontSize: 14, fontWeight: 500,
-          }}>
+          <div className="app-db-error" role="alert">
             数据库初始化失败，请勿录入真实数据。错误: {dbError}
           </div>
         )}
         <Routes>
-          <Route path="/" element={<TodayView customers={customers} tasks={tasks} onRefresh={refreshAll} />} />
+          <Route path="/" element={<AINativeCRMWorkspace />} />
           <Route path="/customers" element={<CustomerList customers={customers} onRefresh={refreshAll} />} />
           <Route path="/customers/:id" element={<CustomerDetail onRefresh={refreshAll} />} />
           <Route path="/follow-ups" element={<FollowUpRecords />} />

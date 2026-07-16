@@ -38,6 +38,7 @@ export function validateSemanticPlan(value: unknown, expectedCustomerId: string)
   if (!Array.isArray(value.steps) || value.steps.length === 0 || value.steps.length > 5) throw new Error('Sales Agent plan must contain one to five steps.');
   const steps = value.steps.map((step): SemanticPlanStep => {
     if (!isRecord(step) || typeof step.tool_id !== 'string' || (!(step.tool_id in SALES_AGENT_TOOL_REGISTRY) && !AGENT_WRITE_TOOL_IDS.includes(step.tool_id as AgentWriteToolId))) throw new Error('Sales Agent plan contains an unknown tool.');
+    if (step.tool_id === 'search_customers') throw new Error('search_customers is portfolio-only and cannot appear in a customer-scoped plan.');
     if (step.customer_id !== expectedCustomerId || typeof step.reason !== 'string' || !step.reason.trim()) throw new Error('Sales Agent plan has unsafe arguments.');
     const readTool = SALES_AGENT_TOOL_REGISTRY[step.tool_id as SalesAgentToolId];
     const access: 'read' | 'write' = readTool ? readTool.access : 'write'; const requiresConfirmation: boolean = readTool ? readTool.requires_confirmation : true;

@@ -281,6 +281,10 @@ describe('SettingsPage restore integration helpers', () => {
     expect(settingsSrc).toContain('销售CRM个人版 v{APP_VERSION}');
     expect(settingsSrc).toContain('本地桌面 CRM，数据保存在当前电脑。');
     expect(settingsSrc).toContain('AI 设置');
-    expect(settingsSrc).toContain('配置 AI 服务商与 API Key，用于分析、摘要和建议。');
+    expect(settingsSrc).toContain('Trusted Host');
+    expect(settingsSrc).toContain('前端页面不负责为 Agent 配置密钥');
+    expect(settingsSrc).toContain('数据与备份');
+    expect(settingsSrc).toContain('安全与确认策略');
+    expect(settingsSrc).toContain('外观与辅助功能');
   });
 });

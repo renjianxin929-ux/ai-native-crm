@@ -15,7 +15,8 @@ describe('confirmation replay and mismatch production integration', () => {
       await expect(updateSession.confirmWrite(update, { ...confirmationFor(update), entity_id: 'wrong-customer' }, approvedCrmWriteBoundary)).rejects.toThrow('match');
       await session.confirmWrite(proposal, confirmation, approvedCrmWriteBoundary);
       await expect(session.confirmWrite(proposal, confirmation, approvedCrmWriteBoundary)).rejects.toThrow('replay');
-      await expect(sessionForWrite().confirmWrite(proposal, confirmation, approvedCrmWriteBoundary)).rejects.toThrow('Unknown');
+      // Process-stable store: another Session instance still sees the proposal as already consumed.
+      await expect(sessionForWrite().confirmWrite(proposal, confirmation, approvedCrmWriteBoundary)).rejects.toThrow(/Unknown|replay/i);
       expect((fixture.sqlite.prepare('SELECT count(*) count FROM follow_up_records').get() as { count: number }).count).toBe(1);
     })(); fixture.close();
   });

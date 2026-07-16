@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { AlertCircle, Clipboard, PhoneOff, RefreshCw, Search, SkipForward } from 'lucide-react';
 
 import {
@@ -1077,11 +1078,21 @@ export default function LeadWorkbenchPage() {
     <>
       <div className="page-header">
         <div>
+          <p className="page-kicker">LEAD WORKBENCH</p>
           <h2>获客作业台</h2>
+          <p className="page-subtitle">数据导入、线索获取、筛选、导入分流与客户升级确认，统一在同一作业台完成。</p>
         </div>
       </div>
 
       <div className="page-body lead-workbench">
+        <div className="workbench-entry-row" aria-label="获客作业台入口">
+          <a className="btn btn-primary" href="#lead-workbench-tasks">线索筛选</a>
+          <Link className="btn" to="/import">数据导入</Link>
+          <Link className="btn" to="/lead-import-center">导入分流</Link>
+          <a className="btn" href="#lead-workbench-detail">线索获取 / 客户升级</a>
+          <span className="status-pill info">确认后升级客户</span>
+        </div>
+
         {error && (
           <div className="lead-alert lead-alert-danger">
             <AlertCircle size={16} />
@@ -1094,7 +1105,7 @@ export default function LeadWorkbenchPage() {
           </div>
         )}
 
-        <section className="card">
+        <section className="card" id="lead-workbench-tasks">
           <div className="lead-section-header">
             <div className="section-title">任务统计</div>
             <button
@@ -1176,8 +1187,8 @@ export default function LeadWorkbenchPage() {
             )}
           </section>
 
-          <section className="card">
-            <div className="section-title">任务详情</div>
+          <section className="card" id="lead-workbench-detail">
+            <div className="section-title">任务详情 · 线索获取 / 客户升级</div>
             {!selectedItem ? (
               <div className="empty-state">{getLeadWorkbenchDetailEmptyMessage()}</div>
             ) : (

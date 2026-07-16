@@ -438,6 +438,98 @@ export async function createFollowUp(record: FollowUpRecord): Promise<void> {
   await createCrmRepository(await getDb()).createFollowUp(record);
 }
 
+export interface CustomerSearchRepositoryFilters {
+  readonly name_query?: string;
+  readonly region?: string;
+  readonly industry?: string;
+  readonly customer_grade?: string;
+  readonly stage?: string;
+  readonly intent_level?: string;
+  readonly inactive_days?: number;
+  readonly now?: string;
+  readonly limit?: number;
+  readonly offset?: number;
+}
+
+function buildCustomerSearchWhere(
+  filters: CustomerSearchRepositoryFilters,
+): { readonly where: string; readonly bindings: unknown[] } {
+  const clauses: string[] = [];
+  const bindings: unknown[] = [];
+
+  if (filters.region?.trim()) {
+    clauses.push('region LIKE ?');
+    bindings.push(`%${filters.region.trim()}%`);
+  }
+  if (filters.industry?.trim()) {
+    clauses.push('industry LIKE ?');
+    bindings.push(`%${filters.industry.trim()}%`);
+  }
+  if (filters.customer_grade?.trim()) {
+    clauses.push('customer_grade = ?');
+    bindings.push(filters.customer_grade.trim().toUpperCase());
+  }
+  if (filters.stage?.trim()) {
+    clauses.push('stage = ?');
+    bindings.push(filters.stage.trim());
+  }
+  if (filters.intent_level?.trim()) {
+    clauses.push('intent_level = ?');
+    bindings.push(filters.intent_level.trim().toUpperCase());
+  }
+  if (typeof filters.inactive_days === 'number' && filters.inactive_days >= 0) {
+    const nowIso = filters.now ?? nowClock();
+    const cutoffMs = Date.parse(nowIso) - filters.inactive_days * 24 * 60 * 60 * 1000;
+    const cutoff = Number.isNaN(cutoffMs) ? nowIso : new Date(cutoffMs).toISOString();
+    clauses.push('(last_contacted_at IS NULL OR last_contacted_at <= ?)');
+    bindings.push(cutoff);
+  }
+  if (filters.name_query?.trim()) {
+    clauses.push('name LIKE ?');
+    bindings.push(`%${filters.name_query.trim()}%`);
+  }
+
+  return {
+    where: clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '',
+    bindings,
+  };
+}
+
+/**
+ * Parameterized customer search against the real customers table.
+ * Fixed clause templates only — never accepts model-generated SQL.
+ */
+export async function searchCustomersInDb(
+  db: DatabaseLike,
+  filters: CustomerSearchRepositoryFilters,
+): Promise<Customer[]> {
+  const { where, bindings } = buildCustomerSearchWhere(filters);
+  const limit = Math.min(Math.max(filters.limit ?? 50, 1), 50);
+  const offset = Math.max(filters.offset ?? 0, 0);
+  // LIMIT/OFFSET are trusted integers from this function, never from model output.
+  return db.select<Customer>(
+    `SELECT * FROM customers ${where} ORDER BY updated_at DESC LIMIT ${limit} OFFSET ${offset}`,
+    bindings,
+  );
+}
+
+/** Exact COUNT for the same parameterized filters used by searchCustomersInDb. */
+export async function countCustomersInDb(
+  db: DatabaseLike,
+  filters: CustomerSearchRepositoryFilters,
+): Promise<number> {
+  const { where, bindings } = buildCustomerSearchWhere(filters);
+  const rows = await db.select<{ count: number }>(
+    `SELECT COUNT(*) AS count FROM customers ${where}`,
+    bindings,
+  );
+  return Number(rows[0]?.count ?? 0);
+}
+
+function nowClock(): string {
+  return new Date().toISOString();
+}
+
 /** Shared production repository policy. Test transports must use this adapter rather than reimplement its mapping. */
 export function createCrmRepository(db: DatabaseLike, now: () => string = () => new Date().toISOString()) {
   return {
@@ -469,6 +561,22 @@ export function createCrmRepository(db: DatabaseLike, now: () => string = () => 
         [task.id, task.customer_id, task.title, task.due_at, task.status, task.priority, task.source,
          task.created_at, task.updated_at],
       );
+    },
+    /**
+     * Registered search_customers production path: parameterized WHERE on real customer columns.
+     */
+    async searchCustomers(filters: CustomerSearchRepositoryFilters): Promise<Customer[]> {
+      return searchCustomersInDb(db, { ...filters, now: filters.now ?? now() });
+    },
+    async countCustomers(filters: CustomerSearchRepositoryFilters): Promise<number> {
+      return countCustomersInDb(db, { ...filters, now: filters.now ?? now() });
+    },
+    async getCustomer(id: string): Promise<Customer | null> {
+      const rows = await db.select<Customer>('SELECT * FROM customers WHERE id = ?', [id]);
+      return rows[0] || null;
+    },
+    async listCustomers(): Promise<Customer[]> {
+      return db.select<Customer>('SELECT * FROM customers ORDER BY updated_at DESC');
     },
   };
 }

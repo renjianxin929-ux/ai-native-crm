@@ -71,8 +71,8 @@ function validateEvidence(result: AIReasoningResult, context: ContextSnapshot, e
   });
   result.evidence.forEach(item => {
     if (!known.has(item.evidence_id)) errors.push(`evidence contains unknown evidence id: ${item.evidence_id}`);
-    const fact = factIndex.get(item.evidence_id);
-    if (fact && (fact.fact_type !== item.fact_type || fact.fact_id !== item.fact_id)) {
+    const facts = factIndex.get(item.evidence_id) ?? [];
+    if (facts.length > 0 && !facts.some(fact => fact.fact_type === item.fact_type && fact.fact_id === item.fact_id)) {
       errors.push(`evidence ${item.evidence_id} does not trace to ${item.fact_type}:${item.fact_id}`);
     }
     item.supports.forEach(claim => {
@@ -85,12 +85,14 @@ function validateEvidence(result: AIReasoningResult, context: ContextSnapshot, e
   });
 }
 
-function buildContextFactIndex(context: ContextSnapshot, errors: string[]): Map<string, { fact_type: 'customer' | 'account' | 'interaction'; fact_id: string }> {
-  const index = new Map<string, { fact_type: 'customer' | 'account' | 'interaction'; fact_id: string }>();
+function buildContextFactIndex(context: ContextSnapshot, errors: string[]): Map<string, readonly { fact_type: 'customer' | 'account' | 'interaction'; fact_id: string }[]> {
+  const index = new Map<string, { fact_type: 'customer' | 'account' | 'interaction'; fact_id: string }[]>();
   const add = (evidenceId: string, fact_type: 'customer' | 'account' | 'interaction', fact_id: string) => {
-    const existing = index.get(evidenceId);
-    if (existing && (existing.fact_type !== fact_type || existing.fact_id !== fact_id)) errors.push(`evidence id maps to multiple facts: ${evidenceId}`);
-    else index.set(evidenceId, { fact_type, fact_id });
+    const relations = index.get(evidenceId) ?? [];
+    if (!relations.some(item => item.fact_type === fact_type && item.fact_id === fact_id)) {
+      relations.push({ fact_type, fact_id });
+      index.set(evidenceId, relations);
+    }
   };
   context.customers.forEach(fact => fact.evidenceIds.forEach(id => add(id, 'customer', fact.customerId)));
   context.accounts.forEach(fact => fact.evidenceIds.forEach(id => add(id, 'account', fact.accountId)));

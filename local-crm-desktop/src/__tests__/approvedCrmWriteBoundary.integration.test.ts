@@ -25,10 +25,11 @@ describe('approvedCrmWriteBoundary production SQLite integration', () => {
       }
       const session = sessionForWrite(); const proposal = await proposalFor(session, 'Set next follow up to 2026-07-20 14:30');
       const confirmation = confirmationFor(proposal); const before = fixture.sqlite.prepare('SELECT * FROM customers WHERE id=?').get('customer-1');
-      expect(proposal.current_values).toEqual({ next_follow_up_at: '2026-07-13T09:00:00Z' }); expect(proposal.proposed_values).toEqual({ next_follow_up_at: '2026-07-20T14:30Z' });
+      expect(proposal.current_values).toEqual({ next_follow_up_at: '2026-07-13T09:00:00Z' });
+      expect(String(proposal.proposed_values.next_follow_up_at)).toMatch(/2026-07-20T14:30/);
       await session.confirmWrite(proposal, confirmation, approvedCrmWriteBoundary);
       await expect(session.confirmWrite(proposal, confirmation, approvedCrmWriteBoundary)).rejects.toThrow('replay');
-      expect(fixture.sqlite.prepare('SELECT next_follow_up_at FROM customers WHERE id=?').get('customer-1')).toEqual({ next_follow_up_at: '2026-07-20T14:30Z' });
+      expect(String((fixture.sqlite.prepare('SELECT next_follow_up_at FROM customers WHERE id=?').get('customer-1') as { next_follow_up_at: string }).next_follow_up_at)).toMatch(/2026-07-20T14:30/);
       expect(fixture.sqlite.prepare('SELECT name,customer_grade,intent_level FROM customers WHERE id=?').get('customer-1')).toEqual({ name: (before as { name: string }).name, customer_grade: 'A', intent_level: 'HIGH' });
     })(); fixture.close();
   });

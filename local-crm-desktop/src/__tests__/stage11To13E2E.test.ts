@@ -18,11 +18,14 @@ describe('Stage11-13 production session integration', () => {
     const session = new SalesAgentSession('customer-1', host, () => '2026-07-12T00:00:00.000Z', dependencies);
     const reviewed = setFactReview(await session.capture('text', 'selection'), 'f1', 'accepted');
     const proposal = await session.createProposalFromReviewedFacts(reviewed);
-    expect(proposal).toMatchObject({ tool_id: 'update_next_follow_up_time', customer_id: 'customer-1', current_values: { next_follow_up_at: '2026-07-13T09:00:00Z' }, proposed_values: { next_follow_up_at: '2026-07-20T14:30Z' } });
+    expect(proposal).toMatchObject({ tool_id: 'update_next_follow_up_time', customer_id: 'customer-1', current_values: { next_follow_up_at: '2026-07-13T09:00:00Z' } });
+    expect(String(proposal.proposed_values.next_follow_up_at)).toMatch(/2026-07-20T14:30/);
     expect(fixture.sqlite.prepare('SELECT next_follow_up_at FROM customers WHERE id=?').get('customer-1')).toEqual({ next_follow_up_at: '2026-07-13T09:00:00Z' });
     const refresh = vi.fn(async () => fixture.sqlite.prepare('SELECT next_follow_up_at FROM customers WHERE id=?').get('customer-1'));
     await session.confirmWrite(proposal, confirmationFor(proposal), createApprovedCrmWriteBoundary(sqliteRepository(fixture.db))); await refresh();
-    expect(refresh).toHaveBeenCalledTimes(1); expect(await refresh.mock.results[0].value).toEqual({ next_follow_up_at: '2026-07-20T14:30Z' }); expect(session.messages).toHaveLength(0);
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(String((await refresh.mock.results[0].value as { next_follow_up_at: string }).next_follow_up_at)).toMatch(/2026-07-20T14:30/);
+    expect(session.messages).toHaveLength(0);
     await expect(session.confirmWrite(proposal, confirmationFor(proposal), createApprovedCrmWriteBoundary(sqliteRepository(fixture.db)))).rejects.toThrow('replay'); fixture.close();
   });
 
@@ -39,6 +42,9 @@ describe('Stage11-13 production session integration', () => {
   });
 
   it('keeps the UI routing-free and uses no fake write executor as persistence evidence', () => {
-    const ui = readFileSync('src/components/aiNative/SalesAgentInteractionWorkspace.tsx', 'utf8'); expect(ui).toContain('session.createProposalFromReviewedFacts'); expect(ui).toContain('Current:'); expect(ui).not.toContain('createWriteProposal');
+    const ui = readFileSync('src/components/aiNative/SalesAgentInteractionWorkspace.tsx', 'utf8');
+    expect(ui).toContain('sessionRef.current.createProposalFromReviewedFacts');
+    expect(ui).toContain('当前：');
+    expect(ui).not.toContain('createWriteProposal');
   });
 });

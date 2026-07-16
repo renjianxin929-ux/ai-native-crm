@@ -109,8 +109,9 @@ describe('AI Native CRM workspace Target Phase 1-2 readiness', () => {
     expect(AI_NATIVE_CRM_WORKSPACE_VERSION).toBe('target-phase-v1');
     expect(appSource).toContain('/ai-workspace');
     expect(appSource).toContain('AINativeCRMWorkspace');
-    expect(source).toContain('AI 原生 CRM 工作台');
+    expect(source).toContain('Sales Agent');
     expect(source).toContain('当前仅只读');
+    expect(source).toContain('AI 原生 CRM 工作台');
     expect(source).toContain('真实 SQLite 只读查询');
     expect(source).toContain('ReadOnlyAISuggestionPanel');
     expect(source).toContain('runReadOnlySnapshotAISuggestionService');

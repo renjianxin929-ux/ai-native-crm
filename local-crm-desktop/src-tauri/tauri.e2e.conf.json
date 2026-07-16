@@ -1,0 +1,21 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "local-crm-e2e",
+  "identifier": "com.localcrm.desktop.e2e",
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "销售 CRM E2E",
+        "width": 1200,
+        "height": 800,
+        "resizable": true,
+        "fullscreen": false,
+        "additionalBrowserArgs": "--remote-debugging-port=9223 --remote-allow-origins=*"
+      }
+    ]
+  },
+  "bundle": {
+    "active": false
+  }
+}

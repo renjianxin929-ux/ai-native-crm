@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Search } from 'lucide-react';
-import { GRADE_LABELS } from '../lib/types';
+import { Plus, Search, ArrowRight } from 'lucide-react';
+import { GRADE_LABELS, STAGE_LABELS, INTENT_LABELS } from '../lib/types';
 import type { Customer, CustomerGrade } from '../lib/types';
 import CustomerForm from '../components/CustomerForm';
 
@@ -10,10 +10,18 @@ interface Props {
   onRefresh: () => void;
 }
 
+function riskLabel(customer: Customer): { text: string; tone: string } {
+  if (customer.no_show_count >= 2) return { text: '高爽约风险', tone: 'warn' };
+  if (customer.intent_level === 'LOW') return { text: '意向偏低', tone: 'warn' };
+  if (customer.intent_level === 'HIGH') return { text: '机会较大', tone: 'ok' };
+  return { text: '平稳', tone: 'info' };
+}
+
 export default function CustomerList({ customers, onRefresh }: Props) {
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [gradeFilter, setGradeFilter] = useState<string>('');
+  const [stageFilter, setStageFilter] = useState<string>('');
   const [hasPhone, setHasPhone] = useState(false);
   const [hasWebsite, setHasWebsite] = useState(false);
   const [todayFollowUp, setTodayFollowUp] = useState(false);
@@ -47,6 +55,7 @@ export default function CustomerList({ customers, onRefresh }: Props) {
       }
     }
     if (gradeFilter && c.customer_grade !== gradeFilter) return false;
+    if (stageFilter && c.stage !== stageFilter) return false;
     if (hasPhone && !c.phone_number) return false;
     if (hasWebsite && !c.website) return false;
     if (todayFollowUp) {
@@ -65,12 +74,11 @@ export default function CustomerList({ customers, onRefresh }: Props) {
       if (c.last_contacted_at) {
         if (new Date(c.last_contacted_at) > thirtyDaysAgo) return false;
       }
-      // No last_contacted_at at all → also considered untouched
     }
     return true;
   });
 
-  const sorted = [...filtered].sort((a, b) => {
+  const sorted = useMemo(() => [...filtered].sort((a, b) => {
     switch (sortBy) {
       case 'grade': {
         const order: Record<string, number> = { A: 0, B: 1, C: 2, D: 3 };
@@ -88,126 +96,139 @@ export default function CustomerList({ customers, onRefresh }: Props) {
       default:
         return 0;
     }
-  });
+  }), [filtered, sortBy]);
 
   return (
-    <div>
+    <div className="product-page">
       <div className="page-header">
-        <h2>客户列表</h2>
+        <div>
+          <p className="page-kicker">CUSTOMER PIPELINE</p>
+          <h2>客户</h2>
+          <p className="page-subtitle">按阶段、优先级、风险与下一步推进客户，进入详情或直接交给 Sales Agent。</p>
+        </div>
         <div className="btn-group">
-          <button className="btn btn-primary" onClick={() => setShowNewModal(true)}>
+          <button type="button" className="btn btn-primary" onClick={() => setShowNewModal(true)}>
             <Plus size={16} /> 新增客户
           </button>
         </div>
       </div>
 
       <div className="page-body">
-        <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
-          <div style={{ position: 'relative', flex: 1 }}>
-            <Search size={16} style={{ position: 'absolute', left: 10, top: 10, color: '#9ca3af' }} />
-            <input
-              placeholder="搜索名称/手机/微信号/联系人/行业/地区/官网/备注..."
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              style={{ paddingLeft: 32, width: '100%', padding: '8px 12px 8px 32px', border: '1px solid var(--border)', borderRadius: 6 }}
-            />
-          </div>
-          <select
-            value={gradeFilter}
-            onChange={e => setGradeFilter(e.target.value)}
-            style={{ padding: '8px 12px', border: '1px solid var(--border)', borderRadius: 6 }}
-          >
-            <option value="">全部等级</option>
-            {(['A', 'B', 'C', 'D'] as CustomerGrade[]).map(g => (
-              <option key={g} value={g}>{GRADE_LABELS[g]}</option>
-            ))}
-          </select>
-        </div>
-
-        <div style={{ display: 'flex', gap: 12, marginBottom: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 12, color: '#9ca3af', marginRight: 4 }}>筛选:</span>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 3, cursor: 'pointer', fontSize: 12 }}>
-            <input type="checkbox" checked={hasPhone} onChange={e => setHasPhone(e.target.checked)} />
-            有手机
-          </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 3, cursor: 'pointer', fontSize: 12 }}>
-            <input type="checkbox" checked={hasWebsite} onChange={e => setHasWebsite(e.target.checked)} />
-            有官网
-          </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 3, cursor: 'pointer', fontSize: 12 }}>
-            <input type="checkbox" checked={todayFollowUp} onChange={e => setTodayFollowUp(e.target.checked)} />
-            今天跟进
-          </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 3, cursor: 'pointer', fontSize: 12 }}>
-            <input type="checkbox" checked={wechatPassed} onChange={e => setWechatPassed(e.target.checked)} />
-            微信已过
-          </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 3, cursor: 'pointer', fontSize: 12 }}>
-            <input type="checkbox" checked={highIntent} onChange={e => setHighIntent(e.target.checked)} />
-            高意向
-          </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 3, cursor: 'pointer', fontSize: 12 }}>
-            <input type="checkbox" checked={canScheduleVisit} onChange={e => setCanScheduleVisit(e.target.checked)} />
-            可约访
-          </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 3, cursor: 'pointer', fontSize: 12 }}>
-            <input type="checkbox" checked={sevenDayFollowUp} onChange={e => setSevenDayFollowUp(e.target.checked)} />
-            7天内跟进
-          </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 3, cursor: 'pointer', fontSize: 12 }}>
-            <input type="checkbox" checked={longUntouched} onChange={e => setLongUntouched(e.target.checked)} />
-            长期未触达
-          </label>
-          <span style={{ flex: 1 }} />
-          <select
-            value={sortBy}
-            onChange={e => setSortBy(e.target.value)}
-            style={{ padding: '4px 8px', border: '1px solid var(--border)', borderRadius: 4, fontSize: 12 }}
-          >
-            <option value="default">默认排序</option>
-            <option value="grade">等级 A→D</option>
-            <option value="follow_up">跟进时间最近</option>
-            <option value="updated">最近更新</option>
-          </select>
-        </div>
-
-        <div className="table-container">
-          <table>
-            <thead>
-              <tr>
-                <th>等级</th>
-                <th>客户名称</th>
-                <th>手机</th>
-                <th>联系人</th>
-                <th>行业</th>
-                <th>城市</th>
-                <th>官网</th>
-                <th>下次跟进</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sorted.map(c => (
-                <tr key={c.id} className="clickable" onClick={() => navigate(`/customers/${c.id}`)}>
-                  <td><span className={`badge badge-${c.customer_grade.toLowerCase()}`}>{GRADE_LABELS[c.customer_grade]}</span></td>
-                  <td><strong>{c.name}</strong></td>
-                  <td>{c.phone_number || '-'}</td>
-                  <td>{c.contact_person || '-'}</td>
-                  <td>{c.industry || '-'}</td>
-                  <td>{c.region || '-'}</td>
-                  <td>{c.website ? <a href={c.website} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} style={{ fontSize: 12 }}>{c.website.replace(/^https?:\/\//, '').replace(/\/$/, '').slice(0, 24)}{c.website.length > 24 ? '...' : ''}</a> : '-'}</td>
-                  <td>{c.next_follow_up_at ? new Date(c.next_follow_up_at).toLocaleDateString('zh-CN') : '-'}</td>
-                </tr>
+        <div className="glass-card" style={{ marginBottom: 16 }}>
+          <div style={{ display: 'flex', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
+            <div style={{ position: 'relative', flex: 1, minWidth: 220 }}>
+              <Search size={16} style={{ position: 'absolute', left: 12, top: 12, color: 'var(--text-muted)' }} />
+              <input
+                placeholder="搜索名称 / 手机 / 微信 / 联系人 / 行业 / 地区…"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                aria-label="搜索客户"
+                style={{ paddingLeft: 36, width: '100%', minHeight: 40, border: '1px solid var(--border)', borderRadius: 12, background: 'rgba(255,255,255,0.9)' }}
+              />
+            </div>
+            <select
+              value={gradeFilter}
+              onChange={e => setGradeFilter(e.target.value)}
+              aria-label="筛选等级"
+              style={{ minHeight: 40, padding: '0 12px', border: '1px solid var(--border)', borderRadius: 12 }}
+            >
+              <option value="">全部等级</option>
+              {(['A', 'B', 'C', 'D'] as CustomerGrade[]).map(g => (
+                <option key={g} value={g}>{GRADE_LABELS[g]}</option>
               ))}
-              {sorted.length === 0 && (
-                <tr>
-                  <td colSpan={8} style={{ textAlign: 'center', padding: 32, color: '#9ca3af' }}>
-                    {customers.length === 0 ? '暂无客户，点击"新增客户"开始' : '无匹配结果'}
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+            </select>
+            <select
+              value={stageFilter}
+              onChange={e => setStageFilter(e.target.value)}
+              aria-label="筛选阶段"
+              style={{ minHeight: 40, padding: '0 12px', border: '1px solid var(--border)', borderRadius: 12 }}
+            >
+              <option value="">全部阶段</option>
+              {Object.entries(STAGE_LABELS).map(([value, label]) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
+            </select>
+            <select
+              value={sortBy}
+              onChange={e => setSortBy(e.target.value)}
+              aria-label="排序"
+              style={{ minHeight: 40, padding: '0 12px', border: '1px solid var(--border)', borderRadius: 12 }}
+            >
+              <option value="default">默认排序</option>
+              <option value="grade">等级 A→D</option>
+              <option value="follow_up">跟进时间最近</option>
+              <option value="updated">最近更新</option>
+            </select>
+          </div>
+
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>筛选</span>
+            {[
+              [hasPhone, setHasPhone, '有手机'],
+              [hasWebsite, setHasWebsite, '有官网'],
+              [todayFollowUp, setTodayFollowUp, '今天跟进'],
+              [wechatPassed, setWechatPassed, '微信已过'],
+              [highIntent, setHighIntent, '高意向'],
+              [canScheduleVisit, setCanScheduleVisit, '可约访'],
+              [sevenDayFollowUp, setSevenDayFollowUp, '7天内跟进'],
+              [longUntouched, setLongUntouched, '长期未触达'],
+            ].map(([checked, setter, label]) => (
+              <label key={String(label)} style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 12, color: 'var(--text-secondary)' }}>
+                <input type="checkbox" checked={Boolean(checked)} onChange={e => (setter as (v: boolean) => void)(e.target.checked)} />
+                {label as string}
+              </label>
+            ))}
+          </div>
         </div>
+
+        {customers.length === 0 ? (
+          <div className="empty-panel">暂无客户，点击「新增客户」开始</div>
+        ) : sorted.length === 0 ? (
+          <div className="empty-panel">无匹配结果，请调整筛选条件</div>
+        ) : (
+          <div className="customer-list-grid" aria-label="客户列表">
+            <div className="customer-row-card" style={{ cursor: 'default', background: 'transparent', boxShadow: 'none', borderColor: 'transparent', paddingBottom: 0 }}>
+              <small>优先级</small>
+              <small>客户 / 阶段</small>
+              <small>风险</small>
+              <small>最近互动</small>
+              <small>下一步</small>
+              <small>下次跟进</small>
+              <small />
+            </div>
+            {sorted.map(c => {
+              const risk = riskLabel(c);
+              return (
+                <button
+                  key={c.id}
+                  type="button"
+                  className="customer-row-card"
+                  onClick={() => navigate(`/customers/${c.id}`)}
+                >
+                  <span className={`badge badge-${c.customer_grade.toLowerCase()}`}>{GRADE_LABELS[c.customer_grade]}</span>
+                  <span>
+                    <strong>{c.name}</strong>
+                    <small>{STAGE_LABELS[c.stage]} · {INTENT_LABELS[c.intent_level]} · {c.contact_person || '未填联系人'}</small>
+                  </span>
+                  <span className={`status-pill ${risk.tone}`}>{risk.text}</span>
+                  <span>
+                    <strong style={{ fontSize: 13 }}>{c.last_contacted_at ? new Date(c.last_contacted_at).toLocaleDateString('zh-CN') : '暂无互动'}</strong>
+                    <small>{c.region || c.industry || '—'}</small>
+                  </span>
+                  <span>
+                    <strong style={{ fontSize: 13 }}>{c.next_action || '待明确'}</strong>
+                    <small>{c.phone_number || c.wechat_id || '无联系方式'}</small>
+                  </span>
+                  <span>
+                    <strong style={{ fontSize: 13 }}>{c.next_follow_up_at ? new Date(c.next_follow_up_at).toLocaleDateString('zh-CN') : '—'}</strong>
+                    <small>进入详情</small>
+                  </span>
+                  <ArrowRight size={16} color="var(--primary)" />
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {showNewModal && (
