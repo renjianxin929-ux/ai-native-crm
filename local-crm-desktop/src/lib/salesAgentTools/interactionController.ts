@@ -10,14 +10,13 @@ import type { AgentSessionResult, SalesAgentSession, SalesAgentSessionOutcome, S
 import type { AgentWriteProposal } from './confirmedWrite';
 import type { WriteClarificationRequest } from './writeIntent';
 import {
-  normalizeCustomerSearchFilters,
   resumeInstructionAfterScope,
 } from './filterNormalization';
 import { executeSearchCustomersTool } from './executeSearchCustomersTool';
 import type { CustomerSearchCandidate, SearchCustomersResult } from './searchCustomers';
 import { isClosedWriteIntentUtterance } from './writeIntent';
 import { invalidateCustomerWriteState } from './sessionWriteStateStore';
-import { buildAgentIntentEnvelope, type AgentIntentEnvelope } from './agentIntentEnvelope';
+import { applySemanticIntentResolution, createAgentIntentEnvelope, mergeAgentIntentClarificationAnswer, type AgentIntentEnvelope, type SemanticIntentResolution } from './agentIntentEnvelope';
 import { SALES_AGENT_APP_CLOCK } from './appClock';
 
 export type SalesAgentInteractionPhase =
@@ -119,7 +118,9 @@ const INITIAL: SalesAgentInteractionState = {
 export interface SalesAgentInteractionControllerDeps {
   readonly db: DatabaseLike;
   readonly createSession: (customerId: string) => SalesAgentSession | null;
+  readonly customer_catalog?: readonly { readonly id: string; readonly name: string }[];
   readonly clock?: () => string;
+  readonly semantic_intent_router?: (instruction: string, envelopeId: string, signal?: AbortSignal) => Promise<SemanticIntentResolution>;
 }
 
 function corpusNameHitsFromCandidates(
@@ -136,10 +137,18 @@ export class SalesAgentInteractionController {
   private readonly deps: SalesAgentInteractionControllerDeps;
   /** Mutable so React can point at the latest SalesAgentSession after bind. */
   createSession: (customerId: string) => SalesAgentSession | null;
+  semanticIntentRouter: ((instruction: string, envelopeId: string, signal?: AbortSignal) => Promise<SemanticIntentResolution>) | null;
+
+  private parseIntentEnvelope(message: string): AgentIntentEnvelope {
+    return createAgentIntentEnvelope(message, this.deps.clock?.() ?? SALES_AGENT_APP_CLOCK.now());
+  }
+  customerCatalog: readonly { readonly id: string; readonly name: string }[];
 
   constructor(deps: SalesAgentInteractionControllerDeps) {
     this.deps = deps;
     this.createSession = deps.createSession;
+    this.semanticIntentRouter = deps.semantic_intent_router ?? null;
+    this.customerCatalog = deps.customer_catalog ?? [];
   }
 
   getState(): SalesAgentInteractionState {
@@ -320,7 +329,7 @@ export class SalesAgentInteractionController {
     }
   }
 
-  async submit(message: string): Promise<SalesAgentInteractionTurn> {
+  async submit(message: string, signal?: AbortSignal): Promise<SalesAgentInteractionTurn> {
     if (this.state.submit_locked) {
       return {
         state: this.state,
@@ -339,6 +348,9 @@ export class SalesAgentInteractionController {
       };
       return { state: this.state, event: { type: 'idle' }, outcome: { kind: 'blocked', reason: this.state.resolution_reason! } };
     }
+    const continuationEnvelope = this.state.phase === 'clarification' ? this.state.intent_envelope : null;
+    const continuationCustomerId = this.state.phase === 'clarification' ? this.state.scoped_customer_id : null;
+    const hasWriteClarification = this.state.phase === 'clarification' && Boolean(this.state.latest_clarification);
 
     this.state = {
       ...this.state,
@@ -351,38 +363,104 @@ export class SalesAgentInteractionController {
     };
 
     try {
-      const now = this.deps.clock?.() ?? SALES_AGENT_APP_CLOCK.now();
-      const intentEnvelope = buildAgentIntentEnvelope(trimmed, now);
-      const norm = normalizeCustomerSearchFilters(trimmed, now);
+      if (continuationEnvelope && continuationCustomerId && hasWriteClarification) {
+        return await this.runScoped(
+          mergeAgentIntentClarificationAnswer(continuationEnvelope, trimmed),
+          continuationCustomerId,
+        );
+      }
+      let intentEnvelope = this.parseIntentEnvelope(trimmed);
+      if (intentEnvelope.intent === 'SAFE_FALLBACK' && this.semanticIntentRouter) {
+        try {
+          const semantic = await this.semanticIntentRouter(trimmed, intentEnvelope.envelope_id, signal);
+          intentEnvelope = applySemanticIntentResolution(intentEnvelope, semantic);
+        } catch {
+          const reason = '当前未配置可用的语义识别服务。请明确是总结、风险分析、下一步建议、跟进文案、互动总结、客户比较还是图片分析。';
+          this.state = { ...this.state, phase: 'clarification', submit_locked: false, current_intent: intentEnvelope.intent, intent_envelope: intentEnvelope, resolution_reason: reason, agent_message: reason };
+          return { state: this.state, event: { type: 'idle' }, outcome: { kind: 'blocked', reason } };
+        }
+      }
       this.state = { ...this.state, current_intent: intentEnvelope.intent, intent_envelope: intentEnvelope };
 
-      if (norm.is_clear_scope) {
+      if (intentEnvelope.mode === 'capture' && intentEnvelope.clarification_required) {
+        const reason = '请先通过附件入口选择一张 JPEG、PNG 或 WebP 图片，再显式点击 Analyze image。';
+        this.state = { ...this.state, phase: 'clarification', submit_locked: false, resolution_reason: reason, agent_message: reason };
+        return { state: this.state, event: { type: 'idle' }, outcome: { kind: 'blocked', reason } };
+      }
+      if (intentEnvelope.intent === 'COMPLEX_CUSTOMER_COMPARE') {
+        let selected = corpusNameHitsFromCandidates(trimmed, this.customerCatalog);
+        // The directory is loaded asynchronously in React. Resolve against the
+        // read-only repository as the authoritative fallback so an early UI turn
+        // cannot become a false clarification merely because catalog props raced.
+        if (selected.length < 2) {
+          const repositoryCatalog = await executeSearchCustomersTool({
+            filters: {}, notes: ['compare explicit-name resolution'], list_kind: 'portfolio', offset: 0, db: this.deps.db,
+          });
+          selected = corpusNameHitsFromCandidates(trimmed, repositoryCatalog.candidates);
+        }
+        if (selected.length < 2 || selected.length > 5) {
+          const reason = selected.length > 5
+            ? '一次客户比较只允许显式选择 2–5 家客户；当前请求超过 5 家，已拒绝执行。'
+            : '客户比较需要在请求中显式写出 2–5 家完整客户名称，形成受限 customer_allowlist。';
+          this.state = { ...this.state, phase: 'clarification', submit_locked: false, resolution_reason: reason, agent_message: reason };
+          return { state: this.state, event: { type: 'idle' }, outcome: { kind: 'blocked', reason } };
+        }
+        intentEnvelope = {
+          ...intentEnvelope,
+          extracted_fields: {
+            ...intentEnvelope.extracted_fields,
+            customer_allowlist: selected.map(item => item.id),
+            customer_names: selected.map(item => item.name),
+          },
+        };
+        this.state = { ...this.state, current_intent: intentEnvelope.intent, intent_envelope: intentEnvelope };
+        const primary = selected[0]!;
+        if (this.state.scoped_customer_id !== primary.id) {
+          this.state = {
+            ...this.state,
+            phase: 'resolving_customer',
+            scoped_customer_id: primary.id,
+            scoped_customer_name: primary.name,
+            pending_original_instruction: trimmed,
+            agent_message: `已形成 ${selected.length} 家客户的受限比较集合，正在读取证据…`,
+            submit_locked: true,
+          };
+          return {
+            state: this.state,
+            event: { type: 'bind_required', customer_id: primary.id, customer_name: primary.name, continue_prompt: trimmed },
+          };
+        }
+        return await this.runScoped(intentEnvelope, primary.id);
+      }
+
+      if (intentEnvelope.clarification_required && intentEnvelope.intent === 'SAFE_FALLBACK') {
+        const reason = '无法高置信度确定请求意图，请明确是总结、风险分析、下一步建议、跟进文案、互动总结、客户比较还是图片分析。';
+        this.state = { ...this.state, phase: 'clarification', submit_locked: false, resolution_reason: reason, agent_message: reason };
+        return { state: this.state, event: { type: 'idle' }, outcome: { kind: 'blocked', reason } };
+      }
+
+      if (intentEnvelope.intent === 'CLEAR_CUSTOMER_SCOPE') {
         this.clearCustomerScope();
         this.state = { ...this.state, submit_locked: false };
         return { state: this.state, event: { type: 'clear_scope' } };
       }
 
-      // Clarification answers resume the same scoped session without re-search.
-      if (this.state.phase === 'clarification' && this.state.scoped_customer_id && this.state.latest_clarification) {
-        return await this.runScoped(trimmed, this.state.scoped_customer_id);
-      }
-
       // Explicit switch / portfolio / any customer lookup always re-enters resolution
       // Write intents with an existing scope must not re-enter customer search.
-      if (this.state.scoped_customer_id && intentEnvelope.mode === 'write_action' && isClosedWriteIntentUtterance(trimmed) && !norm.is_explicit_switch) {
-        return await this.runScoped(trimmed, this.state.scoped_customer_id);
+      if (this.state.scoped_customer_id && intentEnvelope.mode === 'write_action' && isClosedWriteIntentUtterance(trimmed)) {
+        return await this.runScoped(intentEnvelope, this.state.scoped_customer_id);
       }
 
-      if (norm.is_explicit_switch || intentEnvelope.mode === 'entity_resolution' || intentEnvelope.mode === 'portfolio_search') {
-        return await this.resolveAndMaybeContinue(trimmed, intentEnvelope.mode === 'portfolio_search');
+      if (intentEnvelope.mode === 'entity_resolution' || intentEnvelope.mode === 'portfolio_search') {
+        return await this.resolveAndMaybeContinue(intentEnvelope, intentEnvelope.mode === 'portfolio_search');
       }
 
       // Scoped customer: analysis/write requests bypass search
-      if (this.state.scoped_customer_id && (norm.is_scoped_analysis || !norm.is_customer_lookup)) {
-        return await this.runScoped(trimmed, this.state.scoped_customer_id);
+      if (this.state.scoped_customer_id && intentEnvelope.mode === 'customer_analysis') {
+        return await this.runScoped(intentEnvelope, this.state.scoped_customer_id);
       }
 
-      if (!this.state.scoped_customer_id && norm.is_scoped_analysis) {
+      if (!this.state.scoped_customer_id && intentEnvelope.mode === 'customer_analysis') {
         this.state = {
           ...this.state,
           phase: 'blocked',
@@ -398,10 +476,10 @@ export class SalesAgentInteractionController {
       }
 
       if (!this.state.scoped_customer_id) {
-        return await this.resolveAndMaybeContinue(trimmed, false);
+        return await this.resolveAndMaybeContinue(intentEnvelope, false);
       }
 
-      return await this.runScoped(trimmed, this.state.scoped_customer_id);
+      return await this.runScoped(intentEnvelope, this.state.scoped_customer_id);
     } catch (cause) {
       const reason = formatUserFacingErrorMessage(cause);
       this.state = {
@@ -503,7 +581,16 @@ export class SalesAgentInteractionController {
       agent_message: '已定位客户，正在读取最近互动与有效记忆……',
     };
     try {
-      const turn = await this.runScoped(continuePrompt, customerId, { clearPendingOnSettle: true });
+      const originalEnvelope = this.state.intent_envelope;
+      if (!originalEnvelope) throw new Error('原始 Intent Envelope 已丢失，无法安全继续。');
+      // Candidate binding may reduce “打开 X，然后总结” to the bounded
+      // post-bind instruction. Re-parse that user-visible continuation instead
+      // of submitting the original SEARCH_CUSTOMERS envelope to Session.
+      const envelope = continuePrompt.trim() && continuePrompt.trim() !== originalEnvelope.original_instruction.trim()
+        ? this.parseIntentEnvelope(continuePrompt)
+        : originalEnvelope;
+      this.state = { ...this.state, current_intent: envelope.intent, intent_envelope: envelope };
+      const turn = await this.runScoped(envelope, customerId, { clearPendingOnSettle: true });
       return turn;
     } catch (cause) {
       const reason = formatUserFacingErrorMessage(cause);
@@ -519,10 +606,15 @@ export class SalesAgentInteractionController {
     }
   }
 
-  private async resolveAndMaybeContinue(message: string, portfolio: boolean): Promise<SalesAgentInteractionTurn> {
+  private async resolveAndMaybeContinue(intentEnvelope: AgentIntentEnvelope, portfolio: boolean): Promise<SalesAgentInteractionTurn> {
+    const message = intentEnvelope.original_instruction;
     this.state = { ...this.state, phase: 'resolving_customer', current_intent: 'SEARCH_CUSTOMERS' };
-    const norm = normalizeCustomerSearchFilters(message, this.deps.clock?.());
-    const list_kind = portfolio || norm.is_portfolio_query ? 'portfolio' as const : 'resolution' as const;
+    const norm = {
+      filters: intentEnvelope.portfolio_filters,
+      unsupported: intentEnvelope.unsupported_criteria,
+      notes: [] as string[],
+    };
+    const list_kind = portfolio ? 'portfolio' as const : 'resolution' as const;
 
     // Unique exact name hit short-circuit via repository name filter
     const search = await executeSearchCustomersTool({
@@ -683,10 +775,11 @@ export class SalesAgentInteractionController {
   }
 
   private async runScoped(
-    message: string,
+    intentEnvelope: AgentIntentEnvelope,
     customerId: string,
     options?: { readonly clearPendingOnSettle?: boolean },
   ): Promise<SalesAgentInteractionTurn> {
+    const message = intentEnvelope.original_instruction;
     const session = this.createSession(customerId);
     if (!session) {
       this.state = {
@@ -704,7 +797,7 @@ export class SalesAgentInteractionController {
     }
 
     this.state = { ...this.state, phase: 'reasoning', submit_locked: true, current_intent: 'CUSTOMER_ANALYSIS' };
-    const outcome = await session.submit(message);
+    const outcome = await session.submit(intentEnvelope);
 
     if (outcome.kind === 'reasoning_result') {
       this.state = {
@@ -749,7 +842,10 @@ export class SalesAgentInteractionController {
         submit_locked: false,
         pending_original_instruction: options?.clearPendingOnSettle ? null : this.state.pending_original_instruction,
         agent_message: '已生成需人工确认的写入建议。',
-        current_intent: outcome.proposal.tool_id,
+        // Keep the closed business intent stable through the proposal phase.
+        // The tool id remains available on latest_proposal for rendering and
+        // execution, but it must not replace the routed intent in state.
+        current_intent: intentEnvelope.intent,
       };
       return { state: this.state, event: { type: 'idle' }, outcome };
     }

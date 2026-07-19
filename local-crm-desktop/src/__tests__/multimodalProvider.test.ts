@@ -91,9 +91,9 @@ describe('buildQwenMultimodalRequest', () => {
     ];
     const req = buildQwenMultimodalRequest(config, messages);
 
-    expect(req.url).toContain('dashscope.aliyuncs.com');
-    expect(req.url).toContain('/chat/completions');
-    expect(req.headers['Authorization']).toBe('Bearer sk-qwen-test');
+    expect(req.url).toBe('trusted-host://browser-provider-path-removed');
+    expect(req.url).not.toContain('/chat/completions');
+    expect(req.headers['Authorization']).toBeUndefined();
 
     const body = JSON.parse(req.body);
     expect(body.model).toBe('qwen-vl-max');

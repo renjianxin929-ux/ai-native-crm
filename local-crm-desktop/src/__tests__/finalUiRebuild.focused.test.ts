@@ -39,9 +39,9 @@ describe('Sales Agent final interaction focused guards', () => {
     expect(interaction).toContain('disabled={sessionBusy}');
     expect(workspace).not.toContain('读取只读快照');
     expect(workspace).toContain('autoLoadedCustomer');
-    expect(workspace).toContain('customerScopedEntry');
-    expect(workspace).toContain('setSelectedCustomerId(customerScopedEntry.customer_id)');
-    expect(workspace).toContain('runCopilot: false');
+    expect(workspace).toContain('scopedEntry');
+    expect(workspace).toContain('setSelectedCustomerId(scopedEntry.customer_id)');
+    expect(workspace).not.toContain('runCopilot');
     expect(customerDetail).toContain('Ask Sales Agent');
     expect(customerDetail).toContain("navigate('/ai-workspace'");
   });
@@ -162,15 +162,13 @@ describe('Sales Agent final interaction focused guards', () => {
     expect(SALES_AGENT_QUICK_ACTIONS.every(item => !('confidenceHint' in item))).toBe(true);
   });
 
-  it('26-28: no live reasoning on normal page surface, confirm uses production controller, no auto model/write', () => {
-    expect(workspace).toMatch(/<details className="agent-advanced">[\s\S]*Live model reasoning/);
-    expect(workspace).toMatch(/<details className="agent-advanced">[\s\S]*Stage2ArchitectureStatus/);
-    expect(workspace).toMatch(/<details className="agent-advanced">[\s\S]*CRM ContextSnapshot/);
-    expect(workspace).not.toMatch(/agent-topbar[\s\S]{0,800}Live model reasoning/);
-    expect(interaction).toContain('confirmSalesAgentProposal(session, confirmedProposal, onRefresh)');
+  it('26-28: production controller is direct, with no legacy reasoning surface or auto write', () => {
+    expect(workspace).not.toContain('Live model reasoning');
+    expect(workspace).not.toContain('Stage2ArchitectureStatus');
+    expect(workspace).not.toContain('runCopilot');
+    expect(workspace).toContain('createTrustedHostSalesAgentAdapter');
+    expect(interaction).toContain('confirmSalesAgentProposal(session, confirmedProposal, async () =>');
     expect(interaction).not.toContain('createWriteProposal');
-    expect(workspace).toContain('runCopilot: false');
-    expect(workspace).not.toContain('loadSelectedContext({ runCopilot: true })');
 
     const steps = buildAgentWorkProcess({
       customerSelected: true,

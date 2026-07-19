@@ -6,6 +6,9 @@ import { confirmationFor, seedCustomer, sessionForWrite, sqliteFixture, sqliteRe
 import { formatUserFacingErrorMessage } from '../lib/salesAgentUi/formatUserFacingError';
 import { __resetSessionWriteStateStoreForTests } from '../lib/salesAgentTools/sessionWriteStateStore';
 import type { LoadedReadOnlyAgentSnapshot } from '../lib/readOnlySnapshotLoaderReadiness';
+import { createAgentIntentEnvelope } from '../lib/salesAgentTools/agentIntentEnvelope';
+
+const intent = (message: string) => createAgentIntentEnvelope(message, '2026-07-14T12:00:00.000Z');
 
 describe('Sales Agent proposal ownership (session registry)', () => {
   beforeEach(() => {
@@ -19,13 +22,13 @@ describe('Sales Agent proposal ownership (session registry)', () => {
     const boundary = createApprovedCrmWriteBoundary(sqliteRepository(fixture.db));
 
     const sessionA = sessionForWrite();
-    await sessionA.submit('帮我写一条跟进，下周一联系');
+    await sessionA.submit(intent('帮我写一条跟进，下周一联系'));
     expect(sessionA.getPendingDraft()).not.toBeNull();
 
     // Simulate React remount: brand-new Session instance, same customer id.
     const sessionB = sessionForWrite();
     expect(sessionB.getPendingDraft()).not.toBeNull();
-    const proposalTurn = await sessionB.submit('上午10:00');
+    const proposalTurn = await sessionB.submit(intent('上午10:00'));
     expect(proposalTurn.kind).toBe('write_proposal');
     if (proposalTurn.kind !== 'write_proposal') throw new Error('proposal');
 
@@ -41,7 +44,7 @@ describe('Sales Agent proposal ownership (session registry)', () => {
 
   it('clarification sets pendingDraft without registry entry', async () => {
     const session = sessionForWrite();
-    const first = await session.submit('帮我写一条跟进，下周一联系');
+    const first = await session.submit(intent('帮我写一条跟进，下周一联系'));
     expect(first.kind).toBe('clarification_required');
     expect(session.getPendingDraft()).not.toBeNull();
     expect(session.getRegisteredProposal('nonexistent')).toBeNull();
@@ -52,8 +55,8 @@ describe('Sales Agent proposal ownership (session registry)', () => {
 
   it('after clarification completes, proposal is generated once and registered', async () => {
     const session = sessionForWrite();
-    await session.submit('帮我写一条跟进，下周一联系');
-    const second = await session.submit('上午10:00');
+    await session.submit(intent('帮我写一条跟进，下周一联系'));
+    const second = await session.submit(intent('上午10:00'));
     expect(second.kind).toBe('write_proposal');
     if (second.kind !== 'write_proposal') throw new Error('expected proposal');
     expect(session.getPendingDraft()).toBeNull();
@@ -70,8 +73,8 @@ describe('Sales Agent proposal ownership (session registry)', () => {
     const boundary = createApprovedCrmWriteBoundary(sqliteRepository(fixture.db));
 
     const session = sessionForWrite();
-    await session.submit('帮我写一条跟进，下周一联系');
-    const proposalTurn = await session.submit('上午10:00');
+    await session.submit(intent('帮我写一条跟进，下周一联系'));
+    const proposalTurn = await session.submit(intent('上午10:00'));
     expect(proposalTurn.kind).toBe('write_proposal');
     if (proposalTurn.kind !== 'write_proposal') throw new Error('proposal');
 
@@ -142,8 +145,8 @@ describe('Sales Agent proposal ownership (session registry)', () => {
     const boundary = createApprovedCrmWriteBoundary(sqliteRepository(fixture.db));
 
     const session = sessionForWrite();
-    await session.submit('帮我写一条跟进，下周一联系');
-    const proposalTurn = await session.submit('上午10:00');
+    await session.submit(intent('帮我写一条跟进，下周一联系'));
+    const proposalTurn = await session.submit(intent('上午10:00'));
     expect(proposalTurn.kind).toBe('write_proposal');
     if (proposalTurn.kind !== 'write_proposal') throw new Error('proposal');
 
@@ -173,8 +176,8 @@ describe('Sales Agent proposal ownership (session registry)', () => {
     const boundary = createApprovedCrmWriteBoundary(sqliteRepository(fixture.db));
 
     const session = sessionForWrite();
-    await session.submit('帮我写一条跟进，下周一联系');
-    const proposalTurn = await session.submit('上午10:00');
+    await session.submit(intent('帮我写一条跟进，下周一联系'));
+    const proposalTurn = await session.submit(intent('上午10:00'));
     expect(proposalTurn.kind).toBe('write_proposal');
     if (proposalTurn.kind !== 'write_proposal') throw new Error('proposal');
 
@@ -189,8 +192,8 @@ describe('Sales Agent proposal ownership (session registry)', () => {
     );
 
     const session2 = sessionForWrite();
-    await session2.submit('帮我写一条跟进，下周一联系');
-    const again = await session2.submit('上午10:00');
+    await session2.submit(intent('帮我写一条跟进，下周一联系'));
+    const again = await session2.submit(intent('上午10:00'));
     if (again.kind !== 'write_proposal') throw new Error('proposal');
     await session2.confirmWriteByRef({
       proposal_id: again.proposal.proposal_id,
@@ -208,13 +211,13 @@ describe('Sales Agent proposal ownership (session registry)', () => {
 
   it('invalidateAllPendingWrites clears registry and pending draft', async () => {
     const session = sessionForWrite();
-    await session.submit('帮我写一条跟进，下周一联系');
+    await session.submit(intent('帮我写一条跟进，下周一联系'));
     expect(session.getPendingDraft()).not.toBeNull();
     session.invalidateAllPendingWrites('scope_or_conversation_reset');
     expect(session.getPendingDraft()).toBeNull();
 
-    await session.submit('帮我写一条跟进，下周一联系');
-    const proposalTurn = await session.submit('上午10:00');
+    await session.submit(intent('帮我写一条跟进，下周一联系'));
+    const proposalTurn = await session.submit(intent('上午10:00'));
     expect(proposalTurn.kind).toBe('write_proposal');
     if (proposalTurn.kind !== 'write_proposal') throw new Error('proposal');
     expect(session.getRegisteredProposal(proposalTurn.proposal.proposal_id)).toBeTruthy();

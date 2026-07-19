@@ -298,6 +298,260 @@ export const SALES_AGENT_REAL_FUNCTIONAL_CHANGED_FILES = FINAL_UI_REBUILD_CHANGE
 
 export const SALES_AGENT_REAL_FUNCTIONAL_TRACKED_CHANGED_FILES = FINAL_UI_REBUILD_TRACKED_CHANGED_FILES;
 
+/** Exact Production LLM Wiring cohort — supersedes earlier loops while worktree matches this set. */
+export const PRODUCTION_LLM_WIRING_CHANGED_FILES = [
+  'src-tauri/src/lib.rs',
+  'src-tauri/src/trusted_host.rs',
+  'src/App.css',
+  'src/__tests__/capabilityRouting.focused.test.ts',
+  'src/__tests__/deterministicPath.focused.test.ts',
+  'src/__tests__/evidenceGrounding.focused.test.ts',
+  'src/__tests__/modelCapabilitiesChangedFileCohort.ts',
+  'src/__tests__/modelContextEnvelope.focused.test.ts',
+  'src/__tests__/modelSchemaValidation.focused.test.ts',
+  'src/__tests__/noFrontendSecret.focused.test.ts',
+  'src/__tests__/noPageLoadCall.focused.test.ts',
+  'src/__tests__/productionAdapterFakeTransport.focused.test.ts',
+  'src/__tests__/providerErrorMapping.focused.test.ts',
+  'src/__tests__/salesAgentRealFunctional.focused.test.ts',
+  'src/__tests__/salesAgentSessionRuntime.integration.test.ts',
+  'src/__tests__/trustedHostBoundary.test.ts',
+  'src/__tests__/trustedHostProvider.focused.test.ts',
+  'src/__tests__/uiRouting.focused.test.ts',
+  'src/components/aiNative/SalesAgentInteractionWorkspace.tsx',
+  'src/lib/modelCapabilities/trustedHost.ts',
+  'src/lib/productionAi/capabilityRoutingMatrix.ts',
+  'src/lib/productionAi/evidenceGrounding.ts',
+  'src/lib/productionAi/fakeTransport.ts',
+  'src/lib/productionAi/index.ts',
+  'src/lib/productionAi/localDeterministicProjection.ts',
+  'src/lib/productionAi/modelContextEnvelope.ts',
+  'src/lib/productionAi/modelOutputSchemas.ts',
+  'src/lib/productionAi/productionReasoningPath.ts',
+  'src/lib/productionAi/providerErrorMapping.ts',
+  'src/lib/productionAi/runtimeMode.ts',
+  'src/lib/salesAgentTools/agentSession.ts',
+  'src/lib/salesAgentTools/operatingLayer.ts',
+  'src/lib/salesAgentTools/trustedHostAdapter.ts',
+  'src/pages/AISettingsPage.tsx',
+] as const;
+
+export const PRODUCTION_LLM_WIRING_SRC_CHANGED_FILES = PRODUCTION_LLM_WIRING_CHANGED_FILES
+  .filter(file => file.startsWith('src/'));
+
+export const PRODUCTION_LLM_WIRING_FRONTEND_CHANGED_FILES = PRODUCTION_LLM_WIRING_CHANGED_FILES
+  .filter(file => !file.startsWith('src-tauri/'));
+
+/** Tracked-only view: git diff omits brand-new untracked files until added. */
+export const PRODUCTION_LLM_WIRING_TRACKED_CHANGED_FILES = [
+  'src-tauri/src/lib.rs',
+  'src-tauri/src/trusted_host.rs',
+  'src/App.css',
+  'src/__tests__/modelCapabilitiesChangedFileCohort.ts',
+  'src/__tests__/salesAgentRealFunctional.focused.test.ts',
+  'src/__tests__/salesAgentSessionRuntime.integration.test.ts',
+  'src/__tests__/trustedHostBoundary.test.ts',
+  'src/components/aiNative/SalesAgentInteractionWorkspace.tsx',
+  'src/lib/modelCapabilities/trustedHost.ts',
+  'src/lib/salesAgentTools/agentSession.ts',
+  'src/lib/salesAgentTools/operatingLayer.ts',
+  'src/lib/salesAgentTools/trustedHostAdapter.ts',
+  'src/pages/AISettingsPage.tsx',
+] as const;
+
+export const PRODUCTION_LLM_WIRING_TRACKED_SRC_CHANGED_FILES = PRODUCTION_LLM_WIRING_TRACKED_CHANGED_FILES
+  .filter(file => file.startsWith('src/'));
+
+/** reviewDraftQueueBoundary-style projection: src/* plus optional package/lock (none here). */
+export const PRODUCTION_LLM_WIRING_SRC_PACKAGE_CHANGED_FILES = PRODUCTION_LLM_WIRING_SRC_CHANGED_FILES;
+
+/** Exact production architecture convergence cohort after the independent P0 review. */
+export const PRODUCTION_AI_CONVERGENCE_CHANGED_FILES = [
+  'package.json',
+  'scripts/cursor_200_gate.ts',
+  'scripts/finalize_transport_equivalence_evidence.py',
+  'scripts/real_tauri_e2e.py',
+  'src-tauri/tauri.e2e.conf.json',
+  'src/__tests__/adversarial-100-routing.test.ts',
+  'src/__tests__/ai.test.ts',
+  'src/__tests__/AIAssistantPage.test.ts',
+  'src/__tests__/aiDraft.test.ts',
+  'src/__tests__/aiDraft.verticalProfiles.test.ts',
+  'src/__tests__/aiNativeCRMWorkspace.readiness.test.ts',
+  'src/__tests__/blind-200-holdout.test.ts',
+  'src/__tests__/capabilityRouting.focused.test.ts',
+  'src/__tests__/captureCancellationRace.focused.test.ts',
+  'src/__tests__/closedSchema.focused.test.ts',
+  'src/__tests__/compare-fail-closed.test.ts',
+  'src/__tests__/credentialCompensation.focused.test.ts',
+  'src/__tests__/crm.releaseGate.e2e.test.ts',
+  'src/__tests__/CustomerDetail.aiAnalysis.test.ts',
+  'src/__tests__/deterministicPath.focused.test.ts',
+  'src/__tests__/evidenceGrounding.focused.test.ts',
+  'src/__tests__/evidenceTruthfulness.focused.test.ts',
+  'src/__tests__/finalUiRebuild.focused.test.ts',
+  'src/__tests__/finalActionMatrix.focused.test.ts',
+  'src/__tests__/hostCancellation.focused.test.ts',
+  'src/__tests__/independent-holdout-routing.test.ts',
+  'src/__tests__/intent-envelope-single-source.test.ts',
+  'src/__tests__/legacyCredentialMigration.focused.test.ts',
+  'src/__tests__/liveProviderSandboxCall.readiness.test.ts',
+  'src/__tests__/modelCapabilitiesChangedFileCohort.ts',
+  'src/__tests__/modelContextEnvelope.focused.test.ts',
+  'src/__tests__/modelContextPrivacy.focused.test.ts',
+  'src/__tests__/modelSchemaValidation.focused.test.ts',
+  'src/__tests__/multimodalProvider.test.ts',
+  'src/__tests__/naturalLanguageParaphrase.focused.test.ts',
+  'src/__tests__/nested-evidence-grounding.test.ts',
+  'src/__tests__/noFrontendSecret.focused.test.ts',
+  'src/__tests__/noPageLoadCall.focused.test.ts',
+  'src/__tests__/overnightFullStabilization.focused.test.ts',
+  'src/__tests__/productionAdapterFakeTransport.focused.test.ts',
+  'src/__tests__/productionDependencyGraph.focused.test.ts',
+  'src/__tests__/productionDependencyGraphHarness.ts',
+  'src/__tests__/productionMockLeakage.focused.test.ts',
+  'src/__tests__/providerErrorMapping.focused.test.ts',
+  'src/__tests__/realVisionProtocol.focused.test.ts',
+  'src/__tests__/reviewer-unseen-language-regression.test.ts',
+  'src/__tests__/runtimeTransparency.focused.test.ts',
+  'src/__tests__/runtimeMetadataSurfaces.focused.test.ts',
+  'src/__tests__/salesAgentActionMatrix.focused.test.ts',
+  'src/__tests__/salesAgentConfirmationCard.test.ts',
+  'src/__tests__/salesAgentPortfolioSearch.focused.test.ts',
+  'src/__tests__/salesAgentProductionHarness.ts',
+  'src/__tests__/salesAgentProposalOwnership.focused.test.ts',
+  'src/__tests__/salesAgentRealFunctional.focused.test.ts',
+  'src/__tests__/salesAgentRealWriteIntent.focused.test.ts',
+  'src/__tests__/salesAgentSessionRuntime.integration.test.ts',
+  'src/__tests__/salesAgentSessionWriteRouting.integration.test.ts',
+  'src/__tests__/salesAgentTauriDbAcceptance.evidence.test.ts',
+  'src/__tests__/secretBoundary.focused.test.ts',
+  'src/__tests__/semantic-router-adapter.test.ts',
+  'src/__tests__/semanticRouterProductionWiring.focused.test.ts',
+  'src/__tests__/stage10SalesAgentOperatingLayer.test.ts',
+  'src/__tests__/stage11To13E2E.test.ts',
+  'src/__tests__/stage3FinalAlignment.test.ts',
+  'src/__tests__/textAIProvider.test.ts',
+  'src/__tests__/tauriDbAcceptanceIsolation.focused.test.ts',
+  'src/__tests__/tauriE2EIsolation.focused.test.ts',
+  'src/__tests__/transportEquivalenceE2ETruth.focused.test.ts',
+  'src/__tests__/trustedHostBoundary.test.ts',
+  'src/__tests__/trustedHostProvider.focused.test.ts',
+  'src/__tests__/uiRouting.focused.test.ts',
+  'src/__tests__/visionFormatMatrix.focused.test.ts',
+  'src/__tests__/unifiedAgentStage.focused.test.ts',
+  'src/App.css',
+  'src/App.tsx',
+  'src/components/aiNative/AINativeCRMWorkspace.tsx',
+  'src/components/aiNative/SalesAgentInteractionWorkspace.tsx',
+  'src/lib/ai.ts',
+  'src/lib/aiDraft.ts',
+  'src/lib/backupRestore.ts',
+  'src/lib/customerCapture/review.ts',
+  'src/lib/liveProviderSandboxCall/liveProviderSandboxTransport.ts',
+  'src/lib/modelCapabilities/trustedHost.ts',
+  'src/lib/modelCapabilities/types.ts',
+  'src/lib/multimodalProvider.ts',
+  'src/lib/productionAi/capabilityRoutingMatrix.ts',
+  'src/lib/productionAi/evidenceGrounding.ts',
+  'src/lib/productionAi/fakeTransport.ts',
+  'src/lib/productionAi/index.ts',
+  'src/lib/productionAi/localDeterministicProjection.ts',
+  'src/lib/productionAi/modelContextEnvelope.ts',
+  'src/lib/productionAi/modelOutputSchemas.ts',
+  'src/lib/productionAi/productionReasoningPath.ts',
+  'src/lib/productionAi/providerErrorMapping.ts',
+  'src/lib/productionAi/runtimeMode.ts',
+  'src/lib/productionAi/semanticIntentRouter.ts',
+  'src/lib/productionAi/visionInput.ts',
+  'src/lib/salesAgentTools/agentIntentEnvelope.ts',
+  'src/lib/salesAgentTools/agentSession.ts',
+  'src/lib/salesAgentTools/filterNormalization.ts',
+  'src/lib/salesAgentTools/finalActionMatrix.ts',
+  'src/lib/salesAgentTools/interactionController.ts',
+  'src/lib/salesAgentTools/operatingLayer.ts',
+  'src/lib/salesAgentTools/semanticPlanning.ts',
+  'src/lib/salesAgentTools/trustedHostAdapter.ts',
+  'src/lib/salesAgentTools/writeIntent.ts',
+  'src/lib/salesAgentUi/dailyFocus.ts',
+  'src/lib/salesAgentUi/formatUserFacingError.ts',
+  'src/lib/textAIProvider.ts',
+  'src/pages/AIAssistantPage.tsx',
+  'src/pages/AISettingsPage.tsx',
+  'src/pages/CustomerDetail.tsx',
+  'src-tauri/Cargo.lock',
+  'src-tauri/Cargo.toml',
+  'src-tauri/src/credential_migration.rs',
+  'src-tauri/src/lib.rs',
+  'src-tauri/src/secure_credentials.rs',
+  'src-tauri/src/trusted_host.rs',
+] as const;
+export const PRODUCTION_AI_CONVERGENCE_SRC_CHANGED_FILES = PRODUCTION_AI_CONVERGENCE_CHANGED_FILES.filter(file => file.startsWith('src/'));
+export const PRODUCTION_AI_CONVERGENCE_FRONTEND_CHANGED_FILES = PRODUCTION_AI_CONVERGENCE_CHANGED_FILES.filter(file => !file.startsWith('src-tauri/'));
+export const PRODUCTION_AI_CONVERGENCE_SRC_PACKAGE_CHANGED_FILES = PRODUCTION_AI_CONVERGENCE_CHANGED_FILES
+  .filter(file => file.startsWith('src/') || file === 'package.json' || file.endsWith('lock.yaml'));
+const PRODUCTION_AI_CONVERGENCE_UNTRACKED_FILES = new Set([
+  'scripts/cursor_200_gate.ts',
+  'scripts/finalize_transport_equivalence_evidence.py',
+  'scripts/real_tauri_e2e.py',
+  'src/__tests__/adversarial-100-routing.test.ts',
+  'src/__tests__/capabilityRouting.focused.test.ts',
+  'src/__tests__/blind-200-holdout.test.ts',
+  'src/__tests__/captureCancellationRace.focused.test.ts',
+  'src/__tests__/closedSchema.focused.test.ts',
+  'src/__tests__/compare-fail-closed.test.ts',
+  'src/__tests__/credentialCompensation.focused.test.ts',
+  'src/__tests__/deterministicPath.focused.test.ts',
+  'src/__tests__/evidenceGrounding.focused.test.ts',
+  'src/__tests__/evidenceTruthfulness.focused.test.ts',
+  'src/__tests__/finalActionMatrix.focused.test.ts',
+  'src/__tests__/hostCancellation.focused.test.ts',
+  'src/__tests__/independent-holdout-routing.test.ts',
+  'src/__tests__/intent-envelope-single-source.test.ts',
+  'src/__tests__/legacyCredentialMigration.focused.test.ts',
+  'src/__tests__/modelContextEnvelope.focused.test.ts',
+  'src/__tests__/modelContextPrivacy.focused.test.ts',
+  'src/__tests__/modelSchemaValidation.focused.test.ts',
+  'src/__tests__/naturalLanguageParaphrase.focused.test.ts',
+  'src/__tests__/nested-evidence-grounding.test.ts',
+  'src/__tests__/noFrontendSecret.focused.test.ts',
+  'src/__tests__/noPageLoadCall.focused.test.ts',
+  'src/__tests__/productionAdapterFakeTransport.focused.test.ts',
+  'src/__tests__/productionDependencyGraph.focused.test.ts',
+  'src/__tests__/productionDependencyGraphHarness.ts',
+  'src/__tests__/productionMockLeakage.focused.test.ts',
+  'src/__tests__/providerErrorMapping.focused.test.ts',
+  'src/__tests__/realVisionProtocol.focused.test.ts',
+  'src/__tests__/reviewer-unseen-language-regression.test.ts',
+  'src/__tests__/runtimeTransparency.focused.test.ts',
+  'src/__tests__/runtimeMetadataSurfaces.focused.test.ts',
+  'src/__tests__/secretBoundary.focused.test.ts',
+  'src/__tests__/semantic-router-adapter.test.ts',
+  'src/__tests__/semanticRouterProductionWiring.focused.test.ts',
+  'src/__tests__/tauriDbAcceptanceIsolation.focused.test.ts',
+  'src/__tests__/transportEquivalenceE2ETruth.focused.test.ts',
+  'src/__tests__/trustedHostProvider.focused.test.ts',
+  'src/__tests__/uiRouting.focused.test.ts',
+  'src/__tests__/visionFormatMatrix.focused.test.ts',
+  'src/lib/productionAi/capabilityRoutingMatrix.ts',
+  'src/lib/productionAi/evidenceGrounding.ts',
+  'src/lib/productionAi/fakeTransport.ts',
+  'src/lib/productionAi/index.ts',
+  'src/lib/productionAi/localDeterministicProjection.ts',
+  'src/lib/productionAi/modelContextEnvelope.ts',
+  'src/lib/productionAi/modelOutputSchemas.ts',
+  'src/lib/productionAi/productionReasoningPath.ts',
+  'src/lib/productionAi/providerErrorMapping.ts',
+  'src/lib/productionAi/runtimeMode.ts',
+  'src/lib/productionAi/semanticIntentRouter.ts',
+  'src/lib/productionAi/visionInput.ts',
+  'src/lib/salesAgentTools/finalActionMatrix.ts',
+  'src-tauri/src/credential_migration.rs',
+  'src-tauri/src/secure_credentials.rs',
+]);
+export const PRODUCTION_AI_CONVERGENCE_TRACKED_CHANGED_FILES = PRODUCTION_AI_CONVERGENCE_CHANGED_FILES.filter(file => !PRODUCTION_AI_CONVERGENCE_UNTRACKED_FILES.has(file));
+export const PRODUCTION_AI_CONVERGENCE_TRACKED_SRC_CHANGED_FILES = PRODUCTION_AI_CONVERGENCE_TRACKED_CHANGED_FILES.filter(file => file.startsWith('src/'));
+
 export function hasExactModelCapabilitiesPhase13ChangedFileSet(changedFiles: readonly string[]): boolean {
   return hasExactChangedFileSet(changedFiles, MODEL_CAPABILITIES_PHASE_1_3_CHANGED_FILES)
     || hasExactChangedFileSet(changedFiles, MODEL_CAPABILITIES_PHASE_4_TRUSTED_HOST_CHANGED_FILES)
@@ -320,7 +574,19 @@ export function hasExactModelCapabilitiesPhase13ChangedFileSet(changedFiles: rea
     || hasExactChangedFileSet(changedFiles, FINAL_UI_REBUILD_TRACKED_CHANGED_FILES)
     || hasExactChangedFileSet(changedFiles, UNIFIED_AGENT_STAGE_MORPH_CHANGED_FILES)
     || hasExactChangedFileSet(changedFiles, SALES_AGENT_REAL_FUNCTIONAL_CHANGED_FILES)
-    || hasExactChangedFileSet(changedFiles, SALES_AGENT_REAL_FUNCTIONAL_TRACKED_CHANGED_FILES);
+    || hasExactChangedFileSet(changedFiles, SALES_AGENT_REAL_FUNCTIONAL_TRACKED_CHANGED_FILES)
+    || hasExactChangedFileSet(changedFiles, PRODUCTION_LLM_WIRING_CHANGED_FILES)
+    || hasExactChangedFileSet(changedFiles, PRODUCTION_LLM_WIRING_SRC_CHANGED_FILES)
+    || hasExactChangedFileSet(changedFiles, PRODUCTION_LLM_WIRING_FRONTEND_CHANGED_FILES)
+    || hasExactChangedFileSet(changedFiles, PRODUCTION_LLM_WIRING_TRACKED_CHANGED_FILES)
+    || hasExactChangedFileSet(changedFiles, PRODUCTION_LLM_WIRING_TRACKED_SRC_CHANGED_FILES)
+    || hasExactChangedFileSet(changedFiles, PRODUCTION_LLM_WIRING_SRC_PACKAGE_CHANGED_FILES)
+    || hasExactChangedFileSet(changedFiles, PRODUCTION_AI_CONVERGENCE_CHANGED_FILES)
+    || hasExactChangedFileSet(changedFiles, PRODUCTION_AI_CONVERGENCE_SRC_CHANGED_FILES)
+    || hasExactChangedFileSet(changedFiles, PRODUCTION_AI_CONVERGENCE_FRONTEND_CHANGED_FILES)
+    || hasExactChangedFileSet(changedFiles, PRODUCTION_AI_CONVERGENCE_SRC_PACKAGE_CHANGED_FILES)
+    || hasExactChangedFileSet(changedFiles, PRODUCTION_AI_CONVERGENCE_TRACKED_CHANGED_FILES)
+    || hasExactChangedFileSet(changedFiles, PRODUCTION_AI_CONVERGENCE_TRACKED_SRC_CHANGED_FILES);
 }
 
 export function hasExactStage8CustomerMemoryFoundationChangedFileSet(changedFiles: readonly string[]): boolean {

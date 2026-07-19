@@ -4,6 +4,7 @@
  */
 
 import type { SearchableCustomer } from '../salesAgentTools/searchCustomers';
+import { buildRuntimeDetails, type ProductionRuntimeDetails } from '../productionAi/runtimeMode';
 
 export const DAILY_FOCUS_PREF_KEY = 'sales-agent-daily-focus-dismissed-on';
 export const DAILY_FOCUS_MAX_ITEMS = 5;
@@ -19,6 +20,9 @@ export interface DailyFocusItem {
   readonly why: string;
   readonly evidence: readonly DailyFocusEvidence[];
   readonly score: number;
+  readonly runtime_metadata: ProductionRuntimeDetails;
+  readonly data_source: 'LOCAL_CRM';
+  readonly generated_at: string;
 }
 
 export interface DailyFocusPreferenceStore {
@@ -145,6 +149,15 @@ export function buildDailyFocusItems(
       why: whyParts.join(' · '),
       evidence,
       score,
+      data_source: 'LOCAL_CRM',
+      generated_at: nowIso,
+      runtime_metadata: buildRuntimeDetails({
+        runtime_mode: 'LOCAL_DETERMINISTIC', provider: null, model: null, model_called: false,
+        request_id: `daily-focus:${localDayKey(new Date(nowMs))}:${customer.id}`, latency_ms: 0, token_usage: null,
+        tools_used: ['local_crm_priority_projection'], evidence_count: evidence.length, degraded: false,
+        degradation_reason: null, validation_status: 'not_applicable', evidence_validation_status: 'not_applicable',
+        cancellation_status: 'not_requested', requires_real_model: false,
+      }),
     });
   }
 

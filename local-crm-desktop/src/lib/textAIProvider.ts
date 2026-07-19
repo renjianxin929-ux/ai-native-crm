@@ -28,11 +28,8 @@ export function buildDeepSeekChatRequest(
   systemPrompt: string,
   userPrompt: string,
 ): { url: string; headers: Record<string, string>; body: string } {
-  const url = `${config.baseUrl.replace(/\/+$/, '')}/chat/completions`;
-  const headers = {
-    'Authorization': `Bearer ${config.apiKey}`,
-    'Content-Type': 'application/json',
-  };
+  const url = 'trusted-host://browser-provider-path-removed';
+  const headers = { 'Content-Type': 'application/json' };
   const body = JSON.stringify({
     model: config.model,
     messages: [
@@ -91,24 +88,5 @@ export async function testTextAIConnection(config: TextAIConfig): Promise<{ ok: 
     return { ok: false, message: validation.errors.join('; ') };
   }
 
-  try {
-    const req = buildDeepSeekChatRequest(config, '你是一个助手', '回复 OK');
-    const res = await fetch(req.url, {
-      method: 'POST',
-      headers: req.headers,
-      body: req.body,
-    });
-
-    if (!res.ok) {
-      const errText = await res.text().catch(() => '');
-      return {
-        ok: false,
-        message: normalizeTextProviderError({ status: res.status, message: errText }),
-      };
-    }
-
-    return { ok: true, message: `连接成功 (model: ${config.model})` };
-  } catch (e) {
-    return { ok: false, message: normalizeTextProviderError(e) };
-  }
+  return { ok: false, message: '浏览器 Provider 连接已移除；请在 AI 设置中使用 Trusted Host 测试连接。' };
 }

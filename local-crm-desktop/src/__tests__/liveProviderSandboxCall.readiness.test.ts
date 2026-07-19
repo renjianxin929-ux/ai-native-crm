@@ -296,11 +296,7 @@ const TERMS_BANNED_OUTSIDE_TRANSPORT = [
   'crypto.randomUUID',
 ];
 
-const TERMS_ALLOWED_ONLY_IN_TRANSPORT = [
-  'fetch',
-  'Authorization',
-  'Bearer',
-];
+const RETIRED_BROWSER_TRANSPORT_MARKERS = ['fetch', 'Authorization', 'Bearer'];
 
 const TERMS_BANNED_IN_TRANSPORT = [
   'process.env',
@@ -649,9 +645,8 @@ describe('Live provider sandbox call readiness', () => {
     }
 
     const transportSource = readFileSync(TRANSPORT_FILE, 'utf8');
-    for (const term of TERMS_ALLOWED_ONLY_IN_TRANSPORT) {
-      expect(transportSource).toContain(term);
-    }
+    for (const term of RETIRED_BROWSER_TRANSPORT_MARKERS) expect(transportSource).not.toContain(term);
+    expect(transportSource).toContain('retired');
     for (const term of TERMS_BANNED_IN_TRANSPORT) {
       expect(transportSource).not.toContain(term);
     }
@@ -661,15 +656,15 @@ describe('Live provider sandbox call readiness', () => {
     expect(testSource).not.toMatch(/import\s+\{[^}]*createLiveProviderSandboxTransport/);
   });
 
-  it('proves only the transport file contains live transport markers in Loop 49 files', () => {
+  it('proves the retired browser sandbox cohort contains no live transport markers', () => {
     const loop49Sources = Object.fromEntries(
       [CORE_FILE, FIXTURE_FILE, TRANSPORT_FILE].map(file => [file, readFileSync(file, 'utf8')]),
     );
 
-    for (const term of TERMS_ALLOWED_ONLY_IN_TRANSPORT) {
+    for (const term of RETIRED_BROWSER_TRANSPORT_MARKERS) {
       expect(Object.entries(loop49Sources)
         .filter(([, source]) => source.includes(term))
-        .map(([file]) => file)).toEqual([TRANSPORT_FILE]);
+        .map(([file]) => file)).toEqual([]);
     }
     expect(loop49Sources[CORE_FILE]).not.toContain('process.env');
     expect(loop49Sources[FIXTURE_FILE]).not.toContain('process.env');

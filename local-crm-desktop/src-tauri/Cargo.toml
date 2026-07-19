@@ -8,6 +8,12 @@ repository = ""
 edition = "2021"
 rust-version = "1.77.2"
 
+[features]
+default = []
+# Compile-time-only transport for the dedicated com.localcrm.desktop.e2e app.
+# Production builds do not activate or contain this execution branch.
+e2e = []
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]
@@ -25,3 +31,11 @@ tauri = { version = "2.11.2", features = [] }
 tauri-plugin-log = "2"
 tauri-plugin-sql = { version = "2", features = ["sqlite"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+base64 = "0.22.1"
+chrono = { version = "0.4.44", default-features = false, features = ["clock", "std"] }
+sqlx = { version = "0.8.6", default-features = false, features = ["sqlite", "runtime-tokio"] }
+tokio = { version = "1.52.3", features = ["rt", "sync", "macros", "time"] }
+zeroize = "1.8"
+uuid = { version = "1.18", features = ["v4"] }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
+sha2 = "0.10"

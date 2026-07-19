@@ -83,6 +83,15 @@ describe('Sales Agent portfolio search', () => {
     expect(norm.is_customer_lookup).toBe(true);
   });
 
+  it('direct entity lookup preserves company names containing region and industry words', () => {
+    const norm = normalizeCustomerSearchFilters('打开华南生物科技', NOW);
+    expect(norm.is_portfolio_query).toBe(false);
+    expect(norm.filters).toMatchObject({ name_query: '华南生物科技' });
+    expect(norm.filters.region).toBeUndefined();
+    expect(norm.filters.industry).toBeUndefined();
+    expect(norm.is_customer_lookup).toBe(true);
+  });
+
   it('executeSearchCustomersTool portfolio returns SQLite total_matches and page_size 20', async () => {
     const fixture = await openSalesAgentSqliteFixture();
     try {

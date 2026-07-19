@@ -8,8 +8,10 @@ import { formatUserFacingErrorMessage } from '../lib/salesAgentUi/formatUserFaci
 import type { LoadedReadOnlyAgentSnapshot } from '../lib/readOnlySnapshotLoaderReadiness';
 import { openSalesAgentSqliteFixture } from './salesAgentFunctionalFixture';
 import { seedCustomer, sessionForWrite, sqliteFixture, sqliteRepository } from './salesAgentProductionHarness';
+import { createAgentIntentEnvelope } from '../lib/salesAgentTools/agentIntentEnvelope';
 
 const NOW = '2026-07-14T12:00:00.000Z';
+const intent = (message: string) => createAgentIntentEnvelope(message, NOW);
 
 function sessionFor(customerId: string, name: string) {
   const snapshot: LoadedReadOnlyAgentSnapshot = {
@@ -130,9 +132,9 @@ describe('Sales Agent action matrix', () => {
   describe('WRITE action_ids', () => {
     it('create_follow_up_record → clarification then proposal', async () => {
       const session = sessionForWrite();
-      const first = await session.submit('帮我写一条跟进，下周一联系');
+      const first = await session.submit(intent('帮我写一条跟进，下周一联系'));
       expect(first.kind).toBe('clarification_required');
-      const second = await session.submit('上午10:00');
+      const second = await session.submit(intent('上午10:00'));
       expect(second.kind).toBe('write_proposal');
       if (second.kind !== 'write_proposal') throw new Error('proposal');
       expect(second.proposal.tool_id).toBe('create_follow_up_record');
@@ -191,8 +193,8 @@ describe('Sales Agent action matrix', () => {
       await fixture.initialize();
       seedCustomer(fixture.sqlite);
       const session = sessionForWrite();
-      await session.submit('帮我写一条跟进，下周一联系');
-      const proposalTurn = await session.submit('上午10:00');
+      await session.submit(intent('帮我写一条跟进，下周一联系'));
+      const proposalTurn = await session.submit(intent('上午10:00'));
       if (proposalTurn.kind !== 'write_proposal') throw new Error('proposal');
       session.cancelPendingWrite(proposalTurn.proposal);
       expect(fixture.sqlite.prepare('SELECT COUNT(*) AS c FROM follow_up_records WHERE customer_id=?').get('customer-1')).toEqual({ c: 0 });
@@ -221,6 +223,7 @@ describe('Sales Agent action matrix', () => {
     it('format_blocked_error → Chinese via formatUserFacingErrorMessage', () => {
       expect(formatUserFacingErrorMessage('上一条请求仍在处理中，请稍候。')).toBe('上一条请求仍在处理中，请稍候。');
       expect(formatUserFacingErrorMessage(new Error('Confirmation replay rejected.'))).toBe('该操作已经处理过，未再次写入。');
+      expect(formatUserFacingErrorMessage(new Error('cancelled'))).toBe('已取消本次模型请求。');
       expect(formatUserFacingErrorMessage({ weird: true })).not.toBe('[object Object]');
     });
   });

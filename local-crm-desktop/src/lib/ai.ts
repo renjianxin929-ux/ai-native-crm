@@ -1,5 +1,4 @@
 import type { Customer, FollowUpRecord, Task } from './types';
-import { getDb } from './db';
 
 export interface AIConfig {
   provider: 'openai' | 'claude' | 'deepseek' | 'custom';
@@ -8,46 +7,16 @@ export interface AIConfig {
   baseUrl?: string;
 }
 
-const SETTINGS_KEY = 'ai_config';
-
 export async function getAIConfig(): Promise<AIConfig | null> {
-  const db = await getDb();
-  const rows = await db.select<{ key: string; value: string }>(
-    'SELECT * FROM settings WHERE key = ?',
-    [SETTINGS_KEY],
-  );
-  if (rows.length === 0) return null;
-  try {
-    return JSON.parse(rows[0].value) as AIConfig;
-  } catch {
-    return null;
-  }
+  return null;
 }
 
-export async function saveAIConfig(config: AIConfig): Promise<void> {
-  const db = await getDb();
-  const now = new Date().toISOString();
-  await db.execute(
-    `INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)`,
-    [SETTINGS_KEY, JSON.stringify(config), now],
-  );
+export async function saveAIConfig(_config: AIConfig): Promise<void> {
+  throw new Error('SQLite credential storage was retired; use Trusted Host secure configuration.');
 }
 
-export async function testAIConnection(config: AIConfig): Promise<{ ok: boolean; message: string }> {
-  if (!config.apiKey) {
-    return { ok: false, message: '未配置 API Key' };
-  }
-
-  try {
-    // First version: just verify the config looks valid and has an API key
-    // Real API testing will be added when user configures their provider
-    if (config.apiKey.length < 3) {
-      return { ok: false, message: 'API Key 格式无效' };
-    }
-    return { ok: true, message: '配置有效（未实际连接 API）' };
-  } catch (e) {
-    return { ok: false, message: `连接测试失败: ${e instanceof Error ? e.message : String(e)}` };
-  }
+export async function testAIConnection(_config: AIConfig): Promise<{ ok: boolean; message: string }> {
+  return { ok: false, message: '旧版前端连接测试已移除；请使用 Trusted Host 测试连接。' };
 }
 
 export async function analyzeChatText(

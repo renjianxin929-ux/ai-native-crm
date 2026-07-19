@@ -4,7 +4,6 @@ import { describe, expect, it } from 'vitest';
 import {
   buildCustomerActionAnalysis,
   formatCustomerAnalysisTextForDraft,
-  formatAIDraftsButtonLabel,
 } from '../pages/CustomerDetail';
 import type { Customer, FollowUpRecord } from '../lib/types';
 
@@ -90,7 +89,7 @@ describe('CustomerDetail AI action analysis', () => {
     ]);
     expect(text).not.toContain('###');
     expect(text).not.toContain('**');
-    expect(customerDetailSource).toContain('analysis-card-grid');
+    expect(customerDetailSource).not.toContain('analysis-card-grid');
     expect(customerDetailSource).not.toContain("whiteSpace: 'pre-wrap'");
   });
 
@@ -132,9 +131,10 @@ describe('CustomerDetail AI action analysis', () => {
     expect(strong.nextActions.some(action => action.includes('确认需求'))).toBe(true);
     expect(weak.nextActions.some(action => action.includes('5 分钟'))).toBe(true);
   });
-  it('shows a visible AI draft count on the customer detail page', () => {
-    expect(formatAIDraftsButtonLabel(0)).toBe('查看 AI 草稿');
-    expect(formatAIDraftsButtonLabel(2)).toBe('查看 AI 草稿（2）');
+  it('removes the legacy AI draft affordance from customer detail', () => {
+    const source = readFileSync(new URL('../pages/CustomerDetail.tsx', import.meta.url), 'utf8');
+    expect(source).not.toContain('formatAIDraftsButtonLabel');
+    expect(source).not.toContain('查看 AI 草稿');
   });
 });
 

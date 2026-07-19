@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import {
   buildCallTranscriptPrompt,
@@ -88,14 +88,7 @@ describe('aiDraft vertical profile policy', () => {
   });
 
   it('uses supplied vertical profile next-action prompt policy', async () => {
-    let requestBody = '';
-    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
-      requestBody = String(init.body);
-      return {
-        ok: true,
-        text: async () => JSON.stringify({ choices: [{ message: { content: 'Dummy suggestion' } }] }),
-      };
-    });
+    let captured: { system: string; user: string } | null = null;
 
     const dummyProfile: VerticalRuleProfile = {
       ...getActiveVerticalProfile(),
@@ -131,43 +124,18 @@ describe('aiDraft vertical profile policy', () => {
       { provider: 'deepseek', apiKey: 'sk-test', model: 'deepseek-chat', baseUrl: 'https://example.test/v1' },
       makeCustomer({ name: 'Acme', wechat_id: null }),
       [],
-      { profile: dummyProfile },
+      { profile: dummyProfile, transport: async request => { captured = request; return { ok: true, status: 200, content: 'Dummy suggestion' }; } },
     );
 
-    const body = JSON.parse(requestBody);
     expect(result.suggestion).toBe('Dummy suggestion');
-    expect(body.messages[0].content).toBe('Dummy system prompt');
-    expect(body.messages[1].content).toContain('Account: Acme');
-    expect(body.messages[1].content).toContain('Channel id: EMPTY');
-    expect(body.messages[1].content).toContain('Dummy instruction one');
-
-    vi.unstubAllGlobals();
+    expect(captured!.system).toBe('Dummy system prompt');
+    expect(captured!.user).toContain('Account: Acme');
+    expect(captured!.user).toContain('Channel id: EMPTY');
+    expect(captured!.user).toContain('Dummy instruction one');
   });
 
   it('uses supplied vertical profile call transcript system prompt policy', async () => {
-    let requestBody = '';
-    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
-      requestBody = String(init.body);
-      return {
-        ok: true,
-        text: async () => JSON.stringify({
-          choices: [{
-            message: {
-              content: JSON.stringify({
-                summary: 'ok',
-                phone_feedback: 'UNKNOWN',
-                intent_level: 'UNKNOWN',
-                grade_suggestion: 'UNKNOWN',
-                next_action: '',
-                next_follow_up_text: '',
-                risk: '',
-                confidence: 0.5,
-              }),
-            },
-          }],
-        }),
-      };
-    });
+    let system = '';
 
     const dummyProfile: VerticalRuleProfile = {
       ...getActiveVerticalProfile(),
@@ -182,13 +150,10 @@ describe('aiDraft vertical profile policy', () => {
     await analyzeCallTranscript(
       { provider: 'deepseek', apiKey: 'sk-test', model: 'deepseek-chat', baseUrl: 'https://example.test/v1' },
       'hello',
-      { profile: dummyProfile },
+      { profile: dummyProfile, transport: async request => { system = request.system; return { ok: true, status: 200, content: JSON.stringify({ summary: 'ok', phone_feedback: 'UNKNOWN', intent_level: 'UNKNOWN', grade_suggestion: 'UNKNOWN', next_action: '', next_follow_up_text: '', risk: '', confidence: 0.5 }) }; } },
     );
 
-    const body = JSON.parse(requestBody);
-    expect(body.messages[0].content).toBe('Dummy call system prompt');
-
-    vi.unstubAllGlobals();
+    expect(system).toBe('Dummy call system prompt');
   });
 });
 

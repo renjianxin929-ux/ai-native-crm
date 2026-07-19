@@ -2,6 +2,10 @@
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "local-crm-e2e",
   "identifier": "com.localcrm.desktop.e2e",
+  "build": {
+    "devUrl": "http://127.0.0.1:5173",
+    "beforeDevCommand": null
+  },
   "app": {
     "windows": [
       {

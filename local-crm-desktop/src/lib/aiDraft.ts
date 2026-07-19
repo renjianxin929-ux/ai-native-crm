@@ -4,18 +4,22 @@ import type {
   AIDraftInput,
   TextAIConfig,
   MultimodalConfig,
-  MultimodalMessage,
   Customer,
 } from './types';
-import { buildDeepSeekChatRequest, normalizeTextProviderError } from './textAIProvider';
-import {
-  buildQwenMultimodalRequest,
-  normalizeMultimodalProviderError,
-} from './multimodalProvider';
 import { getActiveVerticalProfile, type VerticalRuleProfile } from './verticalProfiles';
+
+export type LegacyDraftTestTransport = (request: {
+  readonly capability: 'TEXT_REASONING' | 'VISION_ANALYSIS';
+  readonly model: string;
+  readonly system: string;
+  readonly user: string;
+  readonly image?: { readonly mime_type: string; readonly base64: string };
+}) => Promise<{ readonly ok: boolean; readonly status: number; readonly content: string }>;
 
 export interface AIDraftProfileOptions {
   profile?: VerticalRuleProfile;
+  /** Test-only seam. Production pages do not import or execute this legacy module. */
+  transport?: LegacyDraftTestTransport;
 }
 
 // ── 截图识别 Prompt ──
@@ -144,37 +148,16 @@ export async function analyzeWechatScreenshot(
   config: MultimodalConfig,
   imageBase64: string,
   mimeType: string,
+  options: AIDraftProfileOptions = {},
 ): Promise<{ analysis: ScreenshotAnalysis | null; rawResponse: string; error?: string }> {
   try {
-    const messages: MultimodalMessage[] = [
-      {
-        role: 'user',
-        content: [
-          { type: 'text', text: buildWechatScreenshotPrompt() },
-          { type: 'image_base64', imageBase64, mimeType },
-        ],
-      },
-    ];
-
-    const req = buildQwenMultimodalRequest(config, messages);
-    const res = await fetch(req.url, {
-      method: 'POST',
-      headers: req.headers,
-      body: req.body,
+    if (!options.transport) return { analysis: null, rawResponse: '', error: '旧版浏览器 Provider 路径已移除，请使用 Sales Agent Trusted Host。' };
+    const response = await options.transport({
+      capability: 'VISION_ANALYSIS', model: config.visionModel, system: 'Return reviewed visual facts only.',
+      user: buildWechatScreenshotPrompt(options), image: { mime_type: mimeType, base64: imageBase64 },
     });
-
-    const text = await res.text();
-
-    if (!res.ok) {
-      return {
-        analysis: null,
-        rawResponse: text,
-        error: normalizeMultimodalProviderError({ status: res.status, message: text }),
-      };
-    }
-
-    const data = JSON.parse(text);
-    const content = data?.choices?.[0]?.message?.content ?? '';
+    if (!response.ok) return { analysis: null, rawResponse: '', error: `测试传输失败 (${response.status})` };
+    const content = response.content;
     const analysis = parseScreenshotAnalysis(content);
 
     if (!analysis) {
@@ -187,11 +170,7 @@ export async function analyzeWechatScreenshot(
 
     return { analysis, rawResponse: content };
   } catch (e) {
-    return {
-      analysis: null,
-      rawResponse: '',
-      error: normalizeMultimodalProviderError(e),
-    };
+    return { analysis: null, rawResponse: '', error: e instanceof Error ? e.message : '测试传输失败' };
   }
 }
 
@@ -202,29 +181,13 @@ export async function analyzeCallTranscript(
 ): Promise<{ analysis: CallAnalysis | null; rawResponse: string; error?: string }> {
   const profile = options.profile ?? getActiveVerticalProfile();
   try {
-    const req = buildDeepSeekChatRequest(
-      config,
-      profile.aiDraft.callTranscriptSystemPrompt,
-      buildCallTranscriptPrompt(transcript, { profile }),
-    );
-    const res = await fetch(req.url, {
-      method: 'POST',
-      headers: req.headers,
-      body: req.body,
+    if (!options.transport) return { analysis: null, rawResponse: '', error: '旧版浏览器 Provider 路径已移除，请使用 Sales Agent Trusted Host。' };
+    const response = await options.transport({
+      capability: 'TEXT_REASONING', model: config.model, system: profile.aiDraft.callTranscriptSystemPrompt,
+      user: buildCallTranscriptPrompt(transcript, { profile }),
     });
-
-    const text = await res.text();
-
-    if (!res.ok) {
-      return {
-        analysis: null,
-        rawResponse: text,
-        error: normalizeTextProviderError({ status: res.status, message: text }),
-      };
-    }
-
-    const data = JSON.parse(text);
-    const content = data?.choices?.[0]?.message?.content ?? '';
+    if (!response.ok) return { analysis: null, rawResponse: '', error: `测试传输失败 (${response.status})` };
+    const content = response.content;
     const analysis = parseCallAnalysis(content);
 
     if (!analysis) {
@@ -237,11 +200,7 @@ export async function analyzeCallTranscript(
 
     return { analysis, rawResponse: content };
   } catch (e) {
-    return {
-      analysis: null,
-      rawResponse: '',
-      error: normalizeTextProviderError(e),
-    };
+    return { analysis: null, rawResponse: '', error: e instanceof Error ? e.message : '测试传输失败' };
   }
 }
 
@@ -273,40 +232,17 @@ ${labels.recentNotes}: ${recentNotes.join('; ') || emptyValue}
 `;
 
   try {
-    const req = buildDeepSeekChatRequest(
-      config,
-      policy.systemPrompt,
-      [
-        context,
-        ...policy.instructionLines,
-      ].join('\n'),
-    );
-    const res = await fetch(req.url, {
-      method: 'POST',
-      headers: req.headers,
-      body: req.body,
+    if (!options.transport) return { suggestion: null, rawResponse: '', error: '旧版浏览器 Provider 路径已移除，请使用 Sales Agent Trusted Host。' };
+    const response = await options.transport({
+      capability: 'TEXT_REASONING', model: config.model, system: policy.systemPrompt,
+      user: [context, ...policy.instructionLines].join('\n'),
     });
-
-    const text = await res.text();
-
-    if (!res.ok) {
-      return {
-        suggestion: null,
-        rawResponse: text,
-        error: normalizeTextProviderError({ status: res.status, message: text }),
-      };
-    }
-
-    const data = JSON.parse(text);
-    const content = data?.choices?.[0]?.message?.content ?? '';
+    if (!response.ok) return { suggestion: null, rawResponse: '', error: `测试传输失败 (${response.status})` };
+    const content = response.content;
 
     return { suggestion: content, rawResponse: content };
   } catch (e) {
-    return {
-      suggestion: null,
-      rawResponse: '',
-      error: normalizeTextProviderError(e),
-    };
+    return { suggestion: null, rawResponse: '', error: e instanceof Error ? e.message : '测试传输失败' };
   }
 }
 

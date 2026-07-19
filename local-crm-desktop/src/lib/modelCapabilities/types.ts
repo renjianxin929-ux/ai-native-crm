@@ -1,4 +1,4 @@
-export type ModelCapability = 'TEXT_REASONING' | 'VISION_ANALYSIS';
+export type ModelCapability = 'TEXT_REASONING' | 'VISION_ANALYSIS' | 'SEMANTIC_INTENT_ROUTING';
 
 export type ModelProviderKind = 'DEEPSEEK_COMPATIBLE' | 'QWEN_VISION_COMPATIBLE';
 

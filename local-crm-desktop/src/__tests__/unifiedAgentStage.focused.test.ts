@@ -50,7 +50,7 @@ describe('UNIFIED_AGENT_STAGE morph focused guards', () => {
     expect(interaction).toContain('agent-error-inline');
     expect(interaction).toContain('orbCompact');
     expect(interaction).toContain('agent-composer-docked');
-    expect(interaction).toContain('confirmSalesAgentProposal(session, confirmedProposal, onRefresh)');
+    expect(interaction).toContain('confirmSalesAgentProposal(session, confirmedProposal, async () =>');
     expect(interaction).toContain('controller.selectCandidate');
     expect(resolveUnifiedAgentStageMode({
       sessionBusy: false, locatingCustomer: false, phase: 'idle', candidateCount: 2,
@@ -115,9 +115,9 @@ describe('UNIFIED_AGENT_STAGE morph focused guards', () => {
     expect(glassOrb).not.toContain('Sparkles');
     const analyzeCaptureFn = interaction.slice(interaction.indexOf('const analyzeCapture'), interaction.indexOf('const analyzeReviewed'));
     expect(analyzeCaptureFn).not.toContain('listening');
-    expect(workspace).toContain('setSeedInstruction');
+    expect(workspace).toContain('setInitialInstruction');
     expect(workspace).toContain('交给 Sales Agent 分析');
-    expect(interaction).toContain('seedInstruction');
+    expect(interaction).toContain('initialInstruction');
   });
 
   it('30: confirm still uses production controller; result cards stay compact', () => {

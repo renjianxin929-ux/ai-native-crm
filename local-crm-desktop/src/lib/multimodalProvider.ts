@@ -36,11 +36,8 @@ export function buildQwenMultimodalRequest(
   config: MultimodalConfig,
   messages: MultimodalMessage[],
 ): { url: string; headers: Record<string, string>; body: string } {
-  const url = `${config.baseUrl.replace(/\/+$/, '')}/chat/completions`;
-  const headers = {
-    'Authorization': `Bearer ${config.apiKey}`,
-    'Content-Type': 'application/json',
-  };
+  const url = 'trusted-host://browser-provider-path-removed';
+  const headers = { 'Content-Type': 'application/json' };
 
   const hasAudio = messages.some(m =>
     m.content.some(c => c.type === 'audio_base64')
@@ -126,27 +123,5 @@ export async function testMultimodalConnection(config: MultimodalConfig): Promis
     return { ok: false, message: validation.errors.join('; ') };
   }
 
-  try {
-    const messages: MultimodalMessage[] = [
-      { role: 'user', content: [{ type: 'text', text: '回复 OK' }] },
-    ];
-    const req = buildQwenMultimodalRequest(config, messages);
-    const res = await fetch(req.url, {
-      method: 'POST',
-      headers: req.headers,
-      body: req.body,
-    });
-
-    if (!res.ok) {
-      const errText = await res.text().catch(() => '');
-      return {
-        ok: false,
-        message: normalizeMultimodalProviderError({ status: res.status, message: errText }),
-      };
-    }
-
-    return { ok: true, message: `连接成功 (visionModel: ${config.visionModel})` };
-  } catch (e) {
-    return { ok: false, message: normalizeMultimodalProviderError(e) };
-  }
+  return { ok: false, message: '浏览器 Provider 连接已移除；请在 AI 设置中使用 Trusted Host 测试连接。' };
 }

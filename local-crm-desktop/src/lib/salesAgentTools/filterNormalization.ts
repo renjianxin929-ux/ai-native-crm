@@ -55,12 +55,15 @@ const SCOPED_ANALYSIS =
   /(总结\s*(客户)?\s*现状|分析\s*(风险|机会)|整理\s*(最新)?\s*互动|准备\s*(下一次)?\s*跟进|最近怎么样|下一步应该做什么|这个客户)/;
 
 const LOOKUP_VERB =
-  /(?:^(?:帮我|给我|请)?\s*(?:找一下|找|查一下|查询|查找|查|搜索|筛选|列出|定位|找出)|有哪些|切换到|切换至)/;
+  /(?:^(?:帮我|给我|请)?\s*(?:找一下|找|查一下|查询|查找|查|搜索客户名?\s*[:：]?|搜索|搜客户|搜|筛选|列出|定位|找出|打开客户?|打开|切到客户?\s*[:：]?|切到|切换客户到|把当前客户换成)|切换到|切换至)/;
 
-const CLEAR_SCOPE = /(清除客户|清除上下文|取消客户|退出客户|解除绑定)/;
+const DIRECT_ENTITY_LOOKUP_VERB =
+  /(?:打开客户?|打开|切到客户?\s*[:：]?|切到|切换客户到|切换到|切换至|把当前客户换成|搜索客户名?\s*[:：]?|定位客户?\s*[:：]?)/;
+
+const CLEAR_SCOPE = /(清除(?:当前)?客户|清除上下文|取消客户|退出客户|解除绑定)/;
 
 const PORTFOLIO =
-  /(今天有哪些|高意向|值得联系|值得关注|没有跟进|未跟进|久未联系|最近\s*\d+\s*天|有哪些|所有|全部|哪些客户|的客户|客户列表|筛选客户|列出客户|组合查询)/;
+  /(今天有哪些客户|高意向客户|值得联系的客户|值得关注的客户|没有跟进的客户|未跟进的客户|久未联系的客户|最近\s*\d+\s*天.*客户|所有客户|全部客户|哪些客户|客户列表|筛选客户|列出客户|组合查询)/;
 
 function extractRegion(message: string): string | undefined {
   // Prefer longer / more specific tokens first
@@ -117,7 +120,7 @@ function extractQuotedOrMarkedName(message: string): string | null {
   const head = message.split(/[，,]?\s*然后/)[0]!.trim();
   const patterns = [
     /[「『""](.+?)[」』""]/,
-    /^(?:帮我|给我|请)?\s*(?:找一下|查一下|查询|查找|搜索|定位|切换到|切换至|找出|找|查)\s*(.+?)(?:\s*这个客户)?$/,
+    /^(?:帮我|给我|请)?\s*(?:找一下|查一下|查询|查找|搜索客户名?\s*[:：]?|搜索|搜客户|搜|定位客户?\s*[:：]?|定位|切换到|切换至|切到客户?\s*[:：]?|切到|切换客户到|把当前客户换成|打开客户?|打开|找出|找|查)\s*(.+?)(?:\s*这个客户)?$/,
     /总结\s*(.+?)\s*最近/,
     /查一下\s*(.+?)(?:\s*这个客户)?$/,
   ];
@@ -141,7 +144,7 @@ function stripFilterTokens(raw: string, filters: NormalizedCustomerSearchFilters
     // accidentally become name_query and eliminate the portfolio result set.
     .replace(/最近\s*\d+\s*天\s*(?:都\s*)?(?:没有|未)\s*跟进(?:的)?/g, ' ')
     .replace(/(?:没有|未)\s*跟进|久未联系/g, ' ')
-    .replace(/帮我找一下|帮我找|给我找|帮我|给我|请|找一下|查一下|查询|查找|搜索|筛选|列出|定位|找出|查|找|切换到|切换至|所有|全部|区域|地区|这个客户|客户|公司|企业|的|做|一下|最近|情况|总结|分析/g, ' ')
+    .replace(/帮我找一下|帮我找|给我找|帮我|给我|请|找一下|查一下|查询|查找|搜索客户名?|搜索|搜客户|搜|筛选|列出|定位客户|定位|找出|查|找|切换客户到|切换到|切换至|切到客户|切到|把当前客户换成|打开客户|打开|所有|全部|区域|地区|这个客户|客户|公司|企业|的|做|一下|最近|情况|总结|分析/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
   return text;
@@ -170,27 +173,31 @@ export function normalizeCustomerSearchFilters(message: string, nowIso?: string)
   const intent_level = extractIntent(trimmed);
   const inactive_days = extractInactiveDays(trimmed);
   const stage = extractStage(trimmed);
-  const is_explicit_switch = /切换到|切换至/.test(trimmed);
+  const is_explicit_switch = /切换到|切换至|切到(?:客户)?|切换客户到|把当前客户换成/.test(trimmed);
   const is_clear_scope = CLEAR_SCOPE.test(trimmed);
   const is_scoped_analysis = SCOPED_ANALYSIS.test(trimmed) && !LOOKUP_VERB.test(trimmed) && !is_explicit_switch;
 
   const markedRaw = extractQuotedOrMarkedName(trimmed);
   const hasExplicitQuotedName = /[「『""](.+?)[」』""]/.test(trimmed);
+  const isDirectEntityLookup = Boolean(markedRaw && DIRECT_ENTITY_LOOKUP_VERB.test(trimmed));
   // Company-name lookups may embed region/industry tokens (华南生物) — do not treat those as structural filters.
   if (markedRaw && LOOKUP_VERB.test(trimmed) && !/[的做]/.test(markedRaw)) {
-    if (region && markedRaw.startsWith(region) && markedRaw.length > region.length + 1) {
+    if (region && markedRaw.length > region.length + 1
+      && (isDirectEntityLookup || markedRaw.startsWith(region))) {
       region = undefined;
     }
-    if (industry && markedRaw.endsWith(industry) && markedRaw.length > industry.length + 1) {
+    if (industry && markedRaw.length > industry.length + 1
+      && (isDirectEntityLookup || markedRaw.endsWith(industry))) {
       industry = undefined;
     }
   }
   const structural = Boolean(region || industry || customer_grade || intent_level || inactive_days || stage);
   // Prefer structured filters — do not treat "广州做机械设备的" or "东莞的 A 类" as a customer name.
   let name_query: string | undefined;
-  if (hasExplicitQuotedName && markedRaw) {
+  if ((hasExplicitQuotedName || isDirectEntityLookup) && markedRaw) {
     // Quotation is an explicit entity boundary. Preserve the full company name
     // even when it happens to contain region/industry vocabulary (华南生物).
+    // Direct switch/open/search-by-name verbs provide the same entity boundary.
     name_query = markedRaw;
   } else if (!structural && markedRaw) {
     name_query = markedRaw;
@@ -221,7 +228,7 @@ export function normalizeCustomerSearchFilters(message: string, nowIso?: string)
 
   // Portfolio = list/browse intent without a single company entity to bind.
   // "帮我找一下广州的客户" / region+industry(+grade) without company name → portfolio.
-  const portfolioPhrase = PORTFOLIO.test(trimmed) || /的客户|有哪些客户|客户有哪些|客户列表|哪些.*客户/.test(trimmed);
+  const portfolioPhrase = PORTFOLIO.test(trimmed) || /有哪些客户|客户列表|哪些.*客户/.test(trimmed);
   const hasStructuralBrowse = Boolean(region || industry || customer_grade || intent_level || inactive_days);
   const is_portfolio_query =
     !is_explicit_switch

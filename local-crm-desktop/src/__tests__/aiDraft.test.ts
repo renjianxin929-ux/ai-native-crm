@@ -262,40 +262,26 @@ describe('createDraftFromCallAnalysis', () => {
 
 describe('analyzeWechatScreenshot — JSON parse failure', () => {
   it('HTTP 200 但非 JSON content → analysis=null + error 有明确文字 + rawResponse 保留', async () => {
-    vi.stubGlobal('fetch', async () => ({
-      ok: true,
-      status: 200,
-      text: async () => JSON.stringify({ choices: [{ message: { content: '这不是合法的 JSON 结构' } }] }),
-    }));
-
     const config = { provider: 'qwen' as const, apiKey: 'sk-test', visionModel: 'qwen-vl-max', baseUrl: 'https://test.example.com/v1', capabilities: { text: false, image: true, audio: false } };
-    const result = await analyzeWechatScreenshot(config, 'fakebase64', 'image/png');
+    const result = await analyzeWechatScreenshot(config, 'fakebase64', 'image/png', { transport: async () => ({ ok: true, status: 200, content: '这不是合法的 JSON 结构' }) });
 
     expect(result.analysis).toBeNull();
     expect(result.error).toBeDefined();
     expect(result.error).toContain('JSON');
     expect(result.rawResponse).toBe('这不是合法的 JSON 结构');
 
-    vi.unstubAllGlobals();
   });
 });
 
 describe('analyzeCallTranscript — JSON parse failure', () => {
   it('HTTP 200 但非 JSON content → analysis=null + error 有明确文字 + rawResponse 保留', async () => {
-    vi.stubGlobal('fetch', async () => ({
-      ok: true,
-      status: 200,
-      text: async () => JSON.stringify({ choices: [{ message: { content: '通话很顺利，客户表示愿意进一步了解' } }] }),
-    }));
-
     const config = { provider: 'deepseek' as const, apiKey: 'sk-test', model: 'deepseek-chat', baseUrl: 'https://test.example.com/v1' };
-    const result = await analyzeCallTranscript(config, '测试通话内容');
+    const result = await analyzeCallTranscript(config, '测试通话内容', { transport: async () => ({ ok: true, status: 200, content: '通话很顺利，客户表示愿意进一步了解' }) });
 
     expect(result.analysis).toBeNull();
     expect(result.error).toBeDefined();
     expect(result.error).toContain('JSON');
     expect(result.rawResponse).toBe('通话很顺利，客户表示愿意进一步了解');
 
-    vi.unstubAllGlobals();
   });
 });

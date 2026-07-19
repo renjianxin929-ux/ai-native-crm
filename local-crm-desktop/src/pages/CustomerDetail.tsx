@@ -1,16 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { ReactNode } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Edit3, MessageSquare, MapPin, Trash2, Brain } from 'lucide-react';
-import { getCustomer, deleteCustomer, createFollowUp, createVisit, updateCustomer, createAIDraft, listAIDrafts, applyAIDraftToCustomer, discardAIDraft } from '../lib/db';
+import { ArrowLeft, Brain, Edit3, MessageSquare, MapPin, Trash2 } from 'lucide-react';
+import { getCustomer, deleteCustomer, createFollowUp, createVisit, updateCustomer } from '../lib/db';
 import { applyWechatPassed, applyVisitOutcome, applyPaymentRule, applyFollowUpUpdate } from '../lib/rules';
 import { parseRoughTime } from '../lib/timeParser';
 import { GRADE_LABELS, STAGE_LABELS, WECHAT_ADD_LABELS, WECHAT_SEARCH_LABELS, INTENT_LABELS, PHONE_FEEDBACK_LABELS, NEXT_ACTION_LABELS, VISIT_OUTCOME_LABELS, CHANNEL_LABELS, CONTACT_RESULT_LABELS } from '../lib/types';
 import type { Customer, FollowUpRecord, VisitRecord } from '../lib/types';
 import { getDb } from '../lib/db';
-import { getDefaultDeepSeekConfig } from '../lib/textAIProvider';
-import { suggestNextActionWithDeepSeek } from '../lib/aiDraft';
-import type { AIDraft } from '../lib/types';
 import CustomerForm from '../components/CustomerForm';
 import FollowUpForm from '../components/FollowUpForm';
 import VisitForm from '../components/VisitForm';
@@ -24,7 +20,6 @@ import { CustomerCaptureContract } from '../components/salesWorkspace/CustomerCa
 interface Props {
   onRefresh: () => void;
 }
-
 type CustomerActionAnalysis = {
   leadJudgement: string;
   facts: string[];
@@ -32,17 +27,6 @@ type CustomerActionAnalysis = {
   nextActions: string[];
   risks: string[];
 };
-
-type CustomerAiResult = {
-  suggestion: string | null;
-  rawResponse: string;
-  error?: string;
-  analysis?: CustomerActionAnalysis;
-};
-
-export function formatAIDraftsButtonLabel(count: number): string {
-  return count > 0 ? `查看 AI 草稿（${count}）` : '查看 AI 草稿';
-}
 
 export function buildCustomerActionAnalysis(
   customer: Customer,
@@ -252,11 +236,6 @@ export default function CustomerDetail({ onRefresh }: Props) {
   const [showEdit, setShowEdit] = useState(false);
   const [showFollowUp, setShowFollowUp] = useState(false);
   const [showVisit, setShowVisit] = useState(false);
-  const [aiResult, setAiResult] = useState<CustomerAiResult | null>(null);
-  const [aiLoading, setAiLoading] = useState(false);
-  const [aiError, setAiError] = useState<string | null>(null);
-  const [showDrafts, setShowDrafts] = useState(false);
-  const [drafts, setDrafts] = useState<AIDraft[]>([]);
   const [activeMemory, setActiveMemory] = useState<CustomerMemoryEntry[]>([]);
 
   const load = useCallback(async () => {
@@ -266,12 +245,10 @@ export default function CustomerDetail({ onRefresh }: Props) {
     if (c) {
       setFollowUps(await listFollowUps(id));
       setVisits(await listVisits(id));
-      setDrafts(await listAIDrafts(id));
       const memoryDb = await getDb();
       const memory = await new SqliteMemoryRepository(memoryDb, new SqliteCrmEvidenceResolver(memoryDb)).listCustomerMemory(id);
       setActiveMemory(memory.filter(item => item.validation_status === 'ACTIVE'));
     } else {
-      setDrafts([]);
       setActiveMemory([]);
     }
   }, [id]);
@@ -357,81 +334,6 @@ export default function CustomerDetail({ onRefresh }: Props) {
     await updateCustomer(customer.id, updated);
     await load();
     onRefresh();
-  };
-
-  const handleAIAnalyze = async () => {
-    if (!customer) return;
-    setAiLoading(true);
-    setAiError(null);
-    setAiResult(null);
-
-    try {
-      const db = await getDb();
-      const rows = await db.select<{ value: string }>('SELECT value FROM settings WHERE key = ?', ['text_ai_config']);
-      let config = getDefaultDeepSeekConfig();
-      if (rows.length > 0) {
-        config = { ...config, ...JSON.parse(rows[0].value) };
-      }
-      if (!config.apiKey) {
-        setAiError('请先在 AI 设置中配置 DeepSeek API Key');
-        setAiLoading(false);
-        return;
-      }
-
-      const recentNotes = followUps.map(f => f.feedback_notes).filter(Boolean) as string[];
-      const result = await suggestNextActionWithDeepSeek(config, customer, recentNotes);
-      if (result.error) {
-        setAiError(result.error);
-      } else {
-        const analysis = buildCustomerActionAnalysis(customer, followUps);
-        const suggestion = formatCustomerAnalysisTextForDraft(analysis);
-        setAiResult({ ...result, suggestion, analysis });
-        // Bug 3: 同时创建 ai_drafts 草稿，不直接改客户字段
-        await createAIDraft({
-          source_type: 'MANUAL',
-          customer_id: customer.id,
-          raw_input_summary: `跟进建议: ${customer.name}`,
-          ai_result_json: JSON.stringify({
-            suggestion,
-            structuredAnalysis: analysis,
-            rawResponse: result.rawResponse,
-            source: 'deepseek_next_action',
-            created_from: 'customer_detail',
-          }),
-          confidence: 0.7,
-        });
-      }
-    } catch (e) {
-      setAiError(e instanceof Error ? e.message : String(e));
-    }
-    setAiLoading(false);
-  };
-
-  const handleLoadDrafts = async () => {
-    if (!id) return;
-    const list = await listAIDrafts(id);
-    setDrafts(list);
-    setShowDrafts(true);
-  };
-
-  const handleApplyDraft = async (draftId: string) => {
-    try {
-      await applyAIDraftToCustomer(draftId);
-      setDrafts(prev => prev.map(d => d.id === draftId ? { ...d, status: 'APPLIED' as const } : d));
-      await load();
-      onRefresh();
-    } catch (e) {
-      alert(`应用草稿失败: ${e instanceof Error ? e.message : String(e)}`);
-    }
-  };
-
-  const handleDiscardDraft = async (draftId: string) => {
-    try {
-      await discardAIDraft(draftId);
-      setDrafts(prev => prev.map(d => d.id === draftId ? { ...d, status: 'DISCARDED' as const } : d));
-    } catch (e) {
-      alert(`丢弃草稿失败: ${e instanceof Error ? e.message : String(e)}`);
-    }
   };
 
   if (!customer) {
@@ -562,7 +464,7 @@ export default function CustomerDetail({ onRefresh }: Props) {
               followUps={followUps}
               visits={visits}
               activeMemory={activeMemory}
-              drafts={drafts}
+              drafts={[]}
             />
 
             <section className="glass-card" style={{ marginTop: 16 }} aria-label="统一时间线">
@@ -746,101 +648,6 @@ export default function CustomerDetail({ onRefresh }: Props) {
           </div>
         </div>
 
-        <details className="glass-card" style={{ marginTop: 16 }}>
-          <summary style={{ cursor: 'pointer', fontWeight: 600 }}>高级工具 / Legacy</summary>
-          <div style={{ marginTop: 12, display: 'grid', gap: 12 }}>
-            <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: 13 }}>
-              旧版独立分析路径与助手入口；不会替代页面顶部的 Sales Agent 客户上下文工作流。
-            </p>
-            <div className="btn-group">
-              <button className="btn btn-sm" onClick={() => navigate(`/assistant?customer_id=${customer.id}`)}>
-                <Brain size={14} /> Legacy AI 助手
-              </button>
-            </div>
-
-            <div>
-              <h4 className="section-title" style={{ fontSize: 15 }}>Legacy AI analysis</h4>
-              {aiResult ? (
-                <div style={{ padding: '8px 0' }}>
-                  {aiResult.analysis ? (
-                    <CustomerAnalysisCards analysis={aiResult.analysis} />
-                  ) : (
-                    <div style={{ color: '#dc2626', fontSize: 14 }}>分析失败: {aiResult.error}</div>
-                  )}
-                  <button className="btn btn-sm" onClick={() => setAiResult(null)}>重新分析</button>
-                </div>
-              ) : aiLoading ? (
-                <div style={{ textAlign: 'center', padding: 16, color: '#9ca3af' }}>AI 分析中...</div>
-              ) : aiError ? (
-                <div style={{ padding: '12px 16px', background: '#fef2f2', color: '#dc2626', borderRadius: 8, fontSize: 14 }}>
-                  {aiError}
-                </div>
-              ) : (
-                <div style={{ padding: '8px 0' }}>
-                  <div className="btn-group">
-                    <button className="btn btn-sm" onClick={handleAIAnalyze}>
-                      <Brain size={14} /> Run legacy analysis
-                    </button>
-                    <button className="btn btn-sm" onClick={handleLoadDrafts}>
-                      {formatAIDraftsButtonLabel(drafts.length)}
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {showDrafts && (
-                <div style={{ marginTop: 16, borderTop: '1px solid var(--border)', paddingTop: 12 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                    <span style={{ fontWeight: 600, fontSize: 14 }}>AI 草稿</span>
-                    <button className="btn btn-sm" onClick={() => setShowDrafts(false)}>收起</button>
-                  </div>
-                  {drafts.length === 0 ? (
-                    <div style={{ color: '#9ca3af', fontSize: 13 }}>暂无草稿</div>
-                  ) : (
-                    <ul className="timeline">
-                      {drafts.map(d => {
-                        let parsed: Record<string, unknown> = {};
-                        try { parsed = JSON.parse(d.ai_result_json); } catch { /* ignore */ }
-                        return (
-                          <li key={d.id} className="timeline-item">
-                            <div className="time">
-                              {new Date(d.created_at).toLocaleString('zh-CN')}
-                              <span style={{ marginLeft: 8 }}>
-                                {d.source_type === 'SCREENSHOT' ? '📷 截图' :
-                                 d.source_type === 'CALL_TEXT' ? '📞 通话' :
-                                 d.source_type === 'AUDIO' ? '🎤 音频' : '📝 手动'}
-                              </span>
-                              <span className={`badge ${d.status === 'DRAFT' ? 'badge-warning' : d.status === 'APPLIED' ? 'badge-success' : 'badge-danger'}`} style={{ marginLeft: 8 }}>
-                                {d.status === 'DRAFT' ? '草稿' : d.status === 'APPLIED' ? '已应用' : '已丢弃'}
-                              </span>
-                            </div>
-                            <div className="title">{d.raw_input_summary}</div>
-                            {parsed.summary ? <div className="notes">{String(parsed.summary).slice(0, 200)}</div> : null}
-                            {parsed.suggestion ? <div className="notes">{String(parsed.suggestion).slice(0, 200)}</div> : null}
-                            <div style={{ marginTop: 4, fontSize: 12, color: 'var(--text-secondary)' }}>
-                              置信度: {d.confidence ? `${(d.confidence * 100).toFixed(0)}%` : '-'}
-                              {d.confidence < 0.65 && <span style={{ color: '#d97706', marginLeft: 4 }}>(低)</span>}
-                            </div>
-                            {d.status === 'DRAFT' && (
-                              <div className="btn-group" style={{ marginTop: 8 }}>
-                                <button className="btn btn-primary btn-sm" onClick={() => handleApplyDraft(d.id)}>
-                                  应用草稿
-                                </button>
-                                <button className="btn btn-danger btn-sm" onClick={() => handleDiscardDraft(d.id)}>
-                                  丢弃草稿
-                                </button>
-                              </div>
-                            )}
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        </details>
       </div>
 
       {showEdit && customer && (
@@ -865,44 +672,5 @@ export default function CustomerDetail({ onRefresh }: Props) {
         />
       )}
     </div>
-  );
-}
-
-function CustomerAnalysisCards({ analysis }: { analysis: CustomerActionAnalysis }) {
-  return (
-    <div className="analysis-card-grid">
-      <AnalysisCard title="线索判断">
-        <p>{analysis.leadJudgement}</p>
-      </AnalysisCard>
-      <AnalysisCard title="已知事实">
-        <ul>
-          {analysis.facts.map(item => <li key={item}>{item}</li>)}
-        </ul>
-      </AnalysisCard>
-      <AnalysisCard title="信息缺口">
-        <ul>
-          {analysis.gaps.map(item => <li key={item}>{item}</li>)}
-        </ul>
-      </AnalysisCard>
-      <AnalysisCard title="下一步动作">
-        <ol>
-          {analysis.nextActions.map(item => <li key={item}>{item}</li>)}
-        </ol>
-      </AnalysisCard>
-      <AnalysisCard title="风险提醒">
-        <ul>
-          {analysis.risks.map(item => <li key={item}>{item}</li>)}
-        </ul>
-      </AnalysisCard>
-    </div>
-  );
-}
-
-function AnalysisCard({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <section className="analysis-card">
-      <h4>{title}</h4>
-      {children}
-    </section>
   );
 }

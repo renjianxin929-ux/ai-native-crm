@@ -1,17 +1,15 @@
-import { createMockReasoningProvider } from '../salesAgent/provider';
-import { runSalesAgentRuntime } from '../salesAgent/runtime';
 import type { ContextSnapshot } from '../context/types';
 import type { CustomerMemoryContext, MemoryRepository } from '../customerMemory';
 import type { LoadedReadOnlyAgentSnapshot } from '../readOnlySnapshotLoaderReadiness';
 import { formatUserFacingErrorMessage } from '../salesAgentUi/formatUserFacingError';
 import { executeSalesAgentReadTool, type SalesAgentCustomerScopedToolId, type SalesAgentToolResult } from './registry';
-import { classifySalesAgentIntent, projectSalesAgentResponse, type SalesAgentResponseProjection } from './operatingLayer';
-import { deterministicSemanticFallback, validateSemanticPlan, type ValidatedSemanticPlan } from './semanticPlanning';
+import { intentFromEnvelope, type SalesAgentResponseProjection } from './operatingLayer';
+import { createAgentIntentEnvelopeFromPreset, type AgentIntentEnvelope } from './agentIntentEnvelope';
+import type { GroundedClaim } from '../productionAi/evidenceGrounding';
+import { validateSemanticPlan, deterministicSemanticFallback, type ValidatedSemanticPlan } from './semanticPlanning';
 import { buildWriteProposal, consumeExactConfirmation, type AgentWriteProposal, type ExactConfirmation, type GroupedWriteOperation } from './confirmedWrite';
 import { createUnreviewedCapture, reviewedFacts, type CaptureSourceType, type CustomerCaptureReview } from '../customerCapture/review';
 import {
-  classifyClosedWriteIntent,
-  draftWriteFields,
   mergeClarificationAnswer,
   proposedValuesFromDraft,
   type WriteClarificationRequest,
@@ -29,12 +27,22 @@ import {
   wasProposalConsumed,
 } from './sessionWriteStateStore';
 import { SALES_AGENT_APP_CLOCK } from './appClock';
+import {
+  acquireSessionModelLock,
+  releaseSessionModelLock,
+  runProductionReasoningPath,
+  type ProductionModelCaller,
+  type ProductionRuntimeDetails,
+  validateModelOutputSchema,
+  buildRuntimeDetails,
+} from '../productionAi';
 
-export type AgentMode = 'mock' | 'live' | 'fallback';
+export type AgentMode = 'live' | 'fallback';
 /** Host behavior is injected at the app boundary; React never creates provider behavior. */
 export interface SalesAgentHost {
   reason(input: { customer_id: string; message: string }): Promise<unknown>;
-  capture(input: { customer_id: string; source_type: CaptureSourceType; source: string }): Promise<unknown>;
+  capture(input: { customer_id: string; source_type: CaptureSourceType; source: string; signal?: AbortSignal }): Promise<unknown>;
+  createProductionModelCaller?: () => ProductionModelCaller;
 }
 export type FakeTrustedHost = SalesAgentHost;
 export interface AgentSessionMessage {
@@ -57,6 +65,10 @@ export interface AgentSessionResult {
   readonly requires_human_review: true;
   readonly executable: false;
   readonly writes_crm: false;
+  readonly runtime_details: ProductionRuntimeDetails;
+  readonly blocked_message: string | null;
+  readonly intent_envelope: AgentIntentEnvelope;
+  readonly grounded_claims: readonly GroundedClaim[];
 }
 export type SalesAgentSessionOutcome =
   | { readonly kind: 'reasoning_result'; readonly result: AgentSessionResult }
@@ -69,15 +81,20 @@ export interface SafeWriteBoundary {
 export interface SalesAgentSessionDependencies {
   readonly snapshot: LoadedReadOnlyAgentSnapshot;
   readonly context: ContextSnapshot;
+  /** Read-only catalog context used only for an explicit 2–5 customer compare allowlist. */
+  readonly compare_context?: ContextSnapshot;
   readonly memory?: CustomerMemoryContext;
   readonly profile_id: string;
   readonly memory_repository?: MemoryRepository;
   readonly loadCustomerSnapshot?: (customerId: string) => Promise<{ next_follow_up_at: string | null } | null>;
   /**
-   * `deterministic` (production default for chat): local intent + Mock runtime, no live provider.
+   * `deterministic` (production default for chat): local intent planning, no live planning provider.
    * `host`: call injected host.reason (tests / explicit live planning).
    */
   readonly planning_mode?: 'deterministic' | 'host';
+  /** Injected Fake Transport / Trusted Host caller for tests and production adapter. */
+  readonly model_caller?: ProductionModelCaller;
+  readonly abort_signal?: AbortSignal;
 }
 
 const READ_TOOLS_BY_INTENT: Record<string, readonly SalesAgentCustomerScopedToolId[]> = {
@@ -86,21 +103,25 @@ const READ_TOOLS_BY_INTENT: Record<string, readonly SalesAgentCustomerScopedTool
   CUSTOMER_TIMELINE_REVIEW: ['get_customer', 'get_customer_timeline', 'list_customer_followups', 'list_customer_visits'],
   NEXT_ACTION_PREPARATION: ['get_customer_context', 'get_customer_timeline', 'list_customer_tasks', 'get_active_memory'],
   FOLLOW_UP_DRAFT: ['get_customer', 'get_customer_timeline', 'get_active_memory', 'get_existing_ai_results'],
+  INTERACTION_SUMMARY: ['get_customer_timeline', 'get_active_memory'],
+  COMPLEX_CUSTOMER_COMPARE: ['get_customer_context', 'get_customer_timeline', 'get_active_memory'],
   SAFE_FALLBACK: ['get_customer_context', 'get_active_memory', 'get_customer_timeline'],
 };
 
-export function deterministicPlanForMessage(customerId: string, message: string): ValidatedSemanticPlan {
-  const write = localWritePlan(customerId, message);
+export function deterministicPlanForEnvelope(customerId: string, envelope: AgentIntentEnvelope): ValidatedSemanticPlan {
+  const write = localWritePlan(customerId, envelope);
   if (write) return write;
-  const intent = classifySalesAgentIntent(message);
+  const intent = intentFromEnvelope(envelope);
   const tools = READ_TOOLS_BY_INTENT[intent] ?? READ_TOOLS_BY_INTENT.SAFE_FALLBACK;
   return validateSemanticPlan({
     intent: intent === 'CUSTOMER_RISK_ANALYSIS' ? 'CUSTOMER_RISK_ANALYSIS'
       : intent === 'CUSTOMER_TIMELINE_REVIEW' ? 'CUSTOMER_TIMELINE_REVIEW'
         : intent === 'NEXT_ACTION_PREPARATION' ? 'NEXT_ACTION_PREPARATION'
-          : intent === 'FOLLOW_UP_DRAFT' ? 'FOLLOW_UP_DRAFT'
-            : intent === 'CUSTOMER_SUMMARY' ? 'CUSTOMER_SUMMARY'
-              : 'SAFE_FALLBACK',
+           : intent === 'FOLLOW_UP_DRAFT' ? 'FOLLOW_UP_DRAFT'
+             : intent === 'INTERACTION_SUMMARY' ? 'INTERACTION_SUMMARY'
+               : intent === 'COMPLEX_CUSTOMER_COMPARE' ? 'COMPLEX_CUSTOMER_COMPARE'
+                 : intent === 'CUSTOMER_SUMMARY' ? 'CUSTOMER_SUMMARY'
+                   : 'SAFE_FALLBACK',
     customer_id: customerId,
     confidence: 0,
     provider_kind: 'DETERMINISTIC_FALLBACK',
@@ -114,50 +135,39 @@ export function deterministicPlanForMessage(customerId: string, message: string)
   }, customerId);
 }
 
-function localWritePlan(customerId: string, message: string): ValidatedSemanticPlan | null {
-  const classified = classifyClosedWriteIntent(message);
-  if (!classified) return null;
+function localWritePlan(customerId: string, envelope: AgentIntentEnvelope): ValidatedSemanticPlan | null {
+  const draft = envelope.write_draft;
+  if (!draft) return null;
   return validateSemanticPlan({
-    intent: classified.intent,
+    intent: draft.intent,
     customer_id: customerId,
     confidence: 0,
     provider_kind: 'DETERMINISTIC_FALLBACK',
     steps: [{
-      tool_id: classified.tool_id,
+      tool_id: draft.tool_id,
       customer_id: customerId,
       access: 'write',
       requires_confirmation: true,
-      reason: classified.reason,
+      reason: 'Authoritative AgentIntentEnvelope write decision.',
     }],
   }, customerId);
 }
 
 function deterministicLocalCapture(customerId: string, sourceType: CaptureSourceType, source: string): CustomerCaptureReview {
-  const facts = sourceType === 'text'
-    ? source.split(/[。！？\n]+/).map(item => item.trim()).filter(Boolean).slice(0, 20).map((content, index) => ({
+  if (sourceType !== 'text') throw new Error('多模态模型未配置或不可用，本次未进行图片 AI 分析。请配置 Vision Provider 后重试。');
+  const facts = source.split(/[。！？\n]+/).map(item => item.trim()).filter(Boolean).slice(0, 20).map((content, index) => ({
         fact_id: `local-text-${index + 1}-${stableKey(content)}`,
         fact_type: /反对|不接受|太贵|拒绝/.test(content) ? 'visible_objection' : /需要|希望|要求|计划|下周|报价/.test(content) ? 'visible_requirement' : 'extracted_text',
         content,
         source_reference: `text:${index + 1}`,
         confidence: 1,
-      }))
-    : [{
-        fact_id: `local-image-manual-${stableKey(source.slice(0, 256))}`,
-        fact_type: 'manual_review_required',
-        content: '图片已安全载入；离线模式未识别图片内容，请人工编辑为可核对的客户事实后再接受。',
-        source_reference: 'image:manual-review',
-        confidence: 0,
-      }];
-  return createUnreviewedCapture(customerId, sourceType, 'DETERMINISTIC_LOCAL', facts);
-}
-
-function isUnavailableCaptureProvider(error: unknown): boolean {
-  const detail = error instanceof Error
-    ? error.message
-    : typeof error === 'string'
-      ? error
-      : (() => { try { return JSON.stringify(error); } catch { return ''; } })();
-  return /missing_host_provider|Trusted-host adapter is blocked/i.test(detail);
+      }));
+  return createUnreviewedCapture(customerId, sourceType, 'DETERMINISTIC_LOCAL', facts, buildRuntimeDetails({
+    runtime_mode: 'LOCAL_DETERMINISTIC', provider: null, model: null, model_called: false,
+    request_id: `capture-local-${stableKey(source)}`, latency_ms: 0, token_usage: null, tools_used: ['local_text_capture'],
+    evidence_count: facts.length, degraded: false, degradation_reason: null, validation_status: 'not_applicable',
+    evidence_validation_status: 'not_applicable', cancellation_status: 'not_requested', requires_real_model: false,
+  }));
 }
 
 export class SalesAgentSession {
@@ -206,15 +216,22 @@ export class SalesAgentSession {
     return setCanonicalGroupedOperationSelection(proposalId, this.customerId, operationId, selected);
   }
 
-  /** The sole message entry point: it owns classification, tool selection, proposal construction and fallback. */
-  async submit(message: string, evidenceRefs: readonly string[] = [`customer:${this.customerId}`]): Promise<SalesAgentSessionOutcome> {
+  /** Consumes the controller-owned immutable intent decision; this layer never classifies user text. */
+  async submit(
+    intentEnvelope: AgentIntentEnvelope,
+    evidenceRefs: readonly string[] = [`customer:${this.customerId}`],
+  ): Promise<SalesAgentSessionOutcome> {
+    const message = intentEnvelope.original_instruction;
     if (!message.trim()) return { kind: 'blocked', reason: formatUserFacingErrorMessage('A message is required.') };
     try {
       if (getPendingWriteDraft(this.customerId)) {
-        return await this.resumePendingWrite(message.trim(), evidenceRefs);
+        const answer = typeof intentEnvelope.extracted_fields.clarification_answer === 'string'
+          ? intentEnvelope.extracted_fields.clarification_answer
+          : message.trim();
+        return await this.resumePendingWrite(answer, evidenceRefs);
       }
 
-      const draft = draftWriteFields(message, this.clock());
+      const draft = intentEnvelope.write_draft;
       if (draft) {
         if (draft.missing_fields.length > 0 && draft.question) {
           setPendingWriteDraft(this.customerId, draft);
@@ -226,10 +243,13 @@ export class SalesAgentSession {
         return await this.emitWriteProposal(draft, evidenceRefs);
       }
 
-      const plan = await this.plan(message);
+      if (intentEnvelope.clarification_required && intentEnvelope.intent === 'SAFE_FALLBACK' && this.dependencies?.planning_mode !== 'host') {
+        return { kind: 'blocked', reason: '无法高置信度确定请求意图，请明确是总结、风险分析、下一步建议、跟进文案、互动总结、客户比较还是图片分析。' };
+      }
+      const plan = await this.plan(intentEnvelope);
       if (plan.steps.some(step => step.access === 'write')) {
         const writeStep = plan.steps.find(step => step.access === 'write')!;
-        const fallbackDraft = draftWriteFields(message, this.clock()) ?? {
+        const fallbackDraft = intentEnvelope.write_draft ?? {
           intent: plan.intent as WriteFieldDraft['intent'],
           tool_id: writeStep.tool_id as WriteFieldDraft['tool_id'],
           original_instruction: message.trim(),
@@ -250,7 +270,7 @@ export class SalesAgentSession {
             : fallbackDraft.intent,
         }, evidenceRefs);
       }
-      return { kind: 'reasoning_result', result: await this.askWithPlan(message, plan) };
+      return { kind: 'reasoning_result', result: await this.askWithPlan(intentEnvelope, plan) };
     } catch (cause) {
       return { kind: 'blocked', reason: formatUserFacingErrorMessage(cause) };
     }
@@ -267,8 +287,8 @@ export class SalesAgentSession {
     invalidateCustomerWriteState(this.customerId);
   }
 
-  async ask(message: string): Promise<AgentSessionResult> {
-    const outcome = await this.submit(message);
+  async ask(intentEnvelope: AgentIntentEnvelope): Promise<AgentSessionResult> {
+    const outcome = await this.submit(intentEnvelope);
     if (outcome.kind !== 'reasoning_result') {
       throw new Error(
         outcome.kind === 'write_proposal'
@@ -281,93 +301,132 @@ export class SalesAgentSession {
     return outcome.result;
   }
 
-  private async plan(message: string): Promise<ValidatedSemanticPlan> {
+  private async plan(envelope: AgentIntentEnvelope): Promise<ValidatedSemanticPlan> {
     if (!this.dependencies) throw new Error('Sales Agent production dependencies are not configured.');
     const mode = this.dependencies.planning_mode ?? (this.host ? 'host' : 'deterministic');
     if (mode === 'host' && this.host) {
-      return validateSemanticPlan(await this.host.reason({ customer_id: this.customerId, message }), this.customerId);
+      return validateSemanticPlan(await this.host.reason({ customer_id: this.customerId, message: envelope.normalized_instruction }), this.customerId);
     }
-    if (!this.host) return deterministicPlanForMessage(this.customerId, message);
+    if (!this.host) return deterministicPlanForEnvelope(this.customerId, envelope);
     // Deterministic chat path — do not call live Trusted Host / provider for ordinary asks.
-    return deterministicPlanForMessage(this.customerId, message);
+    return deterministicPlanForEnvelope(this.customerId, envelope);
   }
 
-  private async askWithPlan(message: string, plan: ValidatedSemanticPlan): Promise<AgentSessionResult> {
+  private async askWithPlan(intentEnvelope: AgentIntentEnvelope, plan: ValidatedSemanticPlan): Promise<AgentSessionResult> {
     if (!this.dependencies) throw new Error('Sales Agent production dependencies are not configured.');
-    const mode: AgentMode = this.dependencies.planning_mode === 'deterministic' || !this.host ? 'fallback' : 'mock';
-    this.push('user', message, mode);
-    const tool_trace = plan.steps
-      .filter(step => step.access === 'read')
-      .map(step => executeSalesAgentReadTool(step.tool_id as SalesAgentCustomerScopedToolId, {
+    const message = intentEnvelope.original_instruction;
+    const request_id = intentEnvelope.envelope_id;
+    const sessionKey = `${this.customerId}:${this.dependencies.context.snapshotId}`;
+    if (!acquireSessionModelLock(sessionKey, request_id)) {
+      throw new Error('同一会话已有进行中的模型请求，请等待完成或取消后再试。');
+    }
+    try {
+      const tool_trace = plan.steps
+        .filter(step => step.access === 'read')
+        .map(step => executeSalesAgentReadTool(step.tool_id as SalesAgentCustomerScopedToolId, {
+          customer_id: this.customerId,
+          snapshot: this.dependencies!.snapshot,
+          context: this.dependencies!.context,
+          memory: this.dependencies!.memory,
+        }));
+      if (!tool_trace.length) throw new Error('A successful read result requires an executed registered read tool.');
+
+      const model_caller = this.dependencies.model_caller
+        ?? this.host?.createProductionModelCaller?.()
+        ?? undefined;
+
+      const compareAllowlist = intentEnvelope.intent === 'COMPLEX_CUSTOMER_COMPARE'
+        && Array.isArray(intentEnvelope.extracted_fields.customer_allowlist)
+        ? intentEnvelope.extracted_fields.customer_allowlist.filter((item): item is string => typeof item === 'string')
+        : undefined;
+      const path = await runProductionReasoningPath({
+        request_id,
+        intent: plan.intent,
+        message,
         customer_id: this.customerId,
-        snapshot: this.dependencies!.snapshot,
-        context: this.dependencies!.context,
-        memory: this.dependencies!.memory,
-      }));
-    if (!tool_trace.length) throw new Error('A successful read result requires an executed registered read tool.');
-    const runtime = await runSalesAgentRuntime({
-      request_id: `${this.dependencies.context.snapshotId}:session:${this.messages.length}`,
-      objective: message,
-      context: this.dependencies.context,
-      memory: this.dependencies.memory,
-      profile_id: this.dependencies.profile_id,
-      provider: createMockReasoningProvider(),
-      clock: this.clock,
-    });
-    const evidence_refs = [...new Set([
-      ...tool_trace.flatMap(item => item.evidence_refs),
-      ...runtime.result.evidence.map(item => item.evidence_id),
-    ])];
-    const structured = projectSalesAgentResponse(runtime, tool_trace, evidence_refs);
-    const response = [
-      `【客户理解】${structured.customer_understanding}`,
-      `【最近变化】${structured.recent_changes}`,
-      `【风险与机会】${structured.risks_and_opportunities}`,
-      `【建议下一步】${structured.recommended_next_step}`,
-      `【证据】${structured.evidence_refs.join('、') || '无'}`,
-      `【工具】${tool_trace.map(item => item.tool_id).join(' → ')}`,
-    ].join('\n');
-    const result: AgentSessionResult = {
-      plan,
-      mode,
-      provider: mode === 'mock'
-        ? 'injected fake-host test transport + SalesAgentRuntime'
-        : 'deterministic fallback + SalesAgentRuntime (no live provider)',
-      model: 'Mock reasoning provider (deterministic_fixture_v1)',
-      tool_trace,
-      evidence_refs,
-      confidence: 0.62,
-      response,
-      structured,
-      requires_human_review: true,
-      executable: false,
-      writes_crm: false,
-    };
-    this.push('agent', result.response, mode);
-    return result;
+        customer_allowlist: compareAllowlist,
+        context: compareAllowlist ? (this.dependencies.compare_context ?? this.dependencies.context) : this.dependencies.context,
+        memory: this.dependencies.memory,
+        tool_trace,
+        callModel: model_caller,
+        signal: this.dependencies.abort_signal,
+      });
+      if (this.dependencies.abort_signal?.aborted || path.runtime.cancellation_status === 'cancelled_at_host') {
+        throw new Error('cancelled');
+      }
+
+      const mode: AgentMode = path.runtime.runtime_mode === 'REAL_MODEL' ? 'live' : 'fallback';
+      this.push('user', message, mode);
+
+      const response = [
+        path.blocked_message ? `【状态】${path.blocked_message}` : null,
+        `【客户理解】${path.structured.customer_understanding}`,
+        `【最近变化】${path.structured.recent_changes}`,
+        `【风险与机会】${path.structured.risks_and_opportunities}`,
+        `【建议下一步】${path.structured.recommended_next_step}`,
+        `【证据】${path.evidence_refs.join('、') || '无'}`,
+        `【工具】${tool_trace.map(item => item.tool_id).join(' → ')}`,
+        `【运行模式】${path.runtime.ui_label}`,
+      ].filter(Boolean).join('\n');
+
+      const result: AgentSessionResult = {
+        plan,
+        mode,
+        provider: path.runtime.provider ?? (mode === 'fallback' ? 'local_deterministic' : 'none'),
+        model: path.runtime.model ?? 'none',
+        tool_trace,
+        evidence_refs: path.evidence_refs,
+        confidence: path.runtime.model_called && !path.runtime.degraded ? 0.72 : 0.55,
+        response,
+        structured: path.structured,
+        requires_human_review: true,
+        executable: false,
+        writes_crm: false,
+        runtime_details: path.runtime,
+        blocked_message: path.blocked_message,
+        intent_envelope: intentEnvelope,
+        grounded_claims: path.grounded_result?.claims ?? [],
+      };
+      if (this.dependencies.abort_signal?.aborted) throw new Error('cancelled');
+      this.push('agent', result.response, mode);
+      return result;
+    } finally {
+      releaseSessionModelLock(sessionKey, request_id);
+    }
   }
 
-  async capture(sourceType: CaptureSourceType, source: string): Promise<CustomerCaptureReview> {
+  async capture(sourceType: CaptureSourceType, source: string, signal?: AbortSignal, intentEnvelope?: AgentIntentEnvelope): Promise<CustomerCaptureReview> {
     if (!source.trim()) throw new Error('Capture source is required.');
+    if (sourceType === 'image' && !this.host) {
+      throw new Error('多模态模型未配置或不可用，本次未进行图片 AI 分析。请配置 Vision Provider 后重试。');
+    }
+    if (sourceType === 'image' && intentEnvelope && (intentEnvelope.intent !== 'CAPTURE_REVIEW' || intentEnvelope.capture_intent !== 'image_analysis')) {
+      throw new Error('Capture Analyze requires a formal Vision Intent Envelope.');
+    }
     if (!this.host) {
       return deterministicLocalCapture(this.customerId, sourceType, source);
     }
-    let output: unknown;
-    try {
-      output = await this.host.capture({ customer_id: this.customerId, source_type: sourceType, source });
-    } catch (error) {
-      // Capture remains usable without an API key. The trusted host returns this
-      // typed block when no provider is configured; it must never leak into UI.
-      if (isUnavailableCaptureProvider(error)) {
-        return deterministicLocalCapture(this.customerId, sourceType, source);
+    const activeSignal = signal ?? this.dependencies?.abort_signal;
+    if (activeSignal?.aborted) throw new Error('cancelled');
+    const output = await this.host.capture({ customer_id: this.customerId, source_type: sourceType, source, signal: activeSignal });
+    if (activeSignal?.aborted) throw new Error('cancelled');
+    if (sourceType === 'image') {
+      const validation = validateModelOutputSchema('image_capture_analysis_v1', output);
+      if (!validation.valid || validation.output?.schema !== 'image_capture_analysis_v1') {
+        throw new Error('多模态模型输出未通过 image_capture_analysis_v1 封闭 Schema 校验。');
       }
-      throw error;
+      return createUnreviewedCapture(this.customerId, sourceType, 'QWEN_VISION_COMPATIBLE', validation.output.value.extracted_facts, buildRuntimeDetails({
+        runtime_mode: 'REAL_MODEL', provider: 'QWEN_VISION_COMPATIBLE', model: 'qwen-vl-plus', model_called: true,
+        request_id: intentEnvelope?.envelope_id ?? 'capture-host-request', latency_ms: null, token_usage: null, tools_used: [],
+        evidence_count: validation.output.value.extracted_facts.length, degraded: false, degradation_reason: null,
+        validation_status: 'passed', evidence_validation_status: 'passed', cancellation_status: 'not_requested', requires_real_model: true,
+      }));
     }
     return createUnreviewedCapture(
       this.customerId,
       sourceType,
-      sourceType === 'image' ? 'QWEN_VISION_COMPATIBLE' : 'DEEPSEEK_COMPATIBLE',
-      (output as { visual_facts?: unknown }).visual_facts,
+      'DEEPSEEK_COMPATIBLE',
+      (output as { extracted_facts?: unknown }).extracted_facts,
     );
   }
 
@@ -378,7 +437,22 @@ export class SalesAgentSession {
       const key = stableKey(`${fact.source_reference}:${fact.reviewed_content}`);
       const id = `capture-memory-${this.customerId}-${fact.fact_id}-${key}`;
       if (this.persistedFactIds.has(id)) return id;
-      const entry = await this.dependencies!.memory_repository!.createCandidate({
+      const repository = this.dependencies!.memory_repository!;
+      const evidence = { id: `capture-evidence-${fact.fact_id}-${key}`, evidence_type: 'CUSTOMER' as const, evidence_id: this.customerId };
+      const existing = (await repository.listCustomerMemory(this.customerId)).find(item => item.id === id);
+      if (existing) {
+        const exactReplay = existing.customer_id === this.customerId
+          && existing.memory_type === 'FACT'
+          && existing.content === fact.reviewed_content
+          && existing.source_type === 'HUMAN_INPUT'
+          && existing.source_reference === fact.source_reference
+          && existing.confidence === fact.confidence
+          && existing.evidence.some(link => link.id === evidence.id && link.evidence_type === evidence.evidence_type && link.evidence_id === evidence.evidence_id);
+        if (!exactReplay) throw new Error('Capture memory identity collision.');
+        this.persistedFactIds.add(id);
+        return id;
+      }
+      const entry = await repository.createCandidate({
         id,
         customer_id: this.customerId,
         memory_type: 'FACT',
@@ -386,7 +460,7 @@ export class SalesAgentSession {
         source_type: 'HUMAN_INPUT',
         source_reference: fact.source_reference,
         confidence: fact.confidence,
-        evidence: [{ id: `capture-evidence-${fact.fact_id}-${key}`, evidence_type: 'CUSTOMER', evidence_id: this.customerId }],
+        evidence: [evidence],
       });
       this.persistedFactIds.add(id);
       return entry.id;
@@ -396,7 +470,13 @@ export class SalesAgentSession {
   async analyzeReviewedFacts(review: CustomerCaptureReview): Promise<AgentSessionResult> {
     this.assertReviewed(review);
     const acceptedFacts = reviewedFacts(review).map(fact => fact.reviewed_content);
-    const outcome = await this.submit(`Analyze reviewed customer capture facts: ${acceptedFacts.join('; ')}`);
+    const instruction = `Analyze reviewed customer capture facts: ${acceptedFacts.join('; ')}`;
+    const outcome = await this.submit(createAgentIntentEnvelopeFromPreset({
+      instruction,
+      now_iso: this.clock(),
+      intent: 'CUSTOMER_SUMMARY',
+      mode: 'customer_analysis',
+    }));
     if (outcome.kind !== 'reasoning_result') {
       throw new Error(
         outcome.kind === 'write_proposal'
@@ -423,13 +503,14 @@ export class SalesAgentSession {
     const facts = reviewedFacts(review);
     const factText = facts.map(fact => fact.reviewed_content).join('; ');
     const evidenceRefs = facts.map(fact => fact.source_reference);
-    let outcome = await this.submit(factText, evidenceRefs);
-    // A reviewed fact can be descriptive rather than an imperative. The user's
-    // explicit Create Proposal click supplies the missing write intent, while
-    // the generated proposal still remains unexecuted until exact confirmation.
-    if (outcome.kind === 'reasoning_result') {
-      outcome = await this.submit(`帮我写一条跟进：${factText}`, evidenceRefs);
-    }
+    // The explicit Create Proposal click becomes one standard instruction and
+    // one immutable envelope; the proposal remains unexecuted until confirmation.
+    const outcome = await this.submit(createAgentIntentEnvelopeFromPreset({
+      instruction: factText,
+      now_iso: this.clock(),
+      intent: 'CREATE_FOLLOW_UP_REQUEST',
+      mode: 'write_action',
+    }), evidenceRefs);
     if (outcome.kind !== 'write_proposal') {
       throw new Error(
         outcome.kind === 'reasoning_result'
@@ -535,13 +616,6 @@ export class SalesAgentSession {
   }
 
   private async emitWriteProposal(draft: WriteFieldDraft, evidenceRefs: readonly string[]): Promise<SalesAgentSessionOutcome> {
-    const plan = localWritePlan(this.customerId, draft.original_instruction) ?? validateSemanticPlan({
-      intent: draft.intent,
-      customer_id: this.customerId,
-      confidence: 0,
-      provider_kind: 'DETERMINISTIC_FALLBACK',
-      steps: [{ tool_id: draft.tool_id, customer_id: this.customerId, access: 'write', requires_confirmation: true, reason: 'Session-owned write proposal.' }],
-    }, this.customerId);
     const grouped_operations = await this.groupedOperationsForDraft(draft);
     const current_values = grouped_operations ? {} : await this.currentValuesForTool(draft.tool_id);
     const built = buildWriteProposal({
@@ -557,7 +631,6 @@ export class SalesAgentSession {
     });
     const proposal = registerCanonicalProposal(built);
     setPendingWriteDraft(this.customerId, null);
-    void plan;
     return { kind: 'write_proposal', proposal };
   }
 

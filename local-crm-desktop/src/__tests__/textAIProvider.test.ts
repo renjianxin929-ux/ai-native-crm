@@ -69,9 +69,9 @@ describe('buildDeepSeekChatRequest', () => {
     config.apiKey = 'sk-test-key';
     const req = buildDeepSeekChatRequest(config, '你是一个销售助手', '分析这段对话');
 
-    expect(req.url).toContain('https://api.deepseek.com/v1');
-    expect(req.url).toContain('/chat/completions');
-    expect(req.headers['Authorization']).toBe('Bearer sk-test-key');
+    expect(req.url).toBe('trusted-host://browser-provider-path-removed');
+    expect(req.url).not.toContain('/chat/completions');
+    expect(req.headers['Authorization']).toBeUndefined();
     expect(req.headers['Content-Type']).toBe('application/json');
 
     const body = JSON.parse(req.body);

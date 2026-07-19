@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { buildFullBackupPayload, restoreBackupPayloadWithDb } from '../lib/backupRestore';
+import { createDraftFromCallAnalysis } from '../lib/aiDraft';
 import { ensureBaseSchema, ensureCustomerSchema, type DatabaseLike } from '../lib/db';
 import { insertLeadCaptureEvent, listLeadCaptureEventsByWorkItemId } from '../lib/leadWorkbench/captureEvents';
 import {
@@ -26,7 +27,6 @@ import { syncCollectedLeadCreateCustomer } from '../lib/leadWorkbench/syncAdapte
 import { updateLeadWorkItemStatus } from '../lib/leadWorkbench/workItemActions';
 import { buildTodaySummary } from '../lib/rules';
 import type { Customer, FollowUpRecord, Task } from '../lib/types';
-import { buildCallDraftInputForLinkedCustomer } from '../pages/AIAssistantPage';
 import { buildCustomerActionAnalysis, formatCustomerAnalysisTextForDraft } from '../pages/CustomerDetail';
 import {
   buildFinalImportPreviewRows,
@@ -153,7 +153,7 @@ describe('CRM full release gate with independent on-disk SQLite connections', ()
       await insertVisit(sourceDb, customer.id);
       await insertTask(sourceDb, customer.id);
 
-      const callDraft = buildCallDraftInputForLinkedCustomer({
+      const callDraft = createDraftFromCallAnalysis({
         summary: '客户愿意继续了解',
         phone_feedback: 'CAN_LEARN',
         intent_level: 'MEDIUM',
@@ -162,7 +162,7 @@ describe('CRM full release gate with independent on-disk SQLite connections', ()
         next_follow_up_text: '下周',
         risk: '需要确认预算',
         confidence: 0.78,
-      }, customer);
+      }, customer.id);
       await insertAiDraft(sourceDb, 'release-gate-ai-draft', callDraft);
 
       const storedCustomers = await sourceDb.select<Customer>('SELECT * FROM customers');
@@ -465,7 +465,7 @@ async function insertTask(db: DatabaseLike, customerId: string): Promise<void> {
 async function insertAiDraft(
   db: DatabaseLike,
   id: string,
-  draft: ReturnType<typeof buildCallDraftInputForLinkedCustomer>,
+  draft: ReturnType<typeof createDraftFromCallAnalysis>,
 ): Promise<void> {
   await db.execute(
     `INSERT INTO ai_drafts (

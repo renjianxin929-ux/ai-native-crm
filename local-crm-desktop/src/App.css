@@ -2520,6 +2520,102 @@ tr.clickable {
 .agent-step-progress li.active { color: var(--primary); font-weight: 600; }
 .agent-step-progress li.done { color: var(--color-success-text); }
 
+.agent-result-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.agent-runtime-mode-badge {
+  flex-shrink: 0;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  background: rgba(255, 255, 255, 0.85);
+  color: var(--text-secondary);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.agent-runtime-mode-badge[data-runtime-mode='REAL_MODEL'] {
+  color: #047857;
+  border-color: rgba(4, 120, 87, 0.28);
+  background: rgba(236, 253, 245, 0.9);
+}
+
+.agent-runtime-details {
+  border-radius: 12px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: rgba(248, 250, 252, 0.95);
+  padding: 10px 12px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  display: grid;
+  gap: 4px;
+}
+
+.agent-runtime-details p {
+  margin: 0;
+}
+
+.agent-model-unavailable {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(254, 243, 199, 0.9);
+  color: #92400e;
+  font-size: 13px;
+}
+
+.agent-result-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.agent-runtime-mode-badge {
+  flex-shrink: 0;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  background: rgba(255, 255, 255, 0.85);
+  color: var(--text-secondary);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.agent-runtime-mode-badge[data-runtime-mode='REAL_MODEL'] {
+  color: #047857;
+  border-color: rgba(4, 120, 87, 0.28);
+  background: rgba(236, 253, 245, 0.9);
+}
+
+.agent-runtime-details {
+  border-radius: 12px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: rgba(248, 250, 252, 0.95);
+  padding: 10px 12px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  display: grid;
+  gap: 4px;
+}
+
+.agent-runtime-details p {
+  margin: 0;
+}
+
+.agent-model-unavailable {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(254, 243, 199, 0.9);
+  color: #92400e;
+  font-size: 13px;
+}
+
 .agent-result-stage {
   width: min(920px, 100%);
   border-radius: 22px;

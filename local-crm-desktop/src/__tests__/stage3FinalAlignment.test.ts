@@ -1,34 +1,21 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { STAGE2_EVALUATION_FIXTURES } from '../lib/eval/fixtures';
-import { SALES_AGENT_CANONICAL_AI_PATH } from '../lib/salesAgent/canonicalPath';
-import { STAGE3_SALES_AGENT_ARCHITECTURE_STATE } from '../lib/salesAgent/architectureState';
 import { adaptSalesAgentResultToHumanReviewContract } from '../lib/salesAgent/humanReviewCompatibility';
 import { createMockReasoningProvider } from '../lib/salesAgent/provider';
 import { runSalesAgentRuntime } from '../lib/salesAgent/runtime';
 import { adaptStage2ReasoningResultToSalesAgent } from '../lib/salesAgent/stage2CompatibilityAdapter';
 
 describe('Stage3 final canonical alignment', () => {
-  it('declares SalesAgentRuntime as the canonical future reasoning entry point', () => {
-    expect(SALES_AGENT_CANONICAL_AI_PATH).toMatchObject({
-      entry_point: 'runSalesAgentRuntime',
-      status: 'canonical_future_ai_reasoning_entry_point',
-      automatic_execution: false,
-      writes_crm: false,
-    });
+  it('keeps the production workspace on the single Trusted Host session path', () => {
     const workspace = readFileSync('src/components/aiNative/AINativeCRMWorkspace.tsx', 'utf8');
-    const panel = readFileSync('src/components/aiNative/SalesAgentResultPanel.tsx', 'utf8');
-    const copilotWorkflow = readFileSync('src/lib/salesCopilot/workflow.ts', 'utf8');
-    expect(workspace).toContain('runSalesCopilotWorkflow(');
-    expect(copilotWorkflow).toContain('runSalesAgentRuntime({');
+    expect(workspace).toContain('SalesAgentInteractionWorkspace');
+    expect(workspace).toContain('createTrustedHostSalesAgentAdapter');
+    expect(workspace).not.toContain('runSalesCopilotWorkflow(');
+    expect(workspace).not.toContain('SalesAgentResultPanel');
     expect(workspace).not.toContain('.reason(');
-    expect(panel).not.toContain('.reason(');
-    expect(copilotWorkflow).not.toContain('.reason(');
-    expect(workspace).toContain('Legacy / 只读建议路径');
-    expect(STAGE3_SALES_AGENT_ARCHITECTURE_STATE).toMatchObject({
-      current_provider_execution: { provider_kind: 'MOCK', execution_mode: 'MOCK', live_enabled: false },
-      product_control: { read_only: true, suggest_only: true, human_controlled: true, automatic_invocation: false, writes_crm: false },
-    });
+    expect(workspace).not.toContain('Legacy /');
+    expect(workspace).not.toContain('createMockReasoningProvider');
   });
 
   it('adapts Stage2 suggestions into the canonical evidence-backed result contract', () => {

@@ -10,7 +10,6 @@ import DataImportPage from './pages/DataImportPage';
 import LeadImportCenterPage from './pages/LeadImportCenterPage';
 import LeadWorkbenchPage from './pages/LeadWorkbenchPage';
 import AISettingsPage from './pages/AISettingsPage';
-import AIAssistantPage from './pages/AIAssistantPage';
 import AINativeCRMWorkspace from './components/aiNative/AINativeCRMWorkspace';
 import type { Customer } from './lib/types';
 import { listCustomers } from './lib/db';
@@ -104,7 +103,6 @@ export default function App() {
           <Route path="/customers/:id" element={<CustomerDetail onRefresh={refreshAll} />} />
           <Route path="/follow-ups" element={<FollowUpRecords />} />
           <Route path="/visits" element={<VisitRecords />} />
-          <Route path="/assistant" element={<AIAssistantPage />} />
           <Route path="/ai-workspace" element={<AINativeCRMWorkspace />} />
           <Route path="/import" element={<DataImportPage customers={customers} onRefresh={refreshAll} />} />
           <Route path="/lead-import-center" element={<LeadImportCenterPage />} />

@@ -16,7 +16,7 @@ describe('Sales Agent confirmation card', () => {
     for (const text of ['客户：', '操作：', '当前：', '建议：', '原因：', '依据：', '可回滚：', '确认新增', '取消']) {
       expect(source).toContain(text);
     }
-    expect(source).toContain('confirmSalesAgentProposal(session, confirmedProposal, onRefresh)');
+    expect(source).toContain('confirmSalesAgentProposal(session, confirmedProposal, async () =>');
     expect(source).toContain('cancelProposal');
   });
 });

@@ -53,13 +53,13 @@ export interface WriteClarificationRequest {
 }
 
 const CREATE_FOLLOW_UP =
-  /(写\s*(一\s*)?条\s*跟进|新增\s*(一\s*)?条?\s*跟进|添加\s*(一\s*)?条?\s*跟进|记录\s*(一下|一\s*条)?\s*(这次)?\s*(沟通|客户)?\s*跟进|帮我\s*记\s*(一\s*)?条\s*(客户)?\s*跟进|创建\s*.*跟进\s*记录|log\s+a\s+follow\s*[- ]?up|create\s+follow\s*[- ]?up)/i;
+  /(写\s*(?:(一\s*)?条\s*)?跟进\s*记录|写\s*(一\s*)?条\s*跟进|新增\s*(?:(一\s*)?条?)?[^。！？]{0,40}跟进\s*记录|新增\s*(一\s*)?条?\s*跟进|添加\s*(?:(一\s*)?条?)?[^。！？]{0,40}跟进\s*记录|添加\s*(一\s*)?条?\s*跟进|添加\s*follow\s*[- ]?up|记录\s*(一下|一\s*条)?\s*(本次|这次)?\s*(沟通|客户)?\s*跟进|记录\s*跟进\s*内容|(?:帮我\s*)?记\s*(一\s*)?条\s*(客户)?\s*跟进|跟进\s*记下|创建\s*.*跟进\s*记录|log\s+a\s+follow\s*[- ]?up|create\s+follow\s*[- ]?up)/i;
 
 const CREATE_TASK =
-  /(创建\s*(一\s*)?个?\s*任务|建\s*(一\s*)?个?\s*待办|提醒我|待办|create\s+task)/i;
+  /(创建\s*(?:(一\s*)?个?\s*)?(?:[^。！？]{0,40})?(?:任务|提醒)|安排\s*(?:(一\s*)?个?)?[^。！？]{0,50}任务|新建\s*(?:任务|待办)|建\s*(?:个|一\s*个)?\s*(?:任务|待办)|任务\s*[:：]|提醒我|待办|create\s+task)/i;
 
 const UPDATE_NEXT_FOLLOW_UP =
-  /(修改\s*下次\s*跟进|更新\s*下次\s*跟进|把\s*下\s*一?\s*次\s*(联系|跟进)\s*改|下次\s*跟进\s*(时间|改到)|set\s+next\s+follow|update\s+next\s+follow|改到\s*(下|本|今|明)|下[一二三四五六日天]再?联系)/i;
+  /(修改\s*下次\s*跟进|更新\s*下次\s*跟进|把\s*下\s*一?\s*次\s*(联系|跟进)\s*改|下次\s*(?:跟进|回访|联系)\s*(?:时间)?\s*(?:更新|修改|改到)|安排\s*下次\s*跟进|把\s*下次\s*(?:联系|跟进)\s*时间\s*设|设置\s*next\s+follow|set\s+next\s+follow|update\s+next\s+follow|改\s*下次\s*联系\s*时间|改到\s*(下|本|今|明)|下[一二三四五六日天]再?联系)/i;
 
 /** True when utterance is an explicit CRM write (must not fall into summary/draft). */
 export function isClosedWriteIntentUtterance(message: string): boolean {

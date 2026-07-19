@@ -93,6 +93,7 @@ function sessionFor(customerId: string, name: string) {
     memory,
     profile_id: 'foreign_trade_geo',
     planning_mode: 'deterministic',
+    reasoning_profile: 'mock_test',
   });
 }
 
@@ -235,7 +236,7 @@ describe('Sales Agent real functional closure', () => {
     const fixture = await openSalesAgentSqliteFixture();
     try {
       const activeSession = sessionFor('dg-a-jm', '东莞 JM 新能源科技有限公司');
-      const runtimeSpy = vi.spyOn(await import('../lib/salesAgent/runtime'), 'runSalesAgentRuntime');
+      const runtimeSpy = vi.spyOn(await import('../lib/productionAi/productionReasoningPath'), 'runProductionReasoningPath');
       const controller = new SalesAgentInteractionController({
         db: fixture.db,
         createSession: () => activeSession,
@@ -253,7 +254,7 @@ describe('Sales Agent real functional closure', () => {
       expect(runtimeArgs.context.recentInteractions.length).toBeGreaterThan(0);
       expect(turn.outcome.result.structured.customer_understanding).toBeTruthy();
       expect(turn.outcome.result.structured.recommended_next_step).toBeTruthy();
-      expect(turn.outcome.result.provider).toContain('SalesAgentRuntime');
+      expect(turn.outcome.result.runtime_details.runtime_mode).toBe('MODEL_UNAVAILABLE');
       expect(turn.outcome.result.writes_crm).toBe(false);
       expect(turn.state.pending_original_instruction).toBeNull();
 

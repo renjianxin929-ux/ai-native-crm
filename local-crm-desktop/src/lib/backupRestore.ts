@@ -63,6 +63,7 @@ export async function buildFullBackupPayload(
 
   for (const table of BACKUP_TABLES) {
     tables[table] = await db.select<Record<string, unknown>>(`SELECT * FROM ${table}`);
+    if (table === 'settings') tables.settings = tables.settings.filter(isSafeSettingRow);
   }
 
   const counts = Object.fromEntries(
@@ -119,7 +120,9 @@ export function normalizeBackupPayload(raw: unknown): NormalizedBackupPayload {
       continue;
     }
 
-    tables[table] = sourceValue as Record<string, unknown>[];
+    tables[table] = table === 'settings'
+      ? (sourceValue as Record<string, unknown>[]).filter(isSafeSettingRow)
+      : sourceValue as Record<string, unknown>[];
   }
 
   return {
@@ -305,4 +308,11 @@ function isSafeSqlIdentifier(value: string): boolean {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isSafeSettingRow(row: Record<string, unknown>): boolean {
+  const key = typeof row.key === 'string' ? row.key.toLowerCase() : '';
+  if (['ai_config', 'text_ai_config', 'multimodal_config'].includes(key)) return false;
+  const raw = typeof row.value === 'string' ? row.value.toLowerCase() : '';
+  return !/(?:api[_-]?key|authorization|provider[_-]?key|\"token\"|\"secret\")/.test(raw);
 }

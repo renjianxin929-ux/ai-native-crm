@@ -21,7 +21,7 @@ describe('AI Native CRM overnight full stabilization contracts', () => {
     expect(phrases).toHaveLength(100);
     for (const phrase of phrases) {
       const result = buildAgentIntentEnvelope(phrase, NOW);
-      expect(result).toMatchObject({ intent: 'SEARCH_CUSTOMERS', mode: 'portfolio_search', customer_reference: null, parser_source: 'deterministic_v1', clarification_required: false });
+      expect(result).toMatchObject({ intent: 'SEARCH_CUSTOMERS', mode: 'portfolio_search', customer_reference: null, parser_source: 'production_deterministic_v2', clarification_required: false });
       expect(result.portfolio_filters.region).toBe('广州');
     }
   });
@@ -53,7 +53,7 @@ describe('AI Native CRM overnight full stabilization contracts', () => {
     for (const phrase of phrases) {
       const envelope = buildAgentIntentEnvelope(phrase, NOW);
       expect(envelope.mode, phrase).toBe('customer_analysis');
-      expect(['CUSTOMER_SUMMARY', 'CUSTOMER_RISK_ANALYSIS', 'CUSTOMER_TIMELINE_REVIEW', 'NEXT_ACTION_PREPARATION']).toContain(envelope.intent);
+      expect(['CUSTOMER_SUMMARY', 'CUSTOMER_RISK_ANALYSIS', 'CUSTOMER_TIMELINE_REVIEW', 'INTERACTION_SUMMARY', 'NEXT_ACTION_PREPARATION']).toContain(envelope.intent);
       expect(envelope.write_intent).toBeNull();
     }
   });
@@ -100,7 +100,7 @@ describe('AI Native CRM overnight full stabilization contracts', () => {
     const boundary = createApprovedCrmWriteBoundary(repository, clock);
     const session = sessionForWrite('2026-07-16T15:00:00+08:00', NOW);
 
-    const outcome = await session.submit('帮我写一条跟进，下周一上午 10 点联系');
+    const outcome = await session.submit(buildAgentIntentEnvelope('帮我写一条跟进，下周一上午 10 点联系', NOW));
     expect(outcome.kind).toBe('write_proposal');
     if (outcome.kind !== 'write_proposal') throw new Error('expected grouped proposal');
     expect(outcome.proposal.grouped_operations).toEqual([
@@ -127,7 +127,7 @@ describe('AI Native CRM overnight full stabilization contracts', () => {
     const clock = new FixedAppClock(NOW, 'Asia/Shanghai');
     const boundary = createApprovedCrmWriteBoundary(createCrmRepository(fixture.db, () => clock.now()), clock);
     const session = sessionForWrite('2026-07-16T15:00:00+08:00', NOW);
-    const outcome = await session.submit('帮我写一条跟进，下周一上午 10 点联系');
+    const outcome = await session.submit(buildAgentIntentEnvelope('帮我写一条跟进，下周一上午 10 点联系', NOW));
     if (outcome.kind !== 'write_proposal') throw new Error('expected grouped proposal');
     const updated = session.setGroupedOperationSelected(outcome.proposal.proposal_id, 'update-next-follow-up', false);
     await session.confirmWriteByRef({ proposal_id: updated.proposal_id, nonce: updated.nonce!, confirmed_at: '2026-07-15T09:31:00+08:00' }, boundary);
@@ -167,8 +167,7 @@ describe('AI Native CRM overnight full stabilization contracts', () => {
     expect(text.provider_kind).toBe('DETERMINISTIC_LOCAL');
     expect(text.facts).toHaveLength(2);
     expect(text.facts.map(fact => fact.fact_type)).toEqual(['visible_requirement', 'visible_objection']);
-    const image = await session.capture('image', 'data:image/png;base64,AAAA');
-    expect(image.facts[0]).toMatchObject({ fact_type: 'manual_review_required', confidence: 0 });
+    await expect(session.capture('image', 'data:image/png;base64,AAAA')).rejects.toThrow(/多模态模型未配置/);
   });
 
   it('falls back deterministically when the trusted host has no configured capture provider', async () => {
@@ -179,12 +178,8 @@ describe('AI Native CRM overnight full stabilization contracts', () => {
         capture: async () => { throw 'missing_host_provider'; },
       },
     });
-    const text = await session.capture('text', '客户希望下周收到报价。');
-    expect(text).toMatchObject({ provider_kind: 'DETERMINISTIC_LOCAL', writes_crm: false });
-    expect(text.facts[0]).toMatchObject({ fact_type: 'visible_requirement', review_status: 'pending' });
-    const image = await session.capture('image', 'data:image/png;base64,AAAA');
-    expect(image).toMatchObject({ provider_kind: 'DETERMINISTIC_LOCAL', writes_crm: false });
-    expect(image.facts[0]).toMatchObject({ fact_type: 'manual_review_required', confidence: 0 });
+    await expect(session.capture('text', '客户希望下周收到报价。')).rejects.toBe('missing_host_provider');
+    await expect(session.capture('image', 'data:image/png;base64,AAAA')).rejects.toBe('missing_host_provider');
   });
 
   it('projects reviewed facts into reasoning and turns an explicit Create Proposal click into an unexecuted follow-up proposal', async () => {

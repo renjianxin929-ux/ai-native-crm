@@ -92,6 +92,9 @@ export function formatUserFacingError(cause: unknown, options?: { readonly advan
   if (/Capture source is required/i.test(message)) {
     message = '请先粘贴文本或选择图片后再分析。';
   }
+  if (/^cancelled$/i.test(message)) {
+    message = '已取消本次模型请求。';
+  }
 
   return developer_detail ? { message, developer_detail } : { message };
 }

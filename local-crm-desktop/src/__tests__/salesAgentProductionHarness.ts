@@ -3,6 +3,7 @@ import { buildContextSnapshot } from '../lib/context/contextBuilder';
 import { createCrmRepository, initializeDatabaseSchema, type DatabaseLike } from '../lib/db';
 import type { LoadedReadOnlyAgentSnapshot } from '../lib/readOnlySnapshotLoaderReadiness';
 import { SalesAgentSession, type SalesAgentHost } from '../lib/salesAgentTools/agentSession';
+import { createAgentIntentEnvelope } from '../lib/salesAgentTools/agentIntentEnvelope';
 
 export function sqliteFixture() {
   const sqlite = new Database(':memory:');
@@ -37,7 +38,7 @@ export function sessionForWrite(currentNextFollowUpAt = '2026-07-13T09:00:00Z', 
 }
 
 export async function proposalFor(session: SalesAgentSession, message: string) {
-  const outcome = await session.submit(message);
+  const outcome = await session.submit(createAgentIntentEnvelope(message, '2026-07-14T12:00:00.000Z'));
   if (outcome.kind !== 'write_proposal') throw new Error(`Expected write proposal, got ${outcome.kind}`);
   return outcome.proposal;
 }

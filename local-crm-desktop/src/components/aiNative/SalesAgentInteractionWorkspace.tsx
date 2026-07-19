@@ -9,6 +9,7 @@ import { approvedCrmWriteBoundary } from '../../lib/salesAgentTools/approvedCrmW
 import type { AgentWriteProposal } from '../../lib/salesAgentTools/confirmedWrite';
 import type { WriteClarificationRequest } from '../../lib/salesAgentTools/writeIntent';
 import { editFact, reviewedFacts, setFactReview, type CustomerCaptureReview } from '../../lib/customerCapture/review';
+import { readAndValidateVisionFile } from '../../lib/productionAi/visionInput';
 import { mapSalesAgentOrbState, type SalesAgentUiPhase } from '../../lib/salesAgentUi/orbState';
 import { buildAgentWorkProcess, summarizeWorkProcess } from '../../lib/salesAgentUi/workProcess';
 import { SALES_AGENT_QUICK_ACTIONS, type SalesAgentQuickAction } from '../../lib/salesAgentUi/quickActions';
@@ -22,6 +23,30 @@ import {
 import type { CustomerSearchCandidate } from '../../lib/salesAgentTools/searchCustomers';
 import { SalesAgentGlassOrb } from './SalesAgentGlassOrb';
 import { SALES_AGENT_APP_CLOCK } from '../../lib/salesAgentTools/appClock';
+import { createAgentIntentEnvelopeFromPreset, type SemanticIntentResolution } from '../../lib/salesAgentTools/agentIntentEnvelope';
+import type { ProductionRuntimeDetails } from '../../lib/productionAi/runtimeMode';
+
+export function CaptureRuntimeMetadata({ details }: { details: ProductionRuntimeDetails }) {
+  return <div data-testid="capture-runtime-metadata">
+    <p>Execution mode: {details.execution_mode}</p>
+    <p>Provider / Model: {details.provider ?? 'none'} / {details.model ?? 'none'}</p>
+    <p>Request: {details.request_id}</p>
+    <p>Model called: {details.model_called ? 'yes' : 'no'}</p>
+    <p>Latency: {details.latency_ms == null ? '—' : `${details.latency_ms} ms`}</p>
+    <p>Token usage: {details.token_usage?.total_tokens ?? '—'}</p>
+    <p>Tools: {details.tools.join(' → ') || 'none'}</p>
+    <p>Evidence count: {details.evidence_count}</p>
+    <p>Schema status: {details.schema_validation_status}</p>
+    <p>Evidence status: {details.evidence_validation_status}</p>
+    <p>Cancellation status: {details.cancellation_status}</p>
+    <p>Degradation reason: {details.degradation_reason ?? 'none'}</p>
+  </div>;
+}
+
+function semanticRouterFromHost(host: SalesAgentHost | null): ((instruction: string, envelopeId: string, signal?: AbortSignal) => Promise<SemanticIntentResolution>) | undefined {
+  if (!host || !('routeSemanticIntent' in host) || typeof host.routeSemanticIntent !== 'function') return undefined;
+  return host.routeSemanticIntent as (instruction: string, envelopeId: string, signal?: AbortSignal) => Promise<SemanticIntentResolution>;
+}
 
 /**
  * Production confirm: only proposal_id + nonce are submitted.
@@ -103,6 +128,14 @@ function successLabel(proposal: AgentWriteProposal): string {
   return '✓ 已完成写入';
 }
 
+function proposalIntent(proposal: AgentWriteProposal | null): 'CREATE_FOLLOW_UP_REQUEST' | 'CREATE_TASK_REQUEST' | 'UPDATE_CUSTOMER_REQUEST' | '' {
+  if (!proposal) return '';
+  if (proposal.tool_id === 'create_follow_up_record') return 'CREATE_FOLLOW_UP_REQUEST';
+  if (proposal.tool_id === 'create_task') return 'CREATE_TASK_REQUEST';
+  if (proposal.tool_id === 'update_next_follow_up_time') return 'UPDATE_CUSTOMER_REQUEST';
+  return '';
+}
+
 export function SalesAgentInteractionWorkspace({
   customerId,
   customerName,
@@ -110,6 +143,8 @@ export function SalesAgentInteractionWorkspace({
   onClearCustomer,
   snapshot,
   context,
+  compareContext,
+  customerCatalog,
   memory,
   profileId,
   host,
@@ -120,8 +155,8 @@ export function SalesAgentInteractionWorkspace({
   onOpenContextDrawer,
   processDrawerOpen = false,
   onProcessDrawerOpenChange,
-  seedInstruction = null,
-  onSeedInstructionConsumed,
+  initialInstruction = null,
+  onInitialInstructionConsumed,
   onRegisterNewConversation,
 }: {
   customerId: string;
@@ -132,6 +167,8 @@ export function SalesAgentInteractionWorkspace({
   onClearCustomer: () => void;
   snapshot: LoadedReadOnlyAgentSnapshot | null;
   context: ContextSnapshot | null;
+  compareContext?: ContextSnapshot | null;
+  customerCatalog?: readonly { readonly id: string; readonly name: string }[];
   memory?: CustomerMemoryContext;
   profileId: string;
   host: SalesAgentHost | null;
@@ -142,9 +179,8 @@ export function SalesAgentInteractionWorkspace({
   onOpenContextDrawer?: () => void;
   processDrawerOpen?: boolean;
   onProcessDrawerOpenChange?: (open: boolean) => void;
-  seedInstruction?: string | null;
-  onSeedInstructionConsumed?: () => void;
-  /** Parent "新对话" button wires here — no window test hooks in production. */
+  initialInstruction?: string | null;
+  onInitialInstructionConsumed?: () => void;
   onRegisterNewConversation?: (handler: (() => void) | null) => void;
 }) {
   const sessionRef = useRef<SalesAgentSession | null>(null);
@@ -168,11 +204,15 @@ export function SalesAgentInteractionWorkspace({
         dependencies: {
           snapshot,
           context,
+          compare_context: compareContext ?? undefined,
           memory,
           profile_id: profileId,
           memory_repository: memoryRepository,
           loadCustomerSnapshot,
           planning_mode: 'deterministic',
+          model_caller: host && 'createProductionModelCaller' in host && typeof host.createProductionModelCaller === 'function'
+            ? host.createProductionModelCaller()
+            : undefined,
         },
       });
       return;
@@ -185,14 +225,18 @@ export function SalesAgentInteractionWorkspace({
     sessionRef.current = new SalesAgentSession(customerId, host, () => SALES_AGENT_APP_CLOCK.now(), {
       snapshot,
       context,
+      compare_context: compareContext ?? undefined,
       memory,
       profile_id: profileId,
       memory_repository: memoryRepository,
       loadCustomerSnapshot,
       planning_mode: 'deterministic',
+      model_caller: host && 'createProductionModelCaller' in host && typeof host.createProductionModelCaller === 'function'
+        ? host.createProductionModelCaller()
+        : undefined,
     });
     setSessionVersion(v => v + 1);
-  }, [customerId, host, snapshot, context, memory, profileId, memoryRepository, loadCustomerSnapshot]);
+  }, [customerId, host, snapshot, context, compareContext, memory, profileId, memoryRepository, loadCustomerSnapshot]);
 
   const controllerRef = useRef<SalesAgentInteractionController | null>(null);
   const [controllerReady, setControllerReady] = useState(false);
@@ -211,6 +255,8 @@ export function SalesAgentInteractionWorkspace({
           return current && current.getCustomerId() === id ? current : null;
         },
         clock: () => SALES_AGENT_APP_CLOCK.now(),
+        semantic_intent_router: semanticRouterFromHost(host),
+        customer_catalog: customerCatalog,
       });
       setControllerReady(true);
       return controllerRef.current;
@@ -220,7 +266,7 @@ export function SalesAgentInteractionWorkspace({
       setPhase('blocked');
       throw cause instanceof Error ? cause : new Error(message);
     }
-  }, []);
+  }, [host]);
 
   useEffect(() => {
     if (!controllerRef.current) return;
@@ -229,10 +275,14 @@ export function SalesAgentInteractionWorkspace({
       const current = sessionRef.current;
       return current && current.getCustomerId() === id ? current : null;
     };
-  }, [customerId, customerName, sessionVersion]);
+    controllerRef.current.semanticIntentRouter = semanticRouterFromHost(host) ?? null;
+    controllerRef.current.customerCatalog = customerCatalog ?? [];
+  }, [customerId, customerName, customerCatalog, sessionVersion, host]);
 
   const [message, setMessage] = useState('');
   const [result, setResult] = useState<AgentSessionResult | null>(null);
+  const [runtimeDetailsOpen, setRuntimeDetailsOpen] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
   const [captureOpen, setCaptureOpen] = useState(false);
   const [captureText, setCaptureText] = useState('');
   const [imagePreview, setImagePreview] = useState('');
@@ -240,6 +290,9 @@ export function SalesAgentInteractionWorkspace({
   const [proposal, setProposal] = useState<AgentWriteProposal | null>(null);
   const [clarification, setClarification] = useState<WriteClarificationRequest | null>(null);
   const [writeResult, setWriteResult] = useState('');
+  const [lastConfirmedProposal, setLastConfirmedProposal] = useState<AgentWriteProposal | null>(null);
+  const [replayResult, setReplayResult] = useState('');
+  const [refreshCount, setRefreshCount] = useState(0);
   const [editing, setEditing] = useState<Record<string, string>>({});
   const [phase, setPhase] = useState<SalesAgentUiPhase>('idle');
   const [sessionBusy, setSessionBusy] = useState(false);
@@ -248,6 +301,18 @@ export function SalesAgentInteractionWorkspace({
   const [locatingCustomer, setLocatingCustomer] = useState(false);
   const [candidates, setCandidates] = useState<readonly CustomerSearchCandidate[]>([]);
   const [emptyExact, setEmptyExact] = useState(false);
+
+  const selectImage = async (file: File | undefined) => {
+    if (!file) return;
+    setError('');
+    setCaptureReview(null);
+    try {
+      setImagePreview(await readAndValidateVisionFile(file));
+    } catch (cause) {
+      setImagePreview('');
+      setError(formatUserFacingErrorMessage(cause));
+    }
+  };
   const [portfolioMode, setPortfolioMode] = useState(false);
   const [portfolioTotal, setPortfolioTotal] = useState(0);
   const [portfolioHasMore, setPortfolioHasMore] = useState(false);
@@ -256,7 +321,7 @@ export function SalesAgentInteractionWorkspace({
   const [history, setHistory] = useState<readonly HistoryItem[]>([]);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const [interactionState, setInteractionState] = useState<SalesAgentInteractionState | null>(null);
-  const seedConsumedRef = useRef<string | null>(null);
+  const initialInstructionConsumedRef = useRef<string | null>(null);
   const thinkingStartedAt = useRef(0);
 
   const holdThinkingMorph = async () => {
@@ -283,7 +348,7 @@ export function SalesAgentInteractionWorkspace({
     hasProposal: Boolean(proposal),
     hasResult: Boolean(result),
     hasWriteSuccess: Boolean(writeResult),
-    hasClarification: Boolean(clarification),
+    hasClarification: Boolean(clarification) || interactionState?.phase === 'clarification',
   });
 
   const orbCompact = stageMode === 'result' || stageMode === 'proposal' || stageMode === 'candidate' || stageMode === 'portfolio' || stageMode === 'error' || stageMode === 'clarification';
@@ -337,10 +402,13 @@ export function SalesAgentInteractionWorkspace({
     setResult(state.latest_result);
     setProposal(state.latest_proposal);
     setClarification(state.latest_clarification);
-    if (state.resolution_reason) {
+    if (state.phase === 'clarification') {
+      setError(state.resolution_reason ? formatUserFacingErrorMessage(state.resolution_reason) : '');
+      setPhase('idle');
+    } else if (state.resolution_reason) {
       setError(formatUserFacingErrorMessage(state.resolution_reason));
       setPhase('blocked');
-    } else if (state.phase === 'proposal' || state.phase === 'clarification') {
+    } else if (state.phase === 'proposal') {
       setError('');
       setPhase('idle');
     } else if (state.phase === 'scoped' || state.phase === 'awaiting_candidate_selection' || state.phase === 'portfolio_browse' || state.phase === 'unscoped') {
@@ -373,6 +441,9 @@ export function SalesAgentInteractionWorkspace({
   useEffect(() => {
     const pending = pendingContinue.current;
     if (!pending || !sessionRef.current || contextLoading) return;
+    // Binding a compare's primary customer replaces the prior Session
+    // asynchronously. Never consume the continuation against that stale Session.
+    if (sessionRef.current.getCustomerId() !== customerId) return;
     pendingContinue.current = null;
     void (async () => {
       const controller = await ensureController();
@@ -417,15 +488,40 @@ export function SalesAgentInteractionWorkspace({
     setMessage('');
     setError('');
     setWriteResult('');
+    setRuntimeDetailsOpen(false);
     setActivePrompt(prompt.trim());
     thinkingStartedAt.current = Date.now();
     setSessionBusy(true);
     setPhase('thinking');
+    abortRef.current?.abort();
+    abortRef.current = new AbortController();
+    const signal = abortRef.current.signal;
+    sessionRef.current?.updateRuntime({
+      dependencies: sessionRef.current && snapshot && context ? {
+        snapshot,
+        context,
+        compare_context: compareContext ?? undefined,
+        memory,
+        profile_id: profileId,
+        memory_repository: memoryRepository,
+        loadCustomerSnapshot,
+        planning_mode: 'deterministic',
+        model_caller: host && 'createProductionModelCaller' in host && typeof host.createProductionModelCaller === 'function'
+          ? host.createProductionModelCaller()
+          : undefined,
+        abort_signal: signal,
+      } : undefined,
+    });
 
     try {
       const controller = await ensureController();
       controller.syncExternalScope(customerId || null, customerName);
-      const turn = await controller.submit(prompt);
+      const turn = await controller.submit(prompt, signal);
+      if (signal.aborted) {
+        setError('已取消本次模型请求。');
+        setPhase('blocked');
+        return;
+      }
       finishTurn(turn.state, { userText: prompt });
 
       if (turn.event.type === 'bind_required') {
@@ -440,6 +536,11 @@ export function SalesAgentInteractionWorkspace({
         onClearCustomer();
       }
     } catch (cause) {
+      if (signal.aborted) {
+        setError('已取消本次模型请求。');
+        setPhase('blocked');
+        return;
+      }
       const formatted = formatUserFacingErrorMessage(cause);
       setError(formatted);
       setActivePrompt(prompt.trim());
@@ -448,6 +549,13 @@ export function SalesAgentInteractionWorkspace({
       await holdThinkingMorph();
       setSessionBusy(false);
     }
+  };
+
+  const cancelInFlight = () => {
+    abortRef.current?.abort();
+    setSessionBusy(false);
+    setPhase('idle');
+    setError('已取消本次模型请求。');
   };
 
   const answerClarification = (value: string) => {
@@ -479,14 +587,22 @@ export function SalesAgentInteractionWorkspace({
         memory_repository: memoryRepository,
         loadCustomerSnapshot,
         planning_mode: 'deterministic',
+        model_caller: host && 'createProductionModelCaller' in host && typeof host.createProductionModelCaller === 'function'
+          ? host.createProductionModelCaller()
+          : undefined,
       });
       sessionRef.current = session;
     }
     try {
-      const write = await confirmSalesAgentProposal(session, confirmedProposal, onRefresh);
+      const write = await confirmSalesAgentProposal(session, confirmedProposal, async () => {
+        await onRefresh();
+        setRefreshCount(count => count + 1);
+      });
       setWriteResult(
         `${successLabel(confirmedProposal)}\n${formatProposalValues(confirmedProposal.proposed_values)}\n更新时间：${SALES_AGENT_APP_CLOCK.formatUserTime(SALES_AGENT_APP_CLOCK.now())}`,
       );
+      setLastConfirmedProposal(confirmedProposal);
+      setReplayResult('');
       setProposal(null);
       setClarification(null);
       setResult(null);
@@ -495,6 +611,17 @@ export function SalesAgentInteractionWorkspace({
     } catch (cause) {
       setError(formatUserFacingErrorMessage(cause));
       setPhase('blocked');
+    }
+  };
+
+  const replayLastConfirmation = async () => {
+    const session = sessionRef.current;
+    if (!lastConfirmedProposal || !session || session.getCustomerId() !== lastConfirmedProposal.customer_id) return;
+    try {
+      await confirmSalesAgentProposal(session, lastConfirmedProposal, onRefresh);
+      setReplayResult('错误：重放未被拒绝。');
+    } catch (cause) {
+      setReplayResult(`重放已拒绝：${formatUserFacingErrorMessage(cause)}`);
     }
   };
 
@@ -518,13 +645,13 @@ export function SalesAgentInteractionWorkspace({
   };
 
   useEffect(() => {
-    if (!seedInstruction || seedConsumedRef.current === seedInstruction) return;
+    if (!initialInstruction || initialInstructionConsumedRef.current === initialInstruction) return;
     if (sessionBusy || contextLoading) return;
-    seedConsumedRef.current = seedInstruction;
-    onSeedInstructionConsumed?.();
-    void submit(seedInstruction);
+    initialInstructionConsumedRef.current = initialInstruction;
+    onInitialInstructionConsumed?.();
+    void submit(initialInstruction);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [seedInstruction, sessionBusy, contextLoading, customerId, sessionVersion]);
+  }, [initialInstruction, sessionBusy, contextLoading, customerId, sessionVersion]);
 
   const pickCandidate = async (candidate: CustomerSearchCandidate) => {
     if (sessionBusy) return;
@@ -587,8 +714,20 @@ export function SalesAgentInteractionWorkspace({
     setPhase('thinking');
     setActivePrompt('分析上传内容');
     setError('');
+    abortRef.current?.abort();
+    abortRef.current = new AbortController();
+    const signal = abortRef.current.signal;
     try {
-      setCaptureReview(await sessionRef.current.capture(sourceType, source));
+      const captureEnvelope = sourceType === 'image' ? createAgentIntentEnvelopeFromPreset({
+        instruction: '分析当前用户选择的客户图片',
+        now_iso: SALES_AGENT_APP_CLOCK.now(),
+        intent: 'CAPTURE_REVIEW',
+        mode: 'capture',
+        has_selected_image: true,
+      }) : undefined;
+      const review = await sessionRef.current.capture(sourceType, source, signal, captureEnvelope);
+      if (signal.aborted) return;
+      setCaptureReview(review);
       setPhase('idle');
     } catch (cause) {
       setPhase('blocked');
@@ -674,7 +813,6 @@ export function SalesAgentInteractionWorkspace({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onRegisterNewConversation]);
 
-  // Intentionally no window.__salesAgent* production hooks.
 
   void controllerReady;
 
@@ -694,9 +832,11 @@ export function SalesAgentInteractionWorkspace({
             className="agent-scope-clear"
             aria-label="清除客户 Scope"
             onClick={() => {
-              void ensureController().then(c => c.clearCustomerScope());
-              onClearCustomer();
-              resetConversation();
+              void ensureController().then(controller => {
+                const next = controller.clearCustomerScope();
+                applyState(next);
+                onClearCustomer();
+              });
             }}
           >
             <X size={12} />
@@ -735,10 +875,19 @@ export function SalesAgentInteractionWorkspace({
 
   return (
     <section className="agent-session agent-session-final" aria-label="Sales Agent interaction workspace">
+      {import.meta.env.VITE_E2E_PROFILE === '1' ? (
+        <div className="agent-runtime-mode-badge" data-testid="agent-e2e-profile" role="status">
+          E2E Fake Transport / 测试配置（无真实 Provider 请求）
+        </div>
+      ) : null}
       <div
         className={`unified-agent-stage stage-${stageMode}`}
         data-testid="UNIFIED_AGENT_STAGE"
         data-stage-mode={stageMode}
+        data-current-intent={interactionState?.current_intent ?? ''}
+        data-envelope-id={interactionState?.intent_envelope?.envelope_id ?? ''}
+        data-envelope-confidence={interactionState?.intent_envelope?.confidence ?? ''}
+        data-envelope-parser-source={interactionState?.intent_envelope?.parser_source ?? ''}
         id="UNIFIED_AGENT_STAGE"
       >
         {activePrompt && stageMode !== 'input' ? (
@@ -759,6 +908,9 @@ export function SalesAgentInteractionWorkspace({
                 <li key={step.id} className={step.status}>{step.label}</li>
               ))}
             </ol>
+            <button type="button" className="btn btn-sm" data-testid="agent-cancel-inflight" onClick={cancelInFlight}>
+              取消
+            </button>
             <button
               type="button"
               className="agent-process-line"
@@ -837,8 +989,15 @@ export function SalesAgentInteractionWorkspace({
           </section>
         ) : null}
 
+        {stageMode === 'clarification' && !clarification && interactionState?.resolution_reason ? (
+          <section className="agent-clarify-inline" aria-label="意图澄清" data-testid="agent-clarification-card">
+            <h3>需要明确意图</h3>
+            <p className="agent-clarify-question">{interactionState.resolution_reason}</p>
+          </section>
+        ) : null}
+
         {stageMode === 'result' && projected ? (
-          <div className="agent-result-stage" data-testid="agent-result-card" aria-label="Sales Agent result">
+          <div className="agent-result-stage" data-testid="agent-result-card" data-current-intent={result?.plan.intent ?? ''} aria-label="Sales Agent result">
             <header className="agent-result-header">
               <div className="agent-result-title-row">
                 <SalesAgentGlassOrb state={orbState} compact />
@@ -847,7 +1006,42 @@ export function SalesAgentInteractionWorkspace({
                   <p>依据最新数据 · 刚刚</p>
                 </div>
               </div>
+              {result?.runtime_details ? (
+                <button
+                  type="button"
+                  className="agent-runtime-mode-badge"
+                  data-testid="agent-runtime-mode-badge"
+                  data-runtime-mode={result.runtime_details.runtime_mode}
+                  onClick={() => setRuntimeDetailsOpen(open => !open)}
+                >
+                  {import.meta.env.VITE_E2E_PROFILE === '1'
+                    ? 'E2E Fake Transport / 测试配置'
+                    : result.runtime_details.ui_label}
+                </button>
+              ) : null}
             </header>
+            {runtimeDetailsOpen && result?.runtime_details ? (
+              <div className="agent-runtime-details" data-testid="agent-runtime-details">
+                <p>运行模式：{result.runtime_details.runtime_mode}</p>
+                <p>Provider：{result.runtime_details.provider ?? '无'}</p>
+                <p>Model：{result.runtime_details.model ?? '无'}</p>
+                <p>是否调用模型：{result.runtime_details.model_called ? '是' : '否'}</p>
+                <p>request_id：{result.runtime_details.request_id}</p>
+                <p>latency：{result.runtime_details.latency_ms == null ? '—' : `${result.runtime_details.latency_ms} ms`}</p>
+                <p>token usage：{result.runtime_details.token_usage?.total_tokens ?? '—'}</p>
+                <p>工具：{result.runtime_details.tools_used.join(' → ') || '无'}</p>
+                <p>Evidence 数量：{result.runtime_details.evidence_count}</p>
+                <p>是否降级：{result.runtime_details.degraded ? '是' : '否'}</p>
+                <p>降级原因：{result.runtime_details.degradation_reason ?? '无'}</p>
+                <p>输出验证：{result.runtime_details.validation_status}</p>
+                <p>Schema validation：{result.runtime_details.schema_validation_status}</p>
+                <p>Evidence validation：{result.runtime_details.evidence_validation_status}</p>
+                <p>Cancellation status：{result.runtime_details.cancellation_status}</p>
+              </div>
+            ) : null}
+            {result?.blocked_message ? (
+              <p className="agent-model-unavailable" data-testid="agent-model-unavailable" role="status">{result.blocked_message}</p>
+            ) : null}
             <p className="agent-result-headline">{projected.headline}</p>
             <div className="agent-insight-grid">
               <article className="agent-insight-card">
@@ -922,8 +1116,14 @@ export function SalesAgentInteractionWorkspace({
         ) : null}
 
         {writeResult ? (
-          <div className="agent-success" role="status" data-testid="agent-write-success">
+          <div className="agent-success" role="status" data-testid="agent-write-success" data-current-intent={proposalIntent(lastConfirmedProposal)} data-refresh-count={refreshCount}>
             <pre>{writeResult}</pre>
+            {import.meta.env.VITE_E2E_PROFILE === '1' && lastConfirmedProposal ? (
+              <>
+                <button type="button" className="agent-link-btn" data-testid="agent-replay-confirmation" onClick={() => void replayLastConfirmation()}>重放上次确认（应被拒绝）</button>
+                {replayResult ? <p data-testid="agent-replay-result">{replayResult}</p> : null}
+              </>
+            ) : null}
             {customerId ? (
               <button type="button" className="agent-link-btn" onClick={() => onOpenContextDrawer?.()}>查看客户详情</button>
             ) : null}
@@ -1008,7 +1208,7 @@ export function SalesAgentInteractionWorkspace({
 
       {captureOpen && (
         <div className="agent-modal-backdrop" role="presentation" onClick={() => setCaptureOpen(false)}>
-          <div className="agent-capture-modal" role="dialog" aria-modal="true" aria-label="Capture" data-testid="agent-capture-modal" onClick={event => event.stopPropagation()}>
+          <div className="agent-capture-modal" role="dialog" aria-modal="true" aria-label="Capture" data-testid="agent-capture-modal" data-current-intent="CAPTURE_REVIEW" onClick={event => event.stopPropagation()}>
             <header>
               <h3>Capture</h3>
               <button type="button" className="agent-icon-btn" aria-label="关闭 Capture" onClick={() => setCaptureOpen(false)}><X size={16} /></button>
@@ -1021,14 +1221,9 @@ export function SalesAgentInteractionWorkspace({
               </button>
               <label className="agent-image-picker">
                 <Image size={15} /> 选择图片
-                <input aria-label="Capture image" type="file" accept="image/*" onChange={event => {
-                  const file = event.target.files?.[0];
-                  if (!file) return;
-                  const reader = new FileReader();
-                  reader.onload = () => setImagePreview(String(reader.result ?? ''));
-                  reader.readAsDataURL(file);
-                }} />
+                <input aria-label="Capture image" type="file" accept="image/jpeg,image/png,image/webp" onChange={event => void selectImage(event.target.files?.[0])} />
               </label>
+              {sessionBusy ? <button type="button" className="btn btn-sm" data-testid="capture-cancel-inflight" onClick={cancelInFlight}>Cancel Analyze</button> : null}
             </div>
             {imagePreview && (
               <div className="agent-image-preview">
@@ -1038,19 +1233,14 @@ export function SalesAgentInteractionWorkspace({
                   <button type="button" className="btn btn-sm" onClick={() => setImagePreview('')}>删除</button>
                   <label className="btn btn-sm">
                     替换
-                    <input className="sr-only" aria-label="Replace capture image" type="file" accept="image/*" onChange={event => {
-                      const file = event.target.files?.[0];
-                      if (!file) return;
-                      const reader = new FileReader();
-                      reader.onload = () => setImagePreview(String(reader.result ?? ''));
-                      reader.readAsDataURL(file);
-                    }} />
+                    <input className="sr-only" aria-label="Replace capture image" type="file" accept="image/jpeg,image/png,image/webp" onChange={event => void selectImage(event.target.files?.[0])} />
                   </label>
                 </div>
               </div>
             )}
             {captureReview && (
               <section aria-label="Capture fact review">
+                {captureReview.runtime_metadata ? <CaptureRuntimeMetadata details={captureReview.runtime_metadata} /> : null}
                 <h4>Candidate 状态 · 核对提取事实</h4>
                 {captureReview.facts.map(fact => (
                   <article className="agent-fact" key={fact.fact_id}>

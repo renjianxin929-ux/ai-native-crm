@@ -2,12 +2,12 @@
  * Writes rich controller-path evidence against the seeded Tauri SQLite file.
  * Invoked by vitest — no separate packaging.
  */
-import { writeFileSync, mkdirSync } from 'node:fs';
+import { writeFileSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import Database from 'better-sqlite3';
-import { homedir, tmpdir } from 'node:os';
-import { createCrmRepository, type DatabaseLike } from '../lib/db';
+import { tmpdir } from 'node:os';
+import { createCrmRepository, initializeDatabaseSchema, type DatabaseLike } from '../lib/db';
 import { SalesAgentInteractionController } from '../lib/salesAgentTools/interactionController';
 import { executeSearchCustomersTool } from '../lib/salesAgentTools/executeSearchCustomersTool';
 import { formatUserFacingErrorMessage } from '../lib/salesAgentUi/formatUserFacingError';
@@ -16,17 +16,19 @@ import { SalesAgentSession } from '../lib/salesAgentTools/agentSession';
 import { buildContextSnapshot } from '../lib/context/contextBuilder';
 import { buildCustomerMemoryContext } from '../lib/customerMemory';
 import type { LoadedReadOnlyAgentSnapshot } from '../lib/readOnlySnapshotLoaderReadiness';
+import { insertSeededCustomer, SALES_AGENT_FIXTURE_CUSTOMERS } from './salesAgentFunctionalFixture';
 
 // Test evidence must never dirty the Git worktree. Rich artifacts are written
 // to the operating-system temp area and remain outside the release cohort.
 const EVIDENCE = join(tmpdir(), 'local-crm-sales-agent-functional-evidence');
 const NOW = '2026-07-14T12:00:00.000Z';
 
-function openProductionDb(): { sqlite: Database.Database; db: DatabaseLike; close: () => void } {
-  const dbPath = join(homedir(), 'AppData', 'Roaming', 'com.localcrm.desktop', 'personal-crm.db');
-  // This acceptance gate may inspect the installed user's database, but it is
-  // structurally read-only so a test can never mutate production CRM data.
-  const sqlite = new Database(dbPath, { readonly: true, fileMustExist: true });
+async function openIsolatedE2eDb(): Promise<{ sqlite: Database.Database; db: DatabaseLike; dbPath: string; close: () => void }> {
+  const root = mkdtempSync(join(tmpdir(), 'local-crm-tauri-e2e-'));
+  const appDataDir = join(root, 'com.localcrm.desktop.e2e');
+  mkdirSync(appDataDir, { recursive: true });
+  const dbPath = join(appDataDir, 'personal-crm.db');
+  const sqlite = new Database(dbPath);
   const db: DatabaseLike = {
     async execute(sql, bindings: unknown[] = []) {
       const result = sqlite.prepare(sql).run(bindings as never[]);
@@ -36,7 +38,9 @@ function openProductionDb(): { sqlite: Database.Database; db: DatabaseLike; clos
       return sqlite.prepare(sql).all(bindings as never[]) as T[];
     },
   };
-  return { sqlite, db, close: () => sqlite.close() };
+  await initializeDatabaseSchema(db);
+  for (const customer of SALES_AGENT_FIXTURE_CUSTOMERS) insertSeededCustomer(sqlite, customer);
+  return { sqlite, db, dbPath, close: () => { sqlite.close(); rmSync(root, { recursive: true, force: true }); } };
 }
 
 function sessionFor(customerId: string, name: string) {
@@ -74,10 +78,11 @@ function sessionFor(customerId: string, name: string) {
 }
 
 describe('Sales Agent Tauri-DB acceptance evidence', () => {
-  it('runs controller scenarios against seeded personal-crm.db and writes HTML screenshots source', async () => {
+  it('runs controller scenarios against an isolated e2e personal-crm.db and writes temp evidence', async () => {
     mkdirSync(EVIDENCE, { recursive: true });
-    const { db, sqlite, close } = openProductionDb();
+    const { db, sqlite, dbPath, close } = await openIsolatedE2eDb();
     try {
+      expect(dbPath).toMatch(/com\.localcrm\.desktop\.e2e[\\/]personal-crm\.db$/);
       const repo = createCrmRepository(db);
       expect(typeof repo.searchCustomers).toBe('function');
 

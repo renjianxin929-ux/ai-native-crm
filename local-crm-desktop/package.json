@@ -9,7 +9,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "tauri": "tauri",
-    "tauri:e2e": "tauri dev --config src-tauri/tauri.e2e.conf.json",
+    "tauri:e2e": "tauri dev --config src-tauri/tauri.e2e.conf.json --features e2e",
     "test": "vitest run"
   },
   "dependencies": {

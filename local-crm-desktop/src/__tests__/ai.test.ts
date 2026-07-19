@@ -11,7 +11,7 @@ describe('AI module', () => {
     expect(typeof mod.suggestNextAction).toBe('function');
   });
 
-  it('saveAIConfig and getAIConfig round-trip via mock DB', async () => {
+  it('rejects legacy SQLite credential persistence', async () => {
     const { saveAIConfig } = await import('../lib/ai');
 
     const config = {
@@ -20,18 +20,17 @@ describe('AI module', () => {
       model: 'gpt-4',
     };
 
-    await saveAIConfig(config);
-    // Note: in memory mode, this works via the settings key pattern
+    await expect(saveAIConfig(config)).rejects.toThrow(/SQLite credential storage was retired/);
   });
 
-  it('testAIConnection returns ok=true for valid-looking config', async () => {
+  it('does not test providers through the browser legacy path', async () => {
     const { testAIConnection } = await import('../lib/ai');
     const result = await testAIConnection({
       provider: 'openai',
       apiKey: 'sk-test',
       model: 'gpt-4',
     });
-    expect(result.ok).toBe(true);
+    expect(result.ok).toBe(false);
     expect(typeof result.message).toBe('string');
   });
 

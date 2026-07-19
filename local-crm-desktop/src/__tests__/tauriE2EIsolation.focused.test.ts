@@ -34,7 +34,7 @@ describe('Tauri E2E database isolation', () => {
     const packageJson = readJson('package.json');
     const scripts = packageJson.scripts as Record<string, string>;
 
-    expect(scripts['tauri:e2e']).toBe('tauri dev --config src-tauri/tauri.e2e.conf.json');
+    expect(scripts['tauri:e2e']).toBe('tauri dev --config src-tauri/tauri.e2e.conf.json --features e2e');
     expect(scripts.tauri).toBe('tauri');
     expect(scripts.dev).toBe('vite');
   });

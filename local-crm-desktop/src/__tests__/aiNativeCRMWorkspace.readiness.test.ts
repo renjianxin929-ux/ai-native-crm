@@ -102,23 +102,20 @@ describe('AI Native CRM workspace Target Phase 1-2 readiness', () => {
     expect(projectCRMContextSummary(SNAPSHOT, 'customer-1', '2026-07-10T08:05:01.000Z').freshness).toBe('stale');
   });
 
-  it('exposes a dedicated real-app workspace with visible permission and no fake production result', () => {
+  it('exposes one production workspace with a visible Trusted Host safety boundary', () => {
     const appSource = readFileSync('src/App.tsx', 'utf8');
     const source = readFileSync('src/components/aiNative/AINativeCRMWorkspace.tsx', 'utf8');
 
     expect(AI_NATIVE_CRM_WORKSPACE_VERSION).toBe('target-phase-v1');
     expect(appSource).toContain('/ai-workspace');
     expect(appSource).toContain('AINativeCRMWorkspace');
-    expect(source).toContain('Sales Agent');
-    expect(source).toContain('当前仅只读');
-    expect(source).toContain('AI 原生 CRM 工作台');
-    expect(source).toContain('真实 SQLite 只读查询');
-    expect(source).toContain('ReadOnlyAISuggestionPanel');
-    expect(source).toContain('runReadOnlySnapshotAISuggestionService');
-    expect(source).toContain('未调用 Provider 或模型');
-    expect(source).toContain('也不会执行动作');
-    expect(source).toContain('确定性 Mock 推理');
-    expect(source).toContain('所有结果必须人工复核');
+    expect(source).toContain('SalesAgentInteractionWorkspace');
+    expect(source).toContain('createTrustedHostSalesAgentAdapter');
+    expect(source).toContain('controlled-mode-panel');
+    expect(source).not.toContain('ReadOnlyAISuggestionPanel');
+    expect(source).not.toContain('runReadOnlySnapshotAISuggestionService');
+    expect(source).not.toContain('createMockReasoningProvider');
+    expect(source).not.toContain('runSalesCopilotWorkflow');
 
     for (const forbidden of [
       'createAIDraft',
