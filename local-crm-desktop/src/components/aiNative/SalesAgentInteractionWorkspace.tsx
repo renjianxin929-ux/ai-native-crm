@@ -937,6 +937,7 @@ export function SalesAgentInteractionWorkspace({
                   <strong>{candidate.name}</strong>
                   <span>{[candidate.region, candidate.industry, candidate.customer_grade ? `${candidate.customer_grade}类` : ''].filter(Boolean).join(' · ') || '地区/行业未标注'}</span>
                   <span>阶段：{candidate.stage || '—'} · 最近互动：{candidate.last_contacted_at || '—'}</span>
+                  {interactionState?.latest_priority_ranking?.items.find(item => item.customer_id === candidate.id) ? <span data-testid={`priority-reasons-${candidate.id}`}>第 {interactionState.latest_priority_ranking.items.find(item => item.customer_id === candidate.id)?.rank} 名 · {candidate.match_score} 分 · {interactionState.latest_priority_ranking.items.find(item => item.customer_id === candidate.id)?.deterministic_reasons.slice(0, 3).join('；')}</span> : null}
                 </button>
               ))}
             </div>

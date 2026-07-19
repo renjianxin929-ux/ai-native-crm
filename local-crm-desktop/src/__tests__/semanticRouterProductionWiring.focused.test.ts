@@ -20,7 +20,7 @@ describe('semantic-router-production-wiring', () => {
     const authorize = vi.fn(async request => ({ authorizationId: 'semantic-auth', providerKind: request.providerKind, modelId: request.modelId }));
     const execute = vi.fn(async ({ input }) => ({
       state: 'completed' as const, providerKind: 'DEEPSEEK_COMPATIBLE' as const, modelId: 'deepseek-chat', requestId: 'semantic-auth', latencyMs: 2,
-      output: { intent: 'NEXT_ACTION_RECOMMENDATION', confidence: 0.93, customer_reference: null, required_capability: 'TEXT_REASONING', clarification_question: null, extracted_nonwrite_slots: {} },
+      output: { intent: 'NEXT_ACTION_RECOMMENDATION', filters: {}, entities: [], scope: null, missing_fields: [], confidence: 0.93, clarification_question: null },
       tokenUsage: null,
     }));
     const host = createTrustedHostSalesAgentAdapter({ context_snapshot_id: 'snapshot-1', profile_id: 'foreign_trade_geo', authorize, execute });

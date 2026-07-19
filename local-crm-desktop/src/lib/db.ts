@@ -137,6 +137,21 @@ const BASE_SCHEMA_SQL = [
     value TEXT NOT NULL,
     updated_at TEXT NOT NULL
   )`,
+  `CREATE TABLE IF NOT EXISTS ai_provider_credentials (
+    id TEXT PRIMARY KEY,
+    capability TEXT NOT NULL UNIQUE CHECK (capability IN ('TEXT_REASONING', 'VISION_REASONING')),
+    provider TEXT NOT NULL,
+    endpoint TEXT NOT NULL,
+    model TEXT NOT NULL,
+    encrypted_api_key BLOB NOT NULL,
+    encryption_scheme TEXT NOT NULL,
+    key_version INTEGER NOT NULL,
+    config_status TEXT NOT NULL,
+    last_health_check_at TEXT,
+    last_health_check_status TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )`,
   `CREATE TABLE IF NOT EXISTS ai_drafts (
     id TEXT PRIMARY KEY,
     source_type TEXT NOT NULL DEFAULT 'MANUAL',

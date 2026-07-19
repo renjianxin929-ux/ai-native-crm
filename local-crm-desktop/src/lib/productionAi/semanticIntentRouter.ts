@@ -12,6 +12,7 @@ export type SemanticIntentHost = (call: SemanticIntentHostCall, signal?: AbortSi
 const INTENTS = [
   'CUSTOMER_SUMMARY', 'CUSTOMER_RISK_ANALYSIS', 'NEXT_ACTION_RECOMMENDATION', 'FOLLOW_UP_DRAFT',
   'INTERACTION_SUMMARY', 'COMPLEX_CUSTOMER_COMPARE', 'IMAGE_CAPTURE_ANALYSIS',
+  'CUSTOMER_PRIORITY_RANKING',
   'CLARIFICATION_REQUIRED', 'UNSUPPORTED',
 ] as const;
 
@@ -27,18 +28,16 @@ export function createSemanticIntentRouter(host: SemanticIntentHost) {
 export function validateSemanticIntentResponse(raw: unknown): SemanticIntentResolution {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('semantic_intent_v1 must be an object');
   const value = raw as Record<string, unknown>;
-  const keys = ['intent', 'confidence', 'customer_reference', 'required_capability', 'clarification_question', 'extracted_nonwrite_slots'];
+  const keys = ['intent', 'filters', 'entities', 'scope', 'missing_fields', 'confidence', 'clarification_question'];
   if (Object.keys(value).length !== keys.length || Object.keys(value).some(key => !keys.includes(key)) || keys.some(key => !(key in value))) {
     throw new Error('semantic_intent_v1 closed schema rejected');
   }
   if (!INTENTS.includes(value.intent as typeof INTENTS[number])) throw new Error('semantic_intent_v1 intent rejected');
   if (typeof value.confidence !== 'number' || !Number.isFinite(value.confidence) || value.confidence < 0 || value.confidence > 1) throw new Error('semantic_intent_v1 confidence rejected');
-  if (value.customer_reference !== null && typeof value.customer_reference !== 'string') throw new Error('semantic_intent_v1 customer reference rejected');
-  if (!['TEXT_REASONING', 'VISION_ANALYSIS', 'none'].includes(String(value.required_capability))) throw new Error('semantic_intent_v1 capability rejected');
+  if (!value.filters || typeof value.filters !== 'object' || Array.isArray(value.filters) || Object.entries(value.filters as Record<string, unknown>).some(([key, slot]) => !key || typeof slot !== 'string')) throw new Error('semantic_intent_v1 filters rejected');
+  if (!Array.isArray(value.entities) || value.entities.some(entity => !entity || typeof entity !== 'object' || Array.isArray(entity) || Object.keys(entity as object).some(key => !['type', 'value'].includes(key)) || typeof (entity as { type?: unknown }).type !== 'string' || typeof (entity as { value?: unknown }).value !== 'string')) throw new Error('semantic_intent_v1 entities rejected');
+  if (value.scope !== null && typeof value.scope !== 'string') throw new Error('semantic_intent_v1 scope rejected');
+  if (!Array.isArray(value.missing_fields) || value.missing_fields.some(field => typeof field !== 'string')) throw new Error('semantic_intent_v1 missing fields rejected');
   if (value.clarification_question !== null && typeof value.clarification_question !== 'string') throw new Error('semantic_intent_v1 clarification rejected');
-  if (!value.extracted_nonwrite_slots || typeof value.extracted_nonwrite_slots !== 'object' || Array.isArray(value.extracted_nonwrite_slots)) throw new Error('semantic_intent_v1 slots rejected');
-  for (const [key, slot] of Object.entries(value.extracted_nonwrite_slots as Record<string, unknown>)) {
-    if (!key || typeof slot !== 'string') throw new Error('semantic_intent_v1 slots must be string-only');
-  }
   return value as unknown as SemanticIntentResolution;
 }

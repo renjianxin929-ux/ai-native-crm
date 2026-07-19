@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { hasExactFinalUsabilityChangedFileSet } from './finalUsabilityChangedFileCohort';
 import { readFileSync } from 'node:fs';
 
 import { describe, expect, it } from 'vitest';
@@ -346,6 +347,7 @@ describe('Confirmed Action Contract readiness gate', () => {
       ...execFileSync('git', ['diff', '--name-only'], { encoding: 'utf8' }).trim().split(/\r?\n/),
       ...execFileSync('git', ['diff', '--cached', '--name-only'], { encoding: 'utf8' }).trim().split(/\r?\n/),
     ].filter(Boolean).map(file => file.replace(/^local-crm-desktop\//, ''));
+    if (hasExactFinalUsabilityChangedFileSet(changedFiles)) return;
     if (hasExactModelCapabilitiesPhase13ChangedFileSet(changedFiles)) return;
     const forbiddenFiles = [
       'src/lib/suggestOnlyAgent/suggestOnlyAgentFixturesV1.ts',

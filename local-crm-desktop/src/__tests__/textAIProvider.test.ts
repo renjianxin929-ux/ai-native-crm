@@ -129,8 +129,9 @@ describe('normalizeTextProviderError', () => {
     expect(msg).not.toMatch(/sk-/);
   });
 
-  it('一般错误返回原始信息', () => {
+  it('一般错误不返回原始服务端信息', () => {
     const msg = normalizeTextProviderError(new Error('服务器繁忙'));
-    expect(msg).toContain('服务器繁忙');
+    expect(msg).not.toContain('服务器繁忙');
+    expect(msg).toContain('Provider 请求失败');
   });
 });

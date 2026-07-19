@@ -1,5 +1,7 @@
 [package]
 name = "app"
+default-run = "app"
+autobins = false
 version = "0.4.0"
 description = "A Tauri App"
 authors = ["you"]
@@ -13,12 +15,23 @@ default = []
 # Compile-time-only transport for the dedicated com.localcrm.desktop.e2e app.
 # Production builds do not activate or contain this execution branch.
 e2e = []
+# Manual one-shot migration utility. Normal GUI builds and bundles do not enable it.
+migration-tool = []
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]
 name = "app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "app"
+path = "src/main.rs"
+
+[[bin]]
+name = "migrate_plaintext_credentials"
+path = "src/bin/migrate_plaintext_credentials.rs"
+required-features = ["migration-tool"]
 
 [build-dependencies]
 tauri-build = { version = "2.6.2", features = [] }

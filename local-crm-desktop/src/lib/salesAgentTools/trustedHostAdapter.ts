@@ -45,11 +45,15 @@ export function createTrustedHostSalesAgentAdapter(input: {
   async function executeCapability(
     customer_id: string,
     capability: 'TEXT_REASONING' | 'VISION_ANALYSIS' | 'SEMANTIC_INTENT_ROUTING',
-    provider_kind: 'DEEPSEEK_COMPATIBLE' | 'QWEN_VISION_COMPATIBLE',
-    model_id: string,
     payload: unknown,
     signal?: AbortSignal,
   ): Promise<TrustedHostCompletionResult> {
+    const defaultProvider = capability === 'VISION_ANALYSIS' ? 'QWEN_VISION_COMPATIBLE' as const : 'DEEPSEEK_COMPATIBLE' as const;
+    const defaultModel = capability === 'VISION_ANALYSIS' ? 'qwen-vl-plus' : 'deepseek-chat';
+    const status = input.authorize ? null : (await listTrustedHostProviderStatus()).find(item =>
+      item.capability === (capability === 'SEMANTIC_INTENT_ROUTING' ? 'TEXT_REASONING' : capability));
+    const provider_kind = (status?.providerKind ?? defaultProvider) as 'DEEPSEEK_COMPATIBLE' | 'QWEN_VISION_COMPATIBLE';
+    const model_id = status?.modelId || defaultModel;
     const binding: TrustedHostCapabilityBinding = {
       capability,
       providerKind: provider_kind,
@@ -83,8 +87,6 @@ export function createTrustedHostSalesAgentAdapter(input: {
     await executeCapability(
       'semantic-routing',
       'SEMANTIC_INTENT_ROUTING',
-      'DEEPSEEK_COMPATIBLE',
-      'deepseek-chat',
       call,
       signal,
     )
@@ -92,10 +94,8 @@ export function createTrustedHostSalesAgentAdapter(input: {
 
   function createProductionModelCaller(): ProductionModelCaller {
     return async ({ envelope, capability, attempt, validation_errors, signal }) => {
-      const provider_kind = capability === 'VISION_ANALYSIS' ? 'QWEN_VISION_COMPATIBLE' as const : 'DEEPSEEK_COMPATIBLE' as const;
-      const model_id = capability === 'VISION_ANALYSIS' ? 'qwen-vl-plus' : 'deepseek-chat';
       const customer_id = envelope.customer_id ?? 'portfolio';
-      const result = await executeCapability(customer_id, capability, provider_kind, model_id, {
+      const result = await executeCapability(customer_id, capability, {
         model_context_envelope: envelope,
         required_schema: envelope.requested_output_schema,
         attempt,
@@ -107,14 +107,14 @@ export function createTrustedHostSalesAgentAdapter(input: {
 
   return {
     reason: async ({ customer_id, message }) => (
-      await executeCapability(customer_id, 'TEXT_REASONING', 'DEEPSEEK_COMPATIBLE', 'deepseek-chat', { message })
+      await executeCapability(customer_id, 'TEXT_REASONING', { message })
     ).output,
     capture: async ({ customer_id, source_type, source, signal }) => {
       if (source_type !== 'image') {
-        return (await executeCapability(customer_id, 'TEXT_REASONING', 'DEEPSEEK_COMPATIBLE', 'deepseek-chat', { source_type, source }, signal)).output;
+        return (await executeCapability(customer_id, 'TEXT_REASONING', { source_type, source }, signal)).output;
       }
       const image = parseVisionDataUrl(source);
-      return (await executeCapability(customer_id, 'VISION_ANALYSIS', 'QWEN_VISION_COMPATIBLE', 'qwen-vl-plus', {
+      return (await executeCapability(customer_id, 'VISION_ANALYSIS', {
         vision_request: image,
         required_schema: 'image_capture_analysis_v1',
       }, signal)).output;

@@ -9,9 +9,9 @@ describe('production-mock-leakage suite', () => {
     for (const marker of BANNED) expect(source).not.toContain(marker);
   });
 
-  it('production-bundle-audit keeps mock fixtures, test hooks, endpoints and secrets outside the browser bundle', () => {
+  it('production-bundle-audit keeps mock fixtures, test hooks, authorization material and secrets outside the browser bundle', () => {
     const bundle = readProductionBundle();
-    for (const marker of [...BANNED, 'api.deepseek.com', 'dashscope.aliyuncs.com', 'Authorization: Bearer', 'sk-test']) {
+    for (const marker of [...BANNED, 'Authorization: Bearer', 'sk-test']) {
       expect(bundle).not.toContain(marker);
     }
   });

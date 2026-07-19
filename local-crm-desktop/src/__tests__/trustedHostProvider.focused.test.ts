@@ -13,9 +13,10 @@ describe('trusted-host-provider suite', () => {
     expect(frontendBoundary).toContain("invoke<TrustedHostCompletionResult>('execute_model_capability'");
     expect(frontendBoundary).toContain("invoke<TrustedHostProviderHealth>('probe_trusted_host_provider_health'");
     expect(frontendBoundary).toContain("invoke<TrustedHostProviderHealth[]>('list_trusted_host_provider_status'");
-    for (const forbidden of ['process.env', 'import.meta.env', 'fetch(', 'axios', 'Bearer ', 'apiKey:', 'api_key:']) {
+    for (const forbidden of ['process.env', 'import.meta.env', 'fetch(', 'axios', 'Bearer ', 'api_key:']) {
       expect(frontendBoundary).not.toContain(forbidden);
     }
+    expect(frontendBoundary).toContain('Sends the key once to Rust');
   });
 
   it('registers production host commands with timeout, size limits, and health probes', () => {

@@ -17,14 +17,15 @@ describe('trusted host provider boundary', () => {
   it('keeps the frontend limited to a Tauri invoke command', () => {
     expect(frontendBoundary).toContain("invoke<TrustedHostAuthorizationResult>('authorize_model_capability'");
     expect(frontendBoundary).toContain("invoke<TrustedHostCompletionResult>('execute_model_capability'");
-    for (const forbidden of ['process.env', 'import.meta.env', 'fetch(', 'axios', 'Bearer ', 'apiKey:', 'api_key:']) {
+    for (const forbidden of ['process.env', 'import.meta.env', 'fetch(', 'axios', 'Bearer ', 'api_key:']) {
       expect(frontendBoundary).not.toContain(forbidden);
     }
+    expect(frontendBoundary).toContain('Sends the key once to Rust');
   });
 
   it('registers a Rust Tauri command with a host-owned factory and secret boundary', () => {
     expect(hostBoundary).toContain('#[tauri::command]');
-    expect(hostBoundary).toContain('WindowsCredentialStore');
+    expect(hostBoundary).toContain('EncryptedCredentialStore');
     expect(hostBoundary).toContain('TrustedHostState');
     expect(tauriLibrary).toContain('trusted_host::execute_model_capability');
     expect(tauriLibrary).toContain('trusted_host::probe_trusted_host_provider_health');
@@ -38,7 +39,7 @@ describe('trusted host provider boundary', () => {
     expect(hostBoundary).toContain('reqwest::Client');
     // Compile-time E2E-only controls may use environment variables for an
     // external evidence root and deterministic fault injection. Provider
-    // credentials remain host-owned in Windows Credential Manager.
+    // credentials remain host-owned in DPAPI-encrypted SQLite storage.
     for (const secretEnvironmentName of ['DEEPSEEK_API_KEY', 'DASHSCOPE_API_KEY', 'OPENAI_API_KEY', 'PROVIDER_API_KEY']) {
       expect(hostBoundary).not.toContain(secretEnvironmentName);
     }

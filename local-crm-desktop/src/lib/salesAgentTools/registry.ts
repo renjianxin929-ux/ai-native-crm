@@ -3,6 +3,7 @@ import type { CustomerMemoryContext } from '../customerMemory';
 import type { LoadedReadOnlyAgentSnapshot } from '../readOnlySnapshotLoaderReadiness';
 import { SEARCH_CUSTOMERS_TOOL_ID } from './searchCustomers';
 import { SEARCH_CUSTOMERS_TOOL_META } from './executeSearchCustomersTool';
+import { CUSTOMER_PRIORITY_RANKING_TOOL_ID } from './customerPriorityRanking';
 
 export type SalesAgentCustomerScopedToolId =
   | 'get_customer'
@@ -15,15 +16,15 @@ export type SalesAgentCustomerScopedToolId =
   | 'get_existing_ai_results'
   | 'get_today_priority';
 
-export type SalesAgentToolId = SalesAgentCustomerScopedToolId | typeof SEARCH_CUSTOMERS_TOOL_ID;
+export type SalesAgentToolId = SalesAgentCustomerScopedToolId | typeof SEARCH_CUSTOMERS_TOOL_ID | typeof CUSTOMER_PRIORITY_RANKING_TOOL_ID;
 
 export interface SalesAgentToolDefinition {
   readonly id: SalesAgentToolId;
   readonly name: string;
   readonly description: string;
   readonly capability: string;
-  readonly input_schema: 'customer_id' | 'normalized_customer_filters';
-  readonly output_schema: 'evidence_linked_read_result' | 'bounded_customer_candidates';
+  readonly input_schema: 'customer_id' | 'normalized_customer_filters' | 'ranking_context';
+  readonly output_schema: 'evidence_linked_read_result' | 'bounded_customer_candidates' | 'customer_priority_ranking';
   readonly access: 'read';
   readonly requires_confirmation: false;
 }
@@ -63,11 +64,15 @@ export const SALES_AGENT_TOOL_REGISTRY: Readonly<Record<SalesAgentToolId, SalesA
     access: 'read',
     requires_confirmation: false,
   },
+  customer_priority_ranking: {
+    id: CUSTOMER_PRIORITY_RANKING_TOOL_ID, name: 'Customer priority ranking', description: 'Deterministically rank customers from persisted CRM evidence.',
+    capability: 'priority_read', input_schema: 'ranking_context', output_schema: 'customer_priority_ranking', access: 'read', requires_confirmation: false,
+  },
 });
 
 export const SALES_AGENT_TOOL_IDS = Object.freeze(Object.keys(SALES_AGENT_TOOL_REGISTRY) as SalesAgentToolId[]);
 export const SALES_AGENT_CUSTOMER_SCOPED_TOOL_IDS = Object.freeze(
-  SALES_AGENT_TOOL_IDS.filter(id => id !== SEARCH_CUSTOMERS_TOOL_ID) as SalesAgentCustomerScopedToolId[],
+  SALES_AGENT_TOOL_IDS.filter(id => id !== SEARCH_CUSTOMERS_TOOL_ID && id !== CUSTOMER_PRIORITY_RANKING_TOOL_ID) as SalesAgentCustomerScopedToolId[],
 );
 
 export interface SalesAgentReadToolContext {

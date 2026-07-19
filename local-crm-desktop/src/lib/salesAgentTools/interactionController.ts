@@ -18,6 +18,23 @@ import { isClosedWriteIntentUtterance } from './writeIntent';
 import { invalidateCustomerWriteState } from './sessionWriteStateStore';
 import { applySemanticIntentResolution, createAgentIntentEnvelope, mergeAgentIntentClarificationAnswer, type AgentIntentEnvelope, type SemanticIntentResolution } from './agentIntentEnvelope';
 import { SALES_AGENT_APP_CLOCK } from './appClock';
+import { executeCustomerPriorityRanking, type CustomerPriorityRankingResult } from './customerPriorityRanking';
+
+export interface PendingInstructionSessionState {
+  readonly original_instruction: string | null;
+  readonly active_instruction: string | null;
+  readonly intent: string | null;
+  readonly pending_instruction: string | null;
+  readonly pending_intent: string | null;
+  readonly missing_fields: readonly string[];
+  readonly customer_scope: string | null;
+  readonly candidate_customer_ids: readonly string[];
+  readonly selected_customer_id: string | null;
+  readonly resume_after_scope: boolean;
+  readonly clarification_state: 'NONE' | 'REQUIRED' | 'RESOLVED';
+  readonly proposal_state: 'NONE' | 'PENDING' | 'CANCELLED' | 'CONFIRMED' | 'INVALIDATED';
+  readonly turn_id: string | null;
+}
 
 export type SalesAgentInteractionPhase =
   | 'unscoped'
@@ -72,6 +89,8 @@ export interface SalesAgentInteractionState {
   readonly latest_proposal: AgentWriteProposal | null;
   readonly latest_clarification: WriteClarificationRequest | null;
   readonly latest_search: SearchCustomersResult | null;
+  readonly latest_priority_ranking: CustomerPriorityRankingResult | null;
+  readonly pending_session: PendingInstructionSessionState;
   readonly submit_locked: boolean;
   readonly user_message: string | null;
   readonly agent_message: string | null;
@@ -109,6 +128,8 @@ const INITIAL: SalesAgentInteractionState = {
   latest_proposal: null,
   latest_clarification: null,
   latest_search: null,
+  latest_priority_ranking: null,
+  pending_session: { original_instruction: null, active_instruction: null, intent: null, pending_instruction: null, pending_intent: null, missing_fields: [], customer_scope: null, candidate_customer_ids: [], selected_customer_id: null, resume_after_scope: false, clarification_state: 'NONE', proposal_state: 'NONE', turn_id: null },
   submit_locked: false,
   user_message: null,
   agent_message: null,
@@ -381,6 +402,16 @@ export class SalesAgentInteractionController {
         }
       }
       this.state = { ...this.state, current_intent: intentEnvelope.intent, intent_envelope: intentEnvelope };
+      this.state = { ...this.state, pending_session: {
+        original_instruction: intentEnvelope.original_instruction, active_instruction: intentEnvelope.original_instruction, intent: intentEnvelope.intent,
+        pending_instruction: !this.state.scoped_customer_id && intentEnvelope.mode === 'write_action' ? intentEnvelope.original_instruction : null,
+        pending_intent: !this.state.scoped_customer_id && intentEnvelope.mode === 'write_action' ? intentEnvelope.intent : null,
+        missing_fields: [...new Set([...( !this.state.scoped_customer_id && intentEnvelope.mode === 'write_action' ? ['customer'] : []), ...intentEnvelope.missing_fields])], customer_scope: this.state.scoped_customer_id, candidate_customer_ids: [], selected_customer_id: this.state.scoped_customer_id,
+        resume_after_scope: !this.state.scoped_customer_id && intentEnvelope.mode === 'write_action', clarification_state: intentEnvelope.clarification_required ? 'REQUIRED' : 'NONE',
+        proposal_state: 'NONE', turn_id: intentEnvelope.envelope_id,
+      } };
+
+      if (intentEnvelope.intent === 'CUSTOMER_PRIORITY_RANKING') return await this.runPriorityRanking(intentEnvelope);
 
       if (intentEnvelope.mode === 'capture' && intentEnvelope.clarification_required) {
         const reason = '请先通过附件入口选择一张 JPEG、PNG 或 WebP 图片，再显式点击 Analyze image。';
@@ -555,6 +586,7 @@ export class SalesAgentInteractionController {
       candidate_empty_exact: false,
       agent_message: `已定位客户：${candidate.name}，正在读取最近互动与有效记忆……`,
       submit_locked: true,
+      pending_session: { ...this.state.pending_session, missing_fields: this.state.pending_session.missing_fields.filter(field => field !== 'customer'), candidate_customer_ids: [], selected_customer_id: candidate.id, customer_scope: candidate.id, resume_after_scope: true },
     };
     this.candidateIds.clear();
     return {
@@ -586,7 +618,7 @@ export class SalesAgentInteractionController {
       // Candidate binding may reduce “打开 X，然后总结” to the bounded
       // post-bind instruction. Re-parse that user-visible continuation instead
       // of submitting the original SEARCH_CUSTOMERS envelope to Session.
-      const envelope = continuePrompt.trim() && continuePrompt.trim() !== originalEnvelope.original_instruction.trim()
+      const envelope = originalEnvelope.mode === 'write_action' ? originalEnvelope : continuePrompt.trim() && continuePrompt.trim() !== originalEnvelope.original_instruction.trim()
         ? this.parseIntentEnvelope(continuePrompt)
         : originalEnvelope;
       this.state = { ...this.state, current_intent: envelope.intent, intent_envelope: envelope };
@@ -718,6 +750,7 @@ export class SalesAgentInteractionController {
         agent_message: emptyMsg,
         resolution_reason: near.candidates.length ? null : emptyMsg,
         latest_search: near,
+        pending_session: { ...this.state.pending_session, pending_instruction: near.candidates.length ? message : null, pending_intent: near.candidates.length ? intentEnvelope.intent : null, candidate_customer_ids: near.candidates.map(item => item.id), resume_after_scope: near.candidates.length > 0 },
         portfolio_total_matches: 0,
         portfolio_page_offset: 0,
         portfolio_has_more: false,
@@ -750,6 +783,7 @@ export class SalesAgentInteractionController {
         portfolio_page_offset: search.page_offset,
         portfolio_has_more: search.has_more,
         portfolio_filters_message: message,
+        pending_session: { ...this.state.pending_session, candidate_customer_ids: search.candidates.map(item => item.id), resume_after_scope: false },
       };
       return { state: this.state, event: { type: 'portfolio_list' } };
     }
@@ -770,6 +804,7 @@ export class SalesAgentInteractionController {
       portfolio_page_offset: 0,
       portfolio_has_more: false,
       portfolio_filters_message: null,
+      pending_session: { ...this.state.pending_session, pending_instruction: message, pending_intent: intentEnvelope.intent, candidate_customer_ids: search.candidates.map(item => item.id), resume_after_scope: true },
     };
     return { state: this.state, event: { type: 'idle' } };
   }
@@ -827,6 +862,7 @@ export class SalesAgentInteractionController {
         pending_original_instruction: outcome.clarification.original_instruction,
         agent_message: outcome.clarification.question,
         current_intent: outcome.clarification.intent,
+        pending_session: { ...this.state.pending_session, pending_instruction: outcome.clarification.original_instruction, pending_intent: outcome.clarification.intent, missing_fields: outcome.clarification.missing_fields, customer_scope: customerId, selected_customer_id: customerId, resume_after_scope: false, clarification_state: 'REQUIRED', proposal_state: 'NONE' },
       };
       return { state: this.state, event: { type: 'idle' }, outcome };
     }
@@ -846,6 +882,7 @@ export class SalesAgentInteractionController {
         // The tool id remains available on latest_proposal for rendering and
         // execution, but it must not replace the routed intent in state.
         current_intent: intentEnvelope.intent,
+        pending_session: { ...this.state.pending_session, pending_instruction: null, pending_intent: null, missing_fields: [], customer_scope: customerId, selected_customer_id: customerId, resume_after_scope: false, clarification_state: 'RESOLVED', proposal_state: 'PENDING' },
       };
       return { state: this.state, event: { type: 'idle' }, outcome };
     }
@@ -861,5 +898,13 @@ export class SalesAgentInteractionController {
       latest_clarification: null,
     };
     return { state: this.state, event: { type: 'idle' }, outcome: { ...outcome, reason } };
+  }
+
+  private async runPriorityRanking(intentEnvelope: AgentIntentEnvelope): Promise<SalesAgentInteractionTurn> {
+    const ranking = await executeCustomerPriorityRanking({ db: this.deps.db, now: this.deps.clock?.() ?? SALES_AGENT_APP_CLOCK.now(), limit: 20 });
+    const candidates: CustomerSearchCandidate[] = ranking.items.map(item => ({ id: item.customer_id, name: item.customer_name, region: null, industry: null, stage: null, customer_grade: null, intent_level: null, last_contacted_at: null, next_follow_up_at: null, match_score: item.score, evidence_ref: item.evidence_references[0] ?? `customer:${item.customer_id}` }));
+    this.candidateIds.clear(); for (const item of candidates) this.candidateIds.add(item.id);
+    this.state = { ...this.state, phase: 'portfolio_browse', submit_locked: false, current_intent: intentEnvelope.intent, latest_priority_ranking: ranking, candidate_results: candidates, portfolio_total_matches: candidates.length, portfolio_page_offset: 0, portfolio_has_more: false, portfolio_filters_message: intentEnvelope.original_instruction, pending_original_instruction: null, agent_message: ranking.model_status_note, pending_session: { ...this.state.pending_session, pending_instruction: null, pending_intent: null, candidate_customer_ids: candidates.map(item => item.id), resume_after_scope: false } };
+    return { state: this.state, event: { type: 'portfolio_list' } };
   }
 }

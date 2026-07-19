@@ -18,12 +18,18 @@ use tauri::State;
 use tokio::sync::Notify;
 use tokio::task::AbortHandle;
 use uuid::Uuid;
+use zeroize::Zeroizing;
 
-use crate::secure_credentials::{prompt_and_store, CredentialStore, WindowsCredentialStore, SEMANTIC_INTENT_ROUTING, TEXT_REASONING, VISION_ANALYSIS};
+use crate::encrypted_credentials::{EncryptedCredentialStore, ProviderCredentialInput, ProviderCredentialStatus, TEXT_REASONING};
+use crate::secure_credentials::{SEMANTIC_INTENT_ROUTING, VISION_ANALYSIS};
 
+#[cfg(feature = "e2e")]
 const DEEPSEEK: &str = "DEEPSEEK_COMPATIBLE";
+#[cfg(feature = "e2e")]
 const QWEN_VISION: &str = "QWEN_VISION_COMPATIBLE";
+#[cfg(feature = "e2e")]
 const DEEPSEEK_ENDPOINT: &str = "https://api.deepseek.com/chat/completions";
+#[cfg(feature = "e2e")]
 const QWEN_VISION_ENDPOINT: &str = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions";
 const REQUEST_TIMEOUT_SECS: u64 = 75;
 const MAX_REQUEST_BYTES: usize = 48_000;
@@ -95,17 +101,7 @@ pub struct TrustedHostCompletionResult {
   pub token_usage: Option<TrustedHostTokenUsage>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TrustedHostProviderHealth {
-  pub capability: String,
-  pub provider_kind: String,
-  pub model_id: String,
-  pub status: String,
-  pub configured: bool,
-  pub checked_at: String,
-  pub detail: String,
-}
+pub type TrustedHostProviderHealth = ProviderCredentialStatus;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RequestState { Authorized, Starting, Active, Cancelling, Cancelled, Completed, Failed }
@@ -218,10 +214,16 @@ impl RequestRegistry {
 pub struct TrustedHostState {
   registry: std::sync::Mutex<RequestRegistry>,
   client: reqwest::Client,
-  credentials: WindowsCredentialStore,
+  credentials: EncryptedCredentialStore,
 }
 
 impl TrustedHostState {
+  pub fn new(credentials: EncryptedCredentialStore) -> Self {
+    let client = reqwest::Client::builder().timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS))
+      .build().expect("trusted host HTTP client must build");
+    Self { registry: Default::default(), client, credentials }
+  }
+
   pub fn abort_all_for_shutdown(&self) {
     if let Ok(mut registry) = self.registry.lock() { registry.abort_all_active(Instant::now()); }
   }
@@ -263,22 +265,11 @@ impl Drop for RequestExecutionGuard<'_> {
 
 impl Default for TrustedHostState {
   fn default() -> Self {
-    let client = reqwest::Client::builder()
-      .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS))
-      .build().expect("trusted host HTTP client must build");
-    Self {
-      registry: Default::default(), client, credentials: WindowsCredentialStore,
-    }
+    Self::new(EncryptedCredentialStore::new(std::env::temp_dir().join(format!("local-crm-trusted-host-test-{}.db", Uuid::new_v4()))))
   }
 }
 
-struct HostProviderCredential { endpoint: &'static str, api_key: String, model_id: &'static str }
-
-impl Drop for HostProviderCredential {
-  fn drop(&mut self) {
-    unsafe { self.api_key.as_mut_vec().fill(0); }
-  }
-}
+struct HostProviderCredential { endpoint: String, api_key: Zeroizing<String>, model_id: String }
 
 #[derive(Debug, Clone, Default)]
 struct ProviderCancellationToken {
@@ -308,17 +299,15 @@ struct ProviderRequest {
   capability: String,
   customer_id: String,
   method: &'static str,
-  endpoint: &'static str,
+  endpoint: String,
   url_category: &'static str,
-  authorization: Option<String>,
+  authorization: Option<Zeroizing<String>>,
   body: Value,
 }
 
 impl Drop for ProviderRequest {
   fn drop(&mut self) {
-    if let Some(secret) = self.authorization.as_mut() {
-      unsafe { secret.as_mut_vec().fill(0); }
-    }
+    self.authorization.take();
   }
 }
 
@@ -353,8 +342,8 @@ impl ProviderTransport for ReqwestProviderTransport {
   ) -> ProviderTransportFuture<'a> {
     Box::pin(async move {
       if cancellation_token.is_cancelled() { return Err(blocked("cancelled")); }
-      let mut builder = self.client.post(provider_request.endpoint).json(&provider_request.body);
-      if let Some(secret) = provider_request.authorization.as_ref() { builder = builder.bearer_auth(secret); }
+      let mut builder = self.client.post(&provider_request.endpoint).json(&provider_request.body);
+      if let Some(secret) = provider_request.authorization.as_ref() { builder = builder.bearer_auth(secret.as_str()); }
       let response = tokio::select! {
         _ = cancellation_token.cancelled() => return Err(blocked("cancelled")),
         result = builder.send() => result.map_err(|error| {
@@ -382,13 +371,13 @@ impl ProviderTransport for DeterministicFakeNetworkTransport {
 }
 
 #[tauri::command]
-pub fn authorize_model_capability(
+pub async fn authorize_model_capability(
   request: TrustedHostCapabilityRequest,
   state: State<'_, TrustedHostState>,
 ) -> Result<TrustedHostAuthorizationResult, TrustedHostBlockedResult> {
   validate_binding(&request)?;
   #[cfg(not(feature = "e2e"))]
-  let model_id = resolve_credential(&state.credentials, &request)?.model_id.to_string();
+  let model_id = resolve_credential(&state.credentials, &request).await?.model_id;
   #[cfg(feature = "e2e")]
   let model_id = {
     if e2e_capability_is_unconfigured(&request.capability) { return Err(blocked("missing_host_provider")); }
@@ -421,7 +410,7 @@ pub async fn execute_model_capability(
   }
   #[cfg(not(feature = "e2e"))]
   {
-    let credential = resolve_credential(&state.credentials, &request.binding)?;
+    let credential = resolve_credential(&state.credentials, &request.binding).await?;
     let transport = ReqwestProviderTransport { client: state.client.clone() };
     return execute_provider_pipeline(
       request,
@@ -429,7 +418,7 @@ pub async fn execute_model_capability(
       transport,
       credential.endpoint,
       credential.model_id,
-      Some(credential.api_key.clone()),
+      Some(credential.api_key),
     ).await;
   }
   #[cfg(feature = "e2e")]
@@ -440,8 +429,8 @@ pub async fn execute_model_capability(
       request,
       &state,
       DeterministicFakeNetworkTransport,
-      endpoint,
-      model_id,
+      endpoint.into(),
+      model_id.into(),
       None,
     ).await;
   }
@@ -451,9 +440,9 @@ async fn execute_provider_pipeline<T: ProviderTransport>(
   request: TrustedHostExecutionRequest,
   state: &TrustedHostState,
   transport: T,
-  endpoint: &'static str,
-  model_id: &'static str,
-  authorization: Option<String>,
+  endpoint: String,
+  model_id: String,
+  authorization: Option<Zeroizing<String>>,
 ) -> Result<TrustedHostCompletionResult, TrustedHostBlockedResult> {
   let request_id = request.authorization_id.clone();
   let mut request_guard = RequestExecutionGuard::new(state, &request_id);
@@ -461,7 +450,7 @@ async fn execute_provider_pipeline<T: ProviderTransport>(
     let host_vision_source = if request.binding.capability == VISION_ANALYSIS {
       Some(parse_vision_input(&request.input)?.source_reference)
     } else { None };
-    let body = build_provider_request(&request.binding, model_id, &request.input, &request_id)?;
+    let body = build_provider_request(&request.binding, &model_id, &request.input, &request_id)?;
     let request_limit = if request.binding.capability == VISION_ANALYSIS { MAX_REQUEST_BYTES + MAX_IMAGE_BYTES * 2 } else { MAX_REQUEST_BYTES };
     if serde_json::to_vec(&body).map_err(|_| blocked("invalid_request"))?.len() > request_limit { return Err(blocked("request_too_large")); }
     let url_category = if request.binding.capability == VISION_ANALYSIS { "vision_chat_completions" } else { "text_chat_completions" };
@@ -547,11 +536,12 @@ fn fake_provider_content(provider_request: &ProviderRequest) -> Result<Value, Tr
       else { "CUSTOMER_SUMMARY" };
     return Ok(json!({
       "intent": intent,
+      "filters": {},
+      "entities": [],
+      "scope": Value::Null,
+      "missing_fields": [],
       "confidence": 0.96,
-      "customer_reference": Value::Null,
-      "required_capability": "TEXT_REASONING",
-      "clarification_question": Value::Null,
-      "extracted_nonwrite_slots": {}
+      "clarification_question": Value::Null
     }));
   }
   if provider_request.capability == VISION_ANALYSIS {
@@ -912,25 +902,35 @@ fn cancel_request(state: &TrustedHostState, request_id: &str) -> Result<bool, Tr
 }
 
 #[tauri::command]
-pub fn configure_trusted_host_credential(capability: String) -> Result<TrustedHostProviderHealth, TrustedHostBlockedResult> {
-  prompt_and_store(&capability).map_err(|_| blocked("secure_credential_configuration_failed"))?;
-  Ok(discover(&WindowsCredentialStore, &capability))
+pub async fn configure_trusted_host_credential(
+  input: ProviderCredentialInput,
+  state: State<'_, TrustedHostState>,
+) -> Result<TrustedHostProviderHealth, TrustedHostBlockedResult> {
+  state.credentials.save(input).await.map_err(|_| blocked("secure_credential_configuration_failed"))
 }
 
 #[tauri::command]
-pub fn delete_trusted_host_credential(capability: String) -> Result<TrustedHostProviderHealth, TrustedHostBlockedResult> {
-  WindowsCredentialStore.delete(&capability).map_err(|_| blocked("secure_credential_delete_failed"))?;
-  Ok(discover(&WindowsCredentialStore, &capability))
+pub async fn delete_trusted_host_credential(
+  capability: String,
+  state: State<'_, TrustedHostState>,
+) -> Result<TrustedHostProviderHealth, TrustedHostBlockedResult> {
+  state.credentials.delete(&capability).await.map_err(|_| blocked("secure_credential_delete_failed"))
 }
 
 #[tauri::command]
-pub fn probe_trusted_host_provider_health(capability: String, _provider_kind: String) -> TrustedHostProviderHealth {
-  discover(&WindowsCredentialStore, &capability)
+pub async fn probe_trusted_host_provider_health(
+  capability: String,
+  _provider_kind: String,
+  state: State<'_, TrustedHostState>,
+) -> Result<TrustedHostProviderHealth, TrustedHostBlockedResult> {
+  state.credentials.status(&capability).await.map_err(|_| blocked("secure_credential_status_failed"))
 }
 
 #[tauri::command]
-pub fn list_trusted_host_provider_status() -> Vec<TrustedHostProviderHealth> {
-  vec![discover(&WindowsCredentialStore, TEXT_REASONING), discover(&WindowsCredentialStore, VISION_ANALYSIS)]
+pub async fn list_trusted_host_provider_status(
+  state: State<'_, TrustedHostState>,
+) -> Result<Vec<TrustedHostProviderHealth>, TrustedHostBlockedResult> {
+  state.credentials.list_status().await.map_err(|_| blocked("secure_credential_status_failed"))
 }
 
 #[tauri::command]
@@ -938,12 +938,9 @@ pub async fn test_trusted_host_provider_connection(
   capability: String,
   state: State<'_, TrustedHostState>,
 ) -> Result<TrustedHostProviderHealth, TrustedHostBlockedResult> {
-  let mut health = discover(&state.credentials, &capability);
-  let request = health_binding(&capability);
-  let credential = match resolve_credential(&state.credentials, &request) {
-    Ok(value) => value,
-    Err(error) => return Err(error),
-  };
+  let mut health = state.credentials.status(&capability).await.map_err(|_| blocked("secure_credential_status_failed"))?;
+  let credential = state.credentials.load_runtime(&capability).await.map_err(|_| blocked("missing_host_provider"))?;
+  let request = health_binding(&capability, &credential);
   let input = if capability == VISION_ANALYSIS {
     json!({ "vision_request": {
       "mime_type": "image/png",
@@ -953,11 +950,12 @@ pub async fn test_trusted_host_provider_connection(
   } else {
     json!({ "connection_test": true, "required_schema": "health_check_v1" })
   };
-  let body = match build_provider_request(&request, credential.model_id, &input, "connection-test") {
+  let body = match build_provider_request(&request, &credential.model, &input, "connection-test") {
     Ok(value) => value,
     Err(error) => return Err(error),
   };
-  match send_with_bounded_retry(state.client.clone(), credential, body).await {
+  let host_credential = HostProviderCredential { endpoint: credential.endpoint, api_key: credential.api_key, model_id: credential.model };
+  match send_with_bounded_retry(state.client.clone(), host_credential, body).await {
     Ok(_) => { health.status = "healthy".into(); health.detail = "explicit minimal connection test succeeded".into(); }
     Err(error) => {
       health.status = match error.reason {
@@ -966,29 +964,18 @@ pub async fn test_trusted_host_provider_connection(
       health.detail = error.reason.into();
     }
   }
-  health.checked_at = iso_now();
+  health.checked_at = Some(iso_now());
+  let _ = state.credentials.record_health(&capability, &health.status).await;
   Ok(health)
 }
 
-fn discover(store: &dyn CredentialStore, capability: &str) -> TrustedHostProviderHealth {
-  let (provider, model) = provider_and_model(capability).unwrap_or(("UNSUPPORTED", "unknown"));
-  let configured = store.read(capability).ok().flatten().is_some();
-  TrustedHostProviderHealth {
-    capability: capability.into(), provider_kind: provider.into(), model_id: model.into(),
-    status: if configured { "configured" } else { "unconfigured" }.into(), configured,
-    checked_at: iso_now(), detail: if configured { "credential present in OS secure store" } else { "credential not configured" }.into(),
-  }
+async fn resolve_credential(store: &EncryptedCredentialStore, request: &TrustedHostCapabilityRequest) -> Result<HostProviderCredential, TrustedHostBlockedResult> {
+  let credential = store.load_runtime(&request.capability).await.map_err(|_| blocked("missing_host_provider"))?;
+  if request.provider_kind != credential.provider_kind || request.model_id != credential.model { return Err(blocked("unsupported_capability_provider")); }
+  Ok(HostProviderCredential { endpoint: credential.endpoint, api_key: credential.api_key, model_id: credential.model })
 }
 
-fn resolve_credential(store: &dyn CredentialStore, request: &TrustedHostCapabilityRequest) -> Result<HostProviderCredential, TrustedHostBlockedResult> {
-  let (provider, model) = provider_and_model(&request.capability).ok_or_else(|| blocked("unsupported_capability_provider"))?;
-  if request.provider_kind != provider || request.model_id != model { return Err(blocked("unsupported_capability_provider")); }
-  let api_key = store.read(&request.capability).map_err(|_| blocked("secure_credential_read_failed"))?
-    .filter(|value| !value.trim().is_empty()).ok_or_else(|| blocked("missing_host_provider"))?;
-  let endpoint = if request.capability == VISION_ANALYSIS { QWEN_VISION_ENDPOINT } else { DEEPSEEK_ENDPOINT };
-  Ok(HostProviderCredential { endpoint, api_key, model_id: model })
-}
-
+#[cfg(feature = "e2e")]
 fn provider_and_model(capability: &str) -> Option<(&'static str, &'static str)> {
   match capability {
     TEXT_REASONING => Some((DEEPSEEK, "deepseek-chat")),
@@ -998,10 +985,9 @@ fn provider_and_model(capability: &str) -> Option<(&'static str, &'static str)> 
   }
 }
 
-fn health_binding(capability: &str) -> TrustedHostCapabilityRequest {
-  let (provider, model) = provider_and_model(capability).unwrap_or(("UNSUPPORTED", "unknown"));
+fn health_binding(capability: &str, credential: &crate::encrypted_credentials::RuntimeCredential) -> TrustedHostCapabilityRequest {
   TrustedHostCapabilityRequest {
-    capability: capability.into(), provider_kind: provider.into(), model_id: model.into(), customer_id: "connection-test".into(),
+    capability: capability.into(), provider_kind: credential.provider_kind.clone(), model_id: credential.model.clone(), customer_id: "connection-test".into(),
     context_snapshot_id: "connection-test".into(), workflow_kind: "provider_health".into(), profile_id: "connection-test".into(), requested_by_user: true,
   }
 }
@@ -1011,8 +997,12 @@ fn validate_binding(request: &TrustedHostCapabilityRequest) -> Result<(), Truste
   if request.customer_id.trim().is_empty() || request.context_snapshot_id.trim().is_empty() || request.workflow_kind.trim().is_empty() || request.profile_id.trim().is_empty() || request.model_id.trim().is_empty() {
     return Err(blocked("incomplete_authorization_binding"));
   }
-  let (provider, model) = provider_and_model(&request.capability).ok_or_else(|| blocked("unsupported_capability_provider"))?;
-  if request.provider_kind != provider || request.model_id != model { return Err(blocked("unsupported_capability_provider")); }
+  if ![TEXT_REASONING, SEMANTIC_INTENT_ROUTING, VISION_ANALYSIS].contains(&request.capability.as_str()) { return Err(blocked("unsupported_capability_provider")); }
+  #[cfg(feature = "e2e")]
+  {
+    let (provider, model) = provider_and_model(&request.capability).ok_or_else(|| blocked("unsupported_capability_provider"))?;
+    if request.provider_kind != provider || request.model_id != model { return Err(blocked("unsupported_capability_provider")); }
+  }
   Ok(())
 }
 
@@ -1028,7 +1018,7 @@ fn build_provider_request(binding: &TrustedHostCapabilityRequest, model: &str, i
     return Ok(json!({
       "model": model, "stream": false, "temperature": 0, "user": request_id,
       "messages": [
-        {"role":"system","content":"Classify only into semantic_intent_v1. Return exactly intent, confidence, customer_reference, required_capability, clarification_question, extracted_nonwrite_slots. Allowed intents: CUSTOMER_SUMMARY, CUSTOMER_RISK_ANALYSIS, NEXT_ACTION_RECOMMENDATION, FOLLOW_UP_DRAFT, INTERACTION_SUMMARY, COMPLEX_CUSTOMER_COMPARE, IMAGE_CAPTURE_ANALYSIS, CLARIFICATION_REQUIRED, UNSUPPORTED. Never return tools, SQL, write payloads, proposals, or executable actions."},
+        {"role":"system","content":"Classify only into semantic_intent_v1. Return exactly intent, filters, entities, scope, missing_fields, confidence, clarification_question. Allowed intents: CUSTOMER_SUMMARY, CUSTOMER_RISK_ANALYSIS, NEXT_ACTION_RECOMMENDATION, FOLLOW_UP_DRAFT, INTERACTION_SUMMARY, COMPLEX_CUSTOMER_COMPARE, IMAGE_CAPTURE_ANALYSIS, CUSTOMER_PRIORITY_RANKING, CLARIFICATION_REQUIRED, UNSUPPORTED. filters must be string-only; entities contain only type and value. Never return SQL, guessed customer IDs, tool IDs, proposals, write payloads, confirmations, CRM mutations, or executable actions."},
         {"role":"user","content":json!({"envelope_id":envelope_id,"instruction":instruction}).to_string()}
       ]
     }));
@@ -1115,7 +1105,7 @@ async fn send_with_bounded_retry(client: reqwest::Client, credential: HostProvid
 }
 
 async fn send_once(client: &reqwest::Client, credential: &HostProviderCredential, body: &Value) -> Result<Value, TrustedHostBlockedResult> {
-  let mut response = client.post(credential.endpoint).bearer_auth(&credential.api_key).json(body).send().await.map_err(|error| {
+  let mut response = client.post(&credential.endpoint).bearer_auth(credential.api_key.as_str()).json(body).send().await.map_err(|error| {
     if error.is_timeout() { blocked("timeout") } else { blocked("host_provider_request_failed") }
   })?;
   let status = response.status().as_u16();
@@ -1154,17 +1144,19 @@ fn extract_output(binding: &TrustedHostCapabilityRequest, payload: Value, host_v
 
 fn validate_semantic_intent_output(value: &Value) -> Result<(), TrustedHostBlockedResult> {
   let object = value.as_object().ok_or_else(|| blocked("host_provider_invalid_semantic_intent"))?;
-  let allowed = ["intent", "confidence", "customer_reference", "required_capability", "clarification_question", "extracted_nonwrite_slots"];
+  let allowed = ["intent", "filters", "entities", "scope", "missing_fields", "confidence", "clarification_question"];
   if object.len() != allowed.len() || object.keys().any(|key| !allowed.contains(&key.as_str())) {
     return Err(blocked("host_provider_invalid_semantic_intent"));
   }
-  let intents = ["CUSTOMER_SUMMARY", "CUSTOMER_RISK_ANALYSIS", "NEXT_ACTION_RECOMMENDATION", "FOLLOW_UP_DRAFT", "INTERACTION_SUMMARY", "COMPLEX_CUSTOMER_COMPARE", "IMAGE_CAPTURE_ANALYSIS", "CLARIFICATION_REQUIRED", "UNSUPPORTED"];
+  let intents = ["CUSTOMER_SUMMARY", "CUSTOMER_RISK_ANALYSIS", "NEXT_ACTION_RECOMMENDATION", "FOLLOW_UP_DRAFT", "INTERACTION_SUMMARY", "COMPLEX_CUSTOMER_COMPARE", "IMAGE_CAPTURE_ANALYSIS", "CUSTOMER_PRIORITY_RANKING", "CLARIFICATION_REQUIRED", "UNSUPPORTED"];
   if !object.get("intent").and_then(Value::as_str).is_some_and(|intent| intents.contains(&intent))
     || !valid_confidence(object.get("confidence"))
-    || !object.get("customer_reference").is_some_and(|item| item.is_null() || item.is_string())
-    || !object.get("required_capability").and_then(Value::as_str).is_some_and(|capability| [TEXT_REASONING, VISION_ANALYSIS, "none"].contains(&capability))
+    || !object.get("filters").and_then(Value::as_object).is_some_and(|filters| filters.iter().all(|(key, item)| !key.is_empty() && item.is_string()))
+    || !object.get("entities").and_then(Value::as_array).is_some_and(|entities| entities.iter().all(|entity| entity.as_object().is_some_and(|entry| entry.len() == 2 && entry.get("type").is_some_and(Value::is_string) && entry.get("value").is_some_and(Value::is_string))))
+    || !object.get("scope").is_some_and(|item| item.is_null() || item.is_string())
+    || !object.get("missing_fields").and_then(Value::as_array).is_some_and(|fields| fields.iter().all(Value::is_string))
     || !object.get("clarification_question").is_some_and(|item| item.is_null() || item.is_string())
-    || !object.get("extracted_nonwrite_slots").and_then(Value::as_object).is_some_and(|slots| slots.iter().all(|(key, item)| !key.is_empty() && item.is_string())) {
+  {
     return Err(blocked("host_provider_invalid_semantic_intent"));
   }
   Ok(())
@@ -1214,7 +1206,10 @@ mod tests {
   use super::*;
   use image::{ExtendedColorType, ImageEncoder};
 
-  fn binding(capability: &str) -> TrustedHostCapabilityRequest { health_binding(capability) }
+  fn binding(capability: &str) -> TrustedHostCapabilityRequest {
+    let (provider, model) = if capability == VISION_ANALYSIS { ("QWEN_VISION_COMPATIBLE", "qwen-vl-plus") } else { ("DEEPSEEK_COMPATIBLE", "deepseek-chat") };
+    TrustedHostCapabilityRequest { capability: capability.into(), provider_kind: provider.into(), model_id: model.into(), customer_id: "connection-test".into(), context_snapshot_id: "connection-test".into(), workflow_kind: "provider_health".into(), profile_id: "connection-test".into(), requested_by_user: true }
+  }
 
   #[test]
   fn visual_request_contains_real_image_content_part() {
@@ -1451,12 +1446,13 @@ mod tests {
       request,
       &state,
       DeterministicFakeNetworkTransport,
-      DEEPSEEK_ENDPOINT,
-      "deepseek-chat",
+      DEEPSEEK_ENDPOINT.to_string(),
+      "deepseek-chat".to_string(),
       None,
     ).await.unwrap();
     assert_eq!(result.output["intent"], "CUSTOMER_SUMMARY");
-    assert_eq!(result.output["required_capability"], TEXT_REASONING);
+    assert_eq!(result.output["filters"], json!({}));
+    assert_eq!(result.output["entities"], json!([]));
     assert_eq!(state.registry.lock().unwrap().entries["transport-equivalence"].state, RequestState::Completed);
   }
 
@@ -1479,8 +1475,8 @@ mod tests {
       request,
       &state,
       DeterministicFakeNetworkTransport,
-      QWEN_VISION_ENDPOINT,
-      "qwen-vl-plus",
+      QWEN_VISION_ENDPOINT.to_string(),
+      "qwen-vl-plus".to_string(),
       None,
     ).await.unwrap();
     assert_eq!(result.output["source_reference"], expected_source);
@@ -1502,8 +1498,8 @@ mod tests {
         request,
         &state,
         DeterministicFakeNetworkTransport,
-        DEEPSEEK_ENDPOINT,
-        "deepseek-chat",
+        DEEPSEEK_ENDPOINT.to_string(),
+        "deepseek-chat".to_string(),
         None,
       ).await.unwrap_err();
       assert_eq!(error, expected);
@@ -1522,8 +1518,8 @@ mod tests {
         late_request,
         &task_state,
         DeterministicFakeNetworkTransport,
-        DEEPSEEK_ENDPOINT,
-        "deepseek-chat",
+        DEEPSEEK_ENDPOINT.to_string(),
+        "deepseek-chat".to_string(),
         None,
       ).await
     });
@@ -1538,8 +1534,8 @@ mod tests {
       next_request,
       &state,
       DeterministicFakeNetworkTransport,
-      DEEPSEEK_ENDPOINT,
-      "deepseek-chat",
+      DEEPSEEK_ENDPOINT.to_string(),
+      "deepseek-chat".to_string(),
       None,
     ).await.unwrap();
     assert_eq!(next.output["intent"], "CUSTOMER_SUMMARY");

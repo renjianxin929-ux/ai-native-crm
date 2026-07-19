@@ -1,4 +1,5 @@
 mod credential_migration;
+pub mod encrypted_credentials;
 mod secure_credentials;
 mod trusted_host;
 
@@ -8,7 +9,6 @@ use tauri::Manager;
 pub fn run() {
   tauri::Builder::default()
     .plugin(tauri_plugin_sql::Builder::default().build())
-    .manage(trusted_host::TrustedHostState::default())
     .invoke_handler(tauri::generate_handler![
       trusted_host::authorize_model_capability,
       trusted_host::execute_model_capability,
@@ -20,8 +20,13 @@ pub fn run() {
       trusted_host::cancel_trusted_host_request,
       credential_migration::inspect_legacy_provider_credentials,
       credential_migration::migrate_legacy_provider_credentials,
+      credential_migration::delete_legacy_provider_credentials,
     ])
     .setup(|app| {
+      let database_path = app.path().app_data_dir()?.join("personal-crm.db");
+      app.manage(trusted_host::TrustedHostState::new(
+        encrypted_credentials::EncryptedCredentialStore::new(database_path),
+      ));
       if cfg!(debug_assertions) {
         app.handle().plugin(
           tauri_plugin_log::Builder::default()

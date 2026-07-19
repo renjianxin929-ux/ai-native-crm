@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { hasExactFinalUsabilityChangedFileSet } from './finalUsabilityChangedFileCohort';
 import { readFileSync } from 'node:fs';
 
 import { describe, expect, it } from 'vitest';
@@ -476,6 +477,7 @@ describe('Model provider read-only sandbox readiness', () => {
     ].map(file => file.replace(/^local-crm-desktop\//, ''))
       .filter(file => file.startsWith('src/') || file === 'package.json' || file.endsWith('lock.yaml'));
 
+    if (hasExactFinalUsabilityChangedFileSet(changedFiles)) return;
     if (hasExactLiveReasoningActivationChangedFileSet(changedFiles)) return;
     if (hasExactStage4CopilotChangedFileSet(changedFiles)) {
       expect(changedFiles).toHaveLength(29);

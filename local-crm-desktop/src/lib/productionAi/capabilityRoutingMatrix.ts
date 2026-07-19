@@ -23,6 +23,7 @@ export type ProductionCapabilityIntent =
   | 'COUNT_PAGINATION'
   | 'DATE_TIMEZONE_PARSE'
   | 'CUSTOMER_FIELD_FILTER'
+  | 'CUSTOMER_PRIORITY_RANKING'
   | 'TASK_FOLLOWUP_WRITE'
   | 'CANCEL_CONFIRM_REPLAY'
   | 'CRM_DATA_REFRESH'
@@ -79,6 +80,7 @@ export const PRODUCTION_AI_CAPABILITY_ROUTING_MATRIX: readonly CapabilityRouting
   { intent: 'COUNT_PAGINATION', execution_mode: 'DETERMINISTIC', requires_customer_scope: false, deterministic_tools: ['search_customers'], model_capability: 'none', requires_real_model: false, allows_local_fallback: true, output_schema: 'none', evidence_required: false, write_policy: 'none', failure_policy: 'return_deterministic_result' },
   { intent: 'DATE_TIMEZONE_PARSE', execution_mode: 'DETERMINISTIC', requires_customer_scope: false, deterministic_tools: ['parse_datetime'], model_capability: 'none', requires_real_model: false, allows_local_fallback: true, output_schema: 'none', evidence_required: false, write_policy: 'none', failure_policy: 'return_deterministic_result' },
   { intent: 'CUSTOMER_FIELD_FILTER', execution_mode: 'DETERMINISTIC', requires_customer_scope: false, deterministic_tools: ['search_customers'], model_capability: 'none', requires_real_model: false, allows_local_fallback: true, output_schema: 'none', evidence_required: false, write_policy: 'none', failure_policy: 'return_deterministic_result' },
+  { intent: 'CUSTOMER_PRIORITY_RANKING', execution_mode: 'DETERMINISTIC', requires_customer_scope: false, deterministic_tools: ['customer_priority_ranking'], model_capability: 'none', requires_real_model: false, allows_local_fallback: true, output_schema: 'none', evidence_required: true, write_policy: 'none', failure_policy: 'return_deterministic_result' },
   { intent: 'TASK_FOLLOWUP_WRITE', execution_mode: 'DETERMINISTIC', requires_customer_scope: true, deterministic_tools: ['create_follow_up_record', 'create_task', 'update_next_follow_up_time'], model_capability: 'none', requires_real_model: false, allows_local_fallback: true, output_schema: 'none', evidence_required: true, write_policy: 'deterministic_repository_only', failure_policy: 'return_deterministic_result' },
   { intent: 'CANCEL_CONFIRM_REPLAY', execution_mode: 'DETERMINISTIC', requires_customer_scope: false, deterministic_tools: ['cancel_proposal', 'confirm_proposal', 'replay'], model_capability: 'none', requires_real_model: false, allows_local_fallback: true, output_schema: 'none', evidence_required: false, write_policy: 'deterministic_repository_only', failure_policy: 'return_deterministic_result' },
   { intent: 'CRM_DATA_REFRESH', execution_mode: 'DETERMINISTIC', requires_customer_scope: false, deterministic_tools: ['refresh_snapshot'], model_capability: 'none', requires_real_model: false, allows_local_fallback: true, output_schema: 'none', evidence_required: false, write_policy: 'none', failure_policy: 'return_deterministic_result' },

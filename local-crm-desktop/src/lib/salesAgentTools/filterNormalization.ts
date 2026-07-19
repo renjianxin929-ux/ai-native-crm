@@ -73,7 +73,10 @@ function extractRegion(message: string): string | undefined {
 
 function extractIndustry(message: string): string | undefined {
   const sorted = [...KNOWN_INDUSTRIES].sort((a, b) => b.length - a.length);
-  return sorted.find(item => message.includes(item));
+  const exact = sorted.find(item => message.includes(item));
+  if (exact) return exact;
+  if (/(?:机械相关|机械类|工业机械|机械企业)/.test(message)) return '机械设备';
+  return undefined;
 }
 
 function extractGrade(message: string): string | undefined {

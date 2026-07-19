@@ -20,7 +20,7 @@ describe('AI module', () => {
       model: 'gpt-4',
     };
 
-    await expect(saveAIConfig(config)).rejects.toThrow(/SQLite credential storage was retired/);
+    await expect(saveAIConfig(config)).rejects.toThrow(/DPAPI/);
   });
 
   it('does not test providers through the browser legacy path', async () => {
@@ -34,15 +34,12 @@ describe('AI module', () => {
     expect(typeof result.message).toBe('string');
   });
 
-  it('analyzeChatText returns mock structure', async () => {
+  it('rejects the retired mock chat analysis path', async () => {
     const { analyzeChatText } = await import('../lib/ai');
-    const result = await analyzeChatText('Hello', {
+    await expect(analyzeChatText('Hello', {
       id: 'test',
       name: 'Test Customer',
-    } as Record<string, unknown>);
-    expect(result).toHaveProperty('intent');
-    expect(result).toHaveProperty('summary');
-    expect(result).toHaveProperty('suggestedAction');
+    } as Record<string, unknown>)).rejects.toThrow(/不生成或伪造/);
   });
 
   it('generateDailySummary returns mock string', async () => {

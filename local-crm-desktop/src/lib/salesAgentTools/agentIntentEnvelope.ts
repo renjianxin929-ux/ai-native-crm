@@ -13,6 +13,7 @@ export type AgentIntentMode =
 
 export type ClosedAgentIntent =
   | 'SEARCH_CUSTOMERS'
+  | 'CUSTOMER_PRIORITY_RANKING'
   | 'CUSTOMER_SUMMARY'
   | 'CUSTOMER_RISK_ANALYSIS'
   | 'CUSTOMER_TIMELINE_REVIEW'
@@ -58,12 +59,13 @@ export interface AgentIntentParseContext {
 
 export interface SemanticIntentResolution {
   readonly intent: 'CUSTOMER_SUMMARY' | 'CUSTOMER_RISK_ANALYSIS' | 'NEXT_ACTION_RECOMMENDATION' | 'FOLLOW_UP_DRAFT'
-    | 'INTERACTION_SUMMARY' | 'COMPLEX_CUSTOMER_COMPARE' | 'IMAGE_CAPTURE_ANALYSIS' | 'CLARIFICATION_REQUIRED' | 'UNSUPPORTED';
+    | 'INTERACTION_SUMMARY' | 'COMPLEX_CUSTOMER_COMPARE' | 'IMAGE_CAPTURE_ANALYSIS' | 'CUSTOMER_PRIORITY_RANKING' | 'CLARIFICATION_REQUIRED' | 'UNSUPPORTED';
+  readonly filters: Readonly<Record<string, string>>;
+  readonly entities: readonly { readonly type: string; readonly value: string }[];
+  readonly scope: string | null;
+  readonly missing_fields: readonly string[];
   readonly confidence: number;
-  readonly customer_reference: string | null;
-  readonly required_capability: 'TEXT_REASONING' | 'VISION_ANALYSIS' | 'none';
   readonly clarification_question: string | null;
-  readonly extracted_nonwrite_slots: Readonly<Record<string, string>>;
 }
 
 /** Refines a low-confidence envelope without creating a second turn identity. */
@@ -72,19 +74,20 @@ export function applySemanticIntentResolution(
   semantic: SemanticIntentResolution,
 ): AgentIntentEnvelope {
   const mapped = semanticIntent(semantic.intent);
+  const customerReference = semantic.entities.find(entity => entity.type === 'customer')?.value ?? null;
   if (mapped) {
     return envelope({
       ...original,
       envelope_id: original.envelope_id,
       intent: mapped,
-      mode: mapped === 'CAPTURE_REVIEW' ? 'capture' : 'customer_analysis',
+      mode: mapped === 'CAPTURE_REVIEW' ? 'capture' : mapped === 'CUSTOMER_PRIORITY_RANKING' ? 'portfolio_search' : 'customer_analysis',
       capture_intent: mapped === 'CAPTURE_REVIEW' ? 'image_analysis' : null,
-      customer_reference: semantic.customer_reference,
-      extracted_fields: semantic.extracted_nonwrite_slots,
+      customer_reference: customerReference,
+      extracted_fields: { filters: semantic.filters, entities: semantic.entities, scope: semantic.scope },
       confidence: semantic.confidence,
       parser_source: 'trusted_host_semantic_intent_v1',
       clarification_required: semantic.intent === 'CLARIFICATION_REQUIRED' || semantic.intent === 'UNSUPPORTED',
-      missing_fields: semantic.intent === 'CLARIFICATION_REQUIRED' ? ['intent_clarification'] : [],
+      missing_fields: semantic.missing_fields,
     });
   }
   return envelope({
@@ -94,13 +97,13 @@ export function applySemanticIntentResolution(
     mode: 'customer_analysis',
     confidence: semantic.confidence,
     parser_source: 'trusted_host_semantic_intent_v1',
-    customer_reference: semantic.customer_reference,
+    customer_reference: customerReference,
     extracted_fields: {
-      ...semantic.extracted_nonwrite_slots,
+      filters: semantic.filters, entities: semantic.entities, scope: semantic.scope,
       clarification_question: semantic.clarification_question,
     },
     clarification_required: true,
-    missing_fields: semantic.intent === 'CLARIFICATION_REQUIRED' ? ['intent_clarification'] : ['supported_intent'],
+    missing_fields: semantic.missing_fields.length ? semantic.missing_fields : semantic.intent === 'CLARIFICATION_REQUIRED' ? ['intent_clarification'] : ['supported_intent'],
   });
 }
 
@@ -204,6 +207,10 @@ export function createAgentIntentEnvelope(
   // industry words inside those names must not downgrade the turn to portfolio search.
   if (hasCustomerCompareMeaning(intentText)) {
     return make({ intent: 'COMPLEX_CUSTOMER_COMPARE', mode: 'customer_analysis', confidence: 0.97 });
+  }
+
+  if (hasCustomerPriorityMeaning(intentText)) {
+    return make({ intent: 'CUSTOMER_PRIORITY_RANKING', mode: 'portfolio_search', confidence: 0.98 });
   }
 
   // 5. Portfolio search.
@@ -465,6 +472,11 @@ function semanticIntent(intent: SemanticIntentResolution['intent']): ClosedAgent
     case 'INTERACTION_SUMMARY': return 'INTERACTION_SUMMARY';
     case 'COMPLEX_CUSTOMER_COMPARE': return 'COMPLEX_CUSTOMER_COMPARE';
     case 'IMAGE_CAPTURE_ANALYSIS': return 'CAPTURE_REVIEW';
+    case 'CUSTOMER_PRIORITY_RANKING': return 'CUSTOMER_PRIORITY_RANKING';
     default: return null;
   }
+}
+
+function hasCustomerPriorityMeaning(message: string): boolean {
+  return /(?:高质量客户|最值得(?:跟|联系)|优先联系|优先跟进|最有机会成交|最可能成交|这周我优先联系谁|这周最值得联系谁|最近最值得跟的客户)/.test(message);
 }

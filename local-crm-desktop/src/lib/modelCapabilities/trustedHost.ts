@@ -44,18 +44,20 @@ export interface TrustedHostCompletionResult {
 
 export interface TrustedHostProviderHealth {
   readonly capability: string;
+  readonly provider: string;
   readonly providerKind: string;
+  readonly endpoint: string;
   readonly modelId: string;
   readonly status: 'configured' | 'unconfigured' | 'healthy' | 'unhealthy' | 'unauthorized' | 'rate_limited' | 'timeout' | string;
   readonly configured: boolean;
-  readonly checkedAt: string;
+  readonly checkedAt: string | null;
   readonly detail: string;
 }
 
 export interface LegacyCredentialMigrationStatus {
   readonly detected: boolean;
   readonly migrationVersion: string | null;
-  readonly state: 'not_detected' | 'detected' | 'migrated' | 'failed';
+  readonly state: string;
   readonly checkedAt: string;
 }
 
@@ -88,9 +90,15 @@ export function listTrustedHostProviderStatus(): Promise<TrustedHostProviderHeal
   return invoke<TrustedHostProviderHealth[]>('list_trusted_host_provider_status');
 }
 
-/** Opens an OS-native credential prompt. No secret is returned to or entered in React. */
-export function configureTrustedHostCredential(capability: ModelCapability): Promise<TrustedHostProviderHealth> {
-  return invoke<TrustedHostProviderHealth>('configure_trusted_host_credential', { capability });
+/** Sends the key once to Rust; Rust DPAPI-encrypts it and React clears its input immediately. */
+export function configureTrustedHostCredential(input: {
+  readonly capability: ModelCapability;
+  readonly provider: string;
+  readonly endpoint: string;
+  readonly model: string;
+  readonly apiKey: string;
+}): Promise<TrustedHostProviderHealth> {
+  return invoke<TrustedHostProviderHealth>('configure_trusted_host_credential', { input });
 }
 
 export function deleteTrustedHostCredential(capability: ModelCapability): Promise<TrustedHostProviderHealth> {
@@ -108,6 +116,10 @@ export function inspectLegacyProviderCredentials(): Promise<LegacyCredentialMigr
 
 export function migrateLegacyProviderCredentials(): Promise<LegacyCredentialMigrationStatus> {
   return invoke<LegacyCredentialMigrationStatus>('migrate_legacy_provider_credentials');
+}
+
+export function deleteLegacyProviderCredentials(): Promise<LegacyCredentialMigrationStatus> {
+  return invoke<LegacyCredentialMigrationStatus>('delete_legacy_provider_credentials');
 }
 
 export function cancelTrustedHostRequest(requestId: string): Promise<boolean> {

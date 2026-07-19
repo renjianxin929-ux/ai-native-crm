@@ -12,7 +12,7 @@ export async function getAIConfig(): Promise<AIConfig | null> {
 }
 
 export async function saveAIConfig(_config: AIConfig): Promise<void> {
-  throw new Error('SQLite credential storage was retired; use Trusted Host secure configuration.');
+  throw new Error('旧版前端配置路径已移除；请使用 Rust Trusted Host 的 DPAPI 加密 SQLite 配置。');
 }
 
 export async function testAIConnection(_config: AIConfig): Promise<{ ok: boolean; message: string }> {
@@ -23,12 +23,8 @@ export async function analyzeChatText(
   text: string,
   customer: Customer,
 ): Promise<{ intent: string; summary: string; suggestedAction: string }> {
-  // Mock implementation — returns placeholder analysis
-  return {
-    intent: text.includes('感兴趣') || text.includes('要') ? '高意向' : '待判断',
-    summary: `已分析客户 ${customer.name} 的对话内容（${text.length} 字符），暂未检测到明确意向信号。`,
-    suggestedAction: '建议人工复核沟通内容，确认客户意向。',
-  };
+  void text; void customer;
+  throw new Error('真实文本模型未通过 Trusted Host 配置时，不生成或伪造 AI 分析。');
 }
 
 export async function generateDailySummary(
@@ -36,7 +32,7 @@ export async function generateDailySummary(
   _followUps: FollowUpRecord[],
   tasks: Task[],
 ): Promise<string> {
-  // Mock implementation — returns placeholder summary
+  // Honest deterministic CRM projection; this function never claims a model call.
   const aCount = customers.filter(c => c.customer_grade === 'A').length;
   const overdueCount = customers.filter(c => {
     if (!c.next_follow_up_at) return false;
@@ -51,7 +47,7 @@ export async function suggestNextAction(
   customer: Customer,
   recentNotes: string[],
 ): Promise<{ action: string; reason: string }> {
-  // Mock implementation — returns rule-based suggestion
+  // Honest deterministic CRM rule suggestion; this function never claims a model call.
   const grade = customer.customer_grade;
 
   if (recentNotes.length === 0) {

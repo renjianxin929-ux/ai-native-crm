@@ -53,7 +53,7 @@ export function parseTextJsonResponse(raw: string): { parsed: unknown; error?: s
     const parsed = JSON.parse(jsonStr);
     return { parsed };
   } catch {
-    return { parsed: null, error: `无法解析 AI 返回的 JSON: ${raw.slice(0, 200)}` };
+    return { parsed: null, error: '无法解析 Provider 返回的封闭 JSON。' };
   }
 }
 
@@ -64,10 +64,6 @@ export function normalizeTextProviderError(error: unknown): string {
 
   const errObj = error as Record<string, unknown>;
   const status = errObj?.status;
-  const message = String(errObj?.message ?? (error instanceof Error ? error.message : String(error)));
-
-  // 移除消息中的 API Key
-  const safeMessage = message.replace(/sk-[a-zA-Z0-9_-]+/g, '[API_KEY]');
 
   if (status === 401 || status === 403) {
     return 'API Key 无效或已过期，请检查 DeepSeek API Key';
@@ -79,7 +75,7 @@ export function normalizeTextProviderError(error: unknown): string {
     return `服务器错误 (${status})，请稍后重试`;
   }
 
-  return safeMessage;
+  return 'Provider 请求失败；已隐去原始错误详情。';
 }
 
 export async function testTextAIConnection(config: TextAIConfig): Promise<{ ok: boolean; message: string }> {

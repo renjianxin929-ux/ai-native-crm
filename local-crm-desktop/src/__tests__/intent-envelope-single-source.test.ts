@@ -26,8 +26,7 @@ describe('intent-envelope-single-source', () => {
   it('semantic refinement preserves the single turn envelope id', () => {
     const original = createAgentIntentEnvelope('请帮我琢磨一下后续', '2026-07-16T00:00:00Z');
     const refined = applySemanticIntentResolution(original, {
-      intent: 'NEXT_ACTION_RECOMMENDATION', confidence: 0.94, customer_reference: null,
-      required_capability: 'TEXT_REASONING', clarification_question: null, extracted_nonwrite_slots: {},
+      intent: 'NEXT_ACTION_RECOMMENDATION', filters: {}, entities: [], scope: null, missing_fields: [], confidence: 0.94, clarification_question: null,
     });
     expect(refined.envelope_id).toBe(original.envelope_id);
     expect(refined.intent).toBe('NEXT_ACTION_PREPARATION');

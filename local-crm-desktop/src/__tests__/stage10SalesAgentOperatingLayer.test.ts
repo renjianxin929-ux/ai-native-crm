@@ -12,7 +12,8 @@ describe('Stage10.5 Sales Agent intelligence polish', () => {
   it('uses only explicit read tools and preserves customer scope', () => {
     expect(SALES_AGENT_CUSTOMER_SCOPED_TOOL_IDS).toHaveLength(9);
     expect(SALES_AGENT_TOOL_IDS).toContain('search_customers');
-    expect(SALES_AGENT_TOOL_IDS).toHaveLength(10);
+    expect(SALES_AGENT_TOOL_IDS).toContain('customer_priority_ranking');
+    expect(SALES_AGENT_TOOL_IDS).toHaveLength(11);
     expect(executeSalesAgentReadTool('get_customer', { customer_id: 'customer-1', snapshot, context })).toMatchObject({ read_only: true, writes_crm: false, evidence_refs: ['customer-1'] });
   });
   it('maps distinct messages to distinct bounded plans and safely falls back for unknown intent', () => { const summary = proposeSalesAgentPlan(env('客户总结'), 'customer-1'); const risk = proposeSalesAgentPlan(env('分析风险和机会'), 'customer-1'); const fallback = proposeSalesAgentPlan(env('something unrelated'), 'customer-1'); expect(summary.intent).toBe('CUSTOMER_SUMMARY'); expect(risk.intent).toBe('CUSTOMER_RISK_ANALYSIS'); expect(risk.steps.map(step => step.tool_id)).not.toEqual(summary.steps.map(step => step.tool_id)); expect(fallback).toMatchObject({ intent: 'SAFE_FALLBACK', safe_fallback: true }); [summary, risk, fallback].forEach(plan => expect(plan.steps.length).toBeLessThanOrEqual(5)); });
