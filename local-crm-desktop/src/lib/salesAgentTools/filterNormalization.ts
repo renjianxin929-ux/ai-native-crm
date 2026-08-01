@@ -147,7 +147,7 @@ function stripFilterTokens(raw: string, filters: NormalizedCustomerSearchFilters
     // accidentally become name_query and eliminate the portfolio result set.
     .replace(/最近\s*\d+\s*天\s*(?:都\s*)?(?:没有|未)\s*跟进(?:的)?/g, ' ')
     .replace(/(?:没有|未)\s*跟进|久未联系/g, ' ')
-    .replace(/帮我找一下|帮我找|给我找|帮我|给我|请|找一下|查一下|查询|查找|搜索客户名?|搜索|搜客户|搜|筛选|列出|定位客户|定位|找出|查|找|切换客户到|切换到|切换至|切到客户|切到|把当前客户换成|打开客户|打开|所有|全部|区域|地区|这个客户|客户|公司|企业|的|做|一下|最近|情况|总结|分析/g, ' ')
+    .replace(/帮我找一下|帮我找|给我找|帮我|给我|请|找一下|查一下|查询|查找|搜索客户名?|搜索|搜客户|搜|筛选|列出|定位客户|定位|找出|查|找|切换客户到|切换到|切换至|切到客户|切到|把当前客户换成|打开客户|打开|所有|全部|区域|地区|这个客户|客户|公司|企业|的|得|做|一下|最近|情况|总结|分析/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
   return text;
@@ -183,8 +183,20 @@ export function normalizeCustomerSearchFilters(message: string, nowIso?: string)
   const markedRaw = extractQuotedOrMarkedName(trimmed);
   const hasExplicitQuotedName = /[「『""](.+?)[」』""]/.test(trimmed);
   const isDirectEntityLookup = Boolean(markedRaw && DIRECT_ENTITY_LOOKUP_VERB.test(trimmed));
+  const markedRawIsStructuredPortfolioTarget = Boolean(
+    markedRaw
+      && /(?:客户|公司|企业)\s*$/.test(markedRaw)
+      && stripFilterTokens(markedRaw, {
+        region,
+        industry,
+        customer_grade,
+        intent_level,
+        inactive_days,
+        stage,
+      }).length === 0,
+  );
   // Company-name lookups may embed region/industry tokens (华南生物) — do not treat those as structural filters.
-  if (markedRaw && LOOKUP_VERB.test(trimmed) && !/[的做]/.test(markedRaw)) {
+  if (markedRaw && LOOKUP_VERB.test(trimmed) && !markedRawIsStructuredPortfolioTarget && !/[的得做]/.test(markedRaw)) {
     if (region && markedRaw.length > region.length + 1
       && (isDirectEntityLookup || markedRaw.startsWith(region))) {
       region = undefined;
