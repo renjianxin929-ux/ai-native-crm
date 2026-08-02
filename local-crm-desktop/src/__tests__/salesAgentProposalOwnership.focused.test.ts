@@ -61,7 +61,10 @@ describe('Sales Agent proposal ownership (session registry)', () => {
     if (second.kind !== 'write_proposal') throw new Error('expected proposal');
     expect(session.getPendingDraft()).toBeNull();
     const canonical = session.getRegisteredProposal(second.proposal.proposal_id);
-    expect(canonical).toBe(second.proposal);
+    // 新契约（Canonical Snapshot）：返回等价重建副本，绝不共享内部引用
+    expect(canonical).not.toBe(second.proposal);
+    expect(canonical?.proposal_id).toBe(second.proposal.proposal_id);
+    expect(canonical?.proposal_hash).toBe(second.proposal.proposal_hash);
     expect(canonical?.nonce).toBeTruthy();
     expect(canonical?.requires_confirmation).toBe(true);
   });

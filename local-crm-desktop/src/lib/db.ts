@@ -1,6 +1,7 @@
 import type { Customer, FollowUpRecord, VisitRecord, Task, AIDraft, AIDraftInput } from './types';
 import { ensureLeadWorkbenchSchema } from './leadWorkbench/db';
 import { ensureCustomerMemorySchema } from './customerMemory/migration';
+import { ensureBattleCardSchema } from './battleCard/schema';
 import { v4 as uuidv4 } from 'uuid';
 
 // 数据库抽象层 - 包装 @tauri-apps/plugin-sql
@@ -13,6 +14,16 @@ export interface DatabaseLike {
 
 let dbInstance: DatabaseLike | null = null;
 let dbInitError: string | null = null;
+
+/**
+ * 测试后门（与 sessionWriteStateStore.__resetSessionWriteStateStoreForTests 同惯例）：
+ * 允许 production-construction acceptance 测试把默认 composition root 指向隔离测试 DB。
+ * 生产路径永不调用；传 null 恢复惰性初始化。
+ */
+export function __setDbInstanceForTests(db: DatabaseLike | null): void {
+  dbInstance = db;
+  dbInitError = null;
+}
 
 async function getDb(): Promise<DatabaseLike> {
   if (dbInstance) return dbInstance;
@@ -43,6 +54,7 @@ export async function initializeDatabaseSchema(db: DatabaseLike): Promise<void> 
   await ensureCustomerSchema(db);
   await ensureLeadWorkbenchSchema(db);
   await ensureCustomerMemorySchema(db);
+  await ensureBattleCardSchema(db);
 }
 
 const BASE_SCHEMA_SQL = [
@@ -310,6 +322,7 @@ function getColumnsForTable(table: string): string[] {
         'paid_at', 'closed_at',
         'website', 'region', 'industry',
         'contact_person', 'email', 'address', 'pitch_angle', 'qualification_reason', 'source',
+        'current_stage_card_id', 'battle_card_status', 'last_battle_review_at',
         'notes', 'created_at', 'updated_at'];
     case 'follow_up_records':
       return ['id', 'customer_id', 'title', 'contact_channel', 'contact_result',
@@ -433,6 +446,9 @@ const CUSTOMER_UPDATE_FIELDS = new Set([
   'qualification_reason',
   'source',
   'notes',
+  'current_stage_card_id',
+  'battle_card_status',
+  'last_battle_review_at',
   'created_at',
   'updated_at',
 ]);
@@ -446,6 +462,11 @@ export async function deleteCustomer(id: string): Promise<void> {
   await db.execute('DELETE FROM follow_up_records WHERE customer_id = ?', [id]);
   await db.execute('DELETE FROM visit_records WHERE customer_id = ?', [id]);
   await db.execute('DELETE FROM tasks WHERE customer_id = ?', [id]);
+  // Battle Card 数据与客户同生命周期（级联由应用层显式执行，与现有对象一致）
+  await db.execute('DELETE FROM customer_stage_cards WHERE customer_id = ?', [id]);
+  await db.execute('DELETE FROM customer_hypotheses WHERE customer_id = ?', [id]);
+  await db.execute('DELETE FROM reviewed_facts WHERE customer_id = ?', [id]);
+  await db.execute('DELETE FROM intelligence_imports WHERE customer_id = ?', [id]);
   await db.execute('DELETE FROM customers WHERE id = ?', [id]);
 }
 

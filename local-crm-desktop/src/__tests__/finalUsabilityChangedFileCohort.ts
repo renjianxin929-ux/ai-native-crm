@@ -195,6 +195,71 @@ export const REGION_PORTFOLIO_QUERY_FIX_CHANGED_FILES = [
   'src/lib/salesAgentTools/filterNormalization.ts',
 ] as const;
 
+/**
+ * Battle Card Backend V1（2026-08-01）精确变更集（src/ 下 tracked + untracked）。
+ * 守卫收集 git diff + --cached + ls-files --others 并过滤 src/ 前缀，本集合与之精确匹配。
+ */
+export const BATTLE_CARD_V1_CHANGED_FILES = [
+  'src/__tests__/battleCard.adversarial.focused.test.ts',
+  'src/__tests__/battleCard.agentWrite.focused.test.ts',
+  'src/__tests__/battleCard.canonicalSnapshot.focused.test.ts',
+  'src/__tests__/battleCard.canonicalSnapshotRepro.focused.test.ts',
+  'src/__tests__/battleCard.cryptoHashRepro.focused.test.ts',
+  'src/__tests__/battleCard.dailyReview.focused.test.ts',
+  'src/__tests__/battleCard.dataFidelity.focused.test.ts',
+  'src/__tests__/battleCard.dataIsolation.focused.test.ts',
+  'src/__tests__/battleCard.envelopeLimit.focused.test.ts',
+  'src/__tests__/battleCard.factVerifications.focused.test.ts',
+  'src/__tests__/battleCard.fixtures.ts',
+  'src/__tests__/battleCard.goldenSample.guangzhouTinsol.focused.test.ts',
+  'src/__tests__/battleCard.importLifecycle.focused.test.ts',
+  'src/__tests__/battleCard.parser.focused.test.ts',
+  'src/__tests__/battleCard.productionConstruction.acceptance.test.ts',
+  'src/__tests__/battleCard.schema.repository.focused.test.ts',
+  'src/__tests__/battleCard.stageCard.focused.test.ts',
+  'src/__tests__/finalUsabilityChangedFileCohort.ts',
+  'src/__tests__/fixtures/battle-card/guangzhou-dianxiu-appendix-a-raw.txt',
+  'src/__tests__/salesAgentProposalOwnership.focused.test.ts',
+  'src/lib/battleCard/agentTools.ts',
+  'src/lib/battleCard/dailyReview.ts',
+  'src/lib/battleCard/importService.ts',
+  'src/lib/battleCard/parser.ts',
+  'src/lib/battleCard/repository.ts',
+  'src/lib/battleCard/schema.ts',
+  'src/lib/battleCard/stageCardEngine.ts',
+  'src/lib/battleCard/stageRules.ts',
+  'src/lib/battleCard/types.ts',
+  'src/lib/db.ts',
+  'src/lib/salesAgentTools/approvedCrmWriteBoundary.ts',
+  'src/lib/salesAgentTools/confirmedWrite.ts',
+  'src/lib/salesAgentTools/sessionWriteStateStore.ts',
+  'src/lib/types.ts',
+] as const;
+
+/** Battle Card V1 tracked 修改集（git diff / --cached 可见部分，供无 untracked 收集的守卫精确匹配）。 */
+export const BATTLE_CARD_V1_TRACKED_CHANGED_FILES = [
+  'src/__tests__/finalUsabilityChangedFileCohort.ts',
+  'src/__tests__/salesAgentProposalOwnership.focused.test.ts',
+  'src/lib/db.ts',
+  'src/lib/salesAgentTools/approvedCrmWriteBoundary.ts',
+  'src/lib/salesAgentTools/confirmedWrite.ts',
+  'src/lib/salesAgentTools/sessionWriteStateStore.ts',
+  'src/lib/types.ts',
+] as const;
+
+/**
+ * Battle Card V1 完整 changed cohort（FULL_CHANGED_COHORT）：工作树全部真实变更，
+ * 含 src / src-tauri / migrations / tests / fixtures / scripts / docs。
+ * 运行产物（review JSON、日志、截图）已移出仓库，不进入本集合。
+ */
+export const BATTLE_CARD_V1_FULL_CHANGED_COHORT = [
+  ...BATTLE_CARD_V1_CHANGED_FILES,
+  'docs/architecture/customer-battle-card-backend-v1.md',
+  'scripts/battle_card_migration_acceptance.py',
+  'src-tauri/migrations/005_customer_battle_card.sql',
+  'src-tauri/tauri.battleCardReview.conf.json',
+] as const;
+
 function hasSameNormalizedFileSet(actualFiles: readonly string[], expectedFiles: readonly string[]): boolean {
   const actual = new Set(actualFiles.map(file => file.replace(/\\/g, '/').replace(/^local-crm-desktop\//, '')));
   const expected = new Set(expectedFiles);
@@ -206,7 +271,9 @@ function hasSameNormalizedFileSet(actualFiles: readonly string[], expectedFiles:
 export function hasExactFinalUsabilityChangedFileSet(actualFiles: readonly string[]): boolean {
   return hasSameNormalizedFileSet(actualFiles, FINAL_USABILITY_CHANGED_FILES)
     || hasSameNormalizedFileSet(actualFiles, FINAL_USABILITY_SOURCE_CHANGED_FILES)
-    || hasSameNormalizedFileSet(actualFiles, REGION_PORTFOLIO_QUERY_FIX_CHANGED_FILES);
+    || hasSameNormalizedFileSet(actualFiles, REGION_PORTFOLIO_QUERY_FIX_CHANGED_FILES)
+    || hasSameNormalizedFileSet(actualFiles, BATTLE_CARD_V1_CHANGED_FILES)
+    || hasSameNormalizedFileSet(actualFiles, BATTLE_CARD_V1_TRACKED_CHANGED_FILES);
 }
 
 export function hasExactFinalUsabilityTrackedChangedFileSet(actualFiles: readonly string[]): boolean {

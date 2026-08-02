@@ -1,15 +1,23 @@
 /**
  * Process-stable write-state store for Sales Agent.
  * Survives React remounts and SalesAgentSession identity churn.
- * Canonical Proposal / PendingWriteIntent live here — never in React props/state.
+ *
+ * Canonical Proposal 真源 = CanonicalProposalSnapshot（canonical_payload_json + proposal_hash），
+ * 绝不保存调用者传入对象的可变引用；所有读取路径从 snapshot 重建全新执行对象。
  */
 
-import { invalidateWriteProposal, type AgentWriteProposal } from './confirmedWrite';
+import {
+  createCanonicalProposalSnapshot,
+  invalidateWriteProposal,
+  rebuildProposalFromSnapshot,
+  type AgentWriteProposal,
+  type CanonicalProposalSnapshot,
+} from './confirmedWrite';
 import type { WriteFieldDraft } from './writeIntent';
 
 interface CustomerWriteState {
   pendingDraft: WriteFieldDraft | null;
-  proposals: Map<string, AgentWriteProposal>;
+  snapshots: Map<string, CanonicalProposalSnapshot>;
   consumedProposalIds: Set<string>;
 }
 
@@ -20,7 +28,7 @@ function stateFor(customerId: string): CustomerWriteState {
   if (!state) {
     state = {
       pendingDraft: null,
-      proposals: new Map(),
+      snapshots: new Map(),
       consumedProposalIds: new Set(),
     };
     byCustomer.set(customerId, state);
@@ -28,7 +36,7 @@ function stateFor(customerId: string): CustomerWriteState {
   return state;
 }
 
-/** Deep-freeze a plain JSON-like tree so UI cannot mutate canonical write payloads. */
+/** Deep-freeze a plain JSON-like tree so UI cannot mutate canonical write payloads (additional guard; the authoritative source is the snapshot JSON). */
 export function freezeWriteTree<T>(value: T): T {
   if (value && typeof value === 'object' && !Object.isFrozen(value)) {
     for (const child of Object.values(value as Record<string, unknown>)) {
@@ -47,23 +55,12 @@ export function setPendingWriteDraft(customerId: string, draft: WriteFieldDraft 
   stateFor(customerId).pendingDraft = draft ? freezeWriteTree({ ...draft, parsed_fields: { ...draft.parsed_fields } }) : null;
 }
 
+/** 注册 canonical snapshot；返回从 snapshot 重建的全新执行对象（调用者不可见 registry 内部）。 */
 export function registerCanonicalProposal(proposal: AgentWriteProposal): AgentWriteProposal {
-  const canonical = freezeWriteTree({
-    ...proposal,
-    current_values: { ...proposal.current_values },
-    proposed_values: { ...proposal.proposed_values },
-    evidence_refs: [...proposal.evidence_refs],
-    ...(proposal.grouped_operations ? {
-      grouped_operations: proposal.grouped_operations.map(item => ({
-        ...item,
-        current_values: { ...item.current_values },
-        proposed_values: { ...item.proposed_values },
-      })),
-    } : {}),
-  });
+  const snapshot = createCanonicalProposalSnapshot(proposal);
   const state = stateFor(proposal.customer_id);
-  state.proposals.set(canonical.proposal_id, canonical);
-  return canonical;
+  state.snapshots.set(snapshot.proposal_id, snapshot);
+  return rebuildProposalFromSnapshot(snapshot);
 }
 
 export function setCanonicalGroupedOperationSelection(
@@ -73,35 +70,40 @@ export function setCanonicalGroupedOperationSelection(
   selected: boolean,
 ): AgentWriteProposal {
   const state = stateFor(customerId);
-  const current = state.proposals.get(proposalId);
-  if (!current?.grouped_operations) throw new Error('这项待确认操作已经失效，请重新生成后再确认。');
+  const snapshot = state.snapshots.get(proposalId);
+  if (!snapshot) throw new Error('这项待确认操作已经失效，请重新生成后再确认。');
+  const current = rebuildProposalFromSnapshot(snapshot);
+  if (!current.grouped_operations) throw new Error('这项待确认操作已经失效，请重新生成后再确认。');
   if (!current.grouped_operations.some(item => item.operation_id === operationId)) throw new Error('组合操作不存在。');
   const grouped_operations = current.grouped_operations.map(item => item.operation_id === operationId ? { ...item, selected } : item);
   if (!grouped_operations.some(item => item.selected)) throw new Error('至少保留一项待执行操作。');
-  const proposal_hash = `${current.nonce}:${JSON.stringify({ current_values: current.current_values, proposed_values: current.proposed_values, grouped_operations })}`;
-  const updated = freezeWriteTree({ ...current, proposal_hash, grouped_operations });
-  state.proposals.set(proposalId, updated);
+  const updated = rebuildProposalFromSnapshot(createCanonicalProposalSnapshot({ ...current, grouped_operations }));
+  state.snapshots.set(proposalId, createCanonicalProposalSnapshot(updated));
   return updated;
 }
 
+/** 从 snapshot 重建全新对象（每次调用新副本；修改返回副本不影响 registry）。 */
 export function getCanonicalProposal(proposalId: string, customerId?: string): AgentWriteProposal | null {
   if (customerId) {
-    return stateFor(customerId).proposals.get(proposalId) ?? null;
+    const snapshot = stateFor(customerId).snapshots.get(proposalId);
+    return snapshot ? rebuildProposalFromSnapshot(snapshot) : null;
   }
   for (const state of byCustomer.values()) {
-    const hit = state.proposals.get(proposalId);
-    if (hit) return hit;
+    const snapshot = state.snapshots.get(proposalId);
+    if (snapshot) return rebuildProposalFromSnapshot(snapshot);
   }
   return null;
 }
 
+/** 消费：hash 复核（fail-closed）后重建并移除。 */
 export function consumeCanonicalProposal(proposalId: string, customerId: string): AgentWriteProposal | null {
   const state = stateFor(customerId);
-  const proposal = state.proposals.get(proposalId) ?? null;
-  if (!proposal) return null;
-  state.proposals.delete(proposalId);
+  const snapshot = state.snapshots.get(proposalId);
+  if (!snapshot) return null;
+  const rebuilt = rebuildProposalFromSnapshot(snapshot); // hash mismatch 在此 fail-closed
+  state.snapshots.delete(proposalId);
   state.consumedProposalIds.add(proposalId);
-  return proposal;
+  return rebuilt;
 }
 
 export function wasProposalConsumed(proposalId: string, customerId?: string): boolean {
@@ -118,7 +120,7 @@ export function cancelCanonicalProposal(proposal: AgentWriteProposal | null | un
   // Do not mark proposal_id as "consumed/replay" — UI must say "已失效，请重新生成".
   invalidateWriteProposal(proposal);
   const state = stateFor(proposal.customer_id);
-  state.proposals.delete(proposal.proposal_id);
+  state.snapshots.delete(proposal.proposal_id);
   state.pendingDraft = null;
 }
 
@@ -126,15 +128,30 @@ export function cancelCanonicalProposal(proposal: AgentWriteProposal | null | un
 export function invalidateCustomerWriteState(customerId: string): void {
   const state = byCustomer.get(customerId);
   if (!state) return;
-  for (const proposal of state.proposals.values()) {
-    invalidateWriteProposal(proposal);
-    state.consumedProposalIds.add(proposal.proposal_id);
+  for (const snapshot of state.snapshots.values()) {
+    invalidateWriteProposal({ ...rebuildProposalFromSnapshot(snapshot), nonce: snapshot.nonce } as AgentWriteProposal);
+    state.consumedProposalIds.add(snapshot.proposal_id);
   }
-  state.proposals.clear();
+  state.snapshots.clear();
   state.pendingDraft = null;
 }
 
 /** Test helper — never call from production UI. */
 export function __resetSessionWriteStateStoreForTests(): void {
   byCustomer.clear();
+}
+
+/**
+ * Test-only corruption hook（__xxxForTests 惯例）：受控破坏 snapshot（hash/JSON/schema_version 失配模拟）。
+ * 仅用于验证 Confirm 的 fail-closed；生产路径永不调用。
+ */
+export function __corruptCanonicalSnapshotForTests(
+  proposalId: string,
+  customerId: string,
+  mutate: (snapshot: CanonicalProposalSnapshot) => CanonicalProposalSnapshot,
+): void {
+  const state = stateFor(customerId);
+  const current = state.snapshots.get(proposalId);
+  if (!current) throw new Error('Canonical proposal snapshot does not exist.');
+  state.snapshots.set(proposalId, mutate(current));
 }

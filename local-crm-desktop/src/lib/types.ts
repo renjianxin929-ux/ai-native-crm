@@ -81,6 +81,10 @@ export interface Customer {
   pitch_angle: string | null;
   qualification_reason: string | null;
   source: string | null;
+  /** Battle Card V1 最小指针字段（可选，旧客户为 null/'NONE'）。 */
+  current_stage_card_id?: string | null;
+  battle_card_status?: 'NONE' | 'DRAFT' | 'CONFIRMED' | 'REVIEW_DUE' | null;
+  last_battle_review_at?: string | null;
   notes: string | null;
   created_at: string;
   updated_at: string;
