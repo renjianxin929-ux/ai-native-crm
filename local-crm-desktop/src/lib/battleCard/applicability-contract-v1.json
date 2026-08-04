@@ -1,0 +1,500 @@
+{
+  "contract_version": "battle-card-applicability-v1",
+  "description": "Shared applicability contract consumed by BOTH TypeScript parser (src/lib/battleCard/parser.ts) and Rust authoritative parser (src-tauri/src/battle_card_authoritative.rs). Single source of truth; no independent term tables allowed.",
+  "normalization": {
+    "mode": "lowercase_unicode",
+    "note": "Both statement and terms are normalized via Unicode lowercase (toLowerCase / to_lowercase) before matching. Chinese is unaffected; ASCII (VOC/voc/Voc/CE/UL) is normalized to lowercase."
+  },
+  "precedence": [
+    "FORMULA_CONDITIONAL",
+    "GLOBAL",
+    "PARTIAL",
+    "CONDITIONAL",
+    "UNSUPPORTED",
+    "COMPOSITE_FALLBACK"
+  ],
+  "terms": {
+    "GLOBAL": [
+      "出海",
+      "多国家",
+      "多平台",
+      "官方案例",
+      "销售及业务信息",
+      "全球",
+      "覆盖"
+    ],
+    "PARTIAL": [
+      "认证",
+      "电压",
+      "插头",
+      "国家版本",
+      "版本",
+      "说明书",
+      "包装"
+    ],
+    "CONDITIONAL": [
+      "配方",
+      "成分",
+      "功效",
+      "售后",
+      "voc"
+    ],
+    "UNSUPPORTED": [
+      "传闻",
+      "未经证实",
+      "暂无法核实",
+      "待核实"
+    ]
+  },
+  "formula_priority": {
+    "rule": "FORMULA_CONDITIONAL",
+    "formula_terms": [
+      "配方",
+      "成分"
+    ],
+    "product_line_basis_terms": [
+      "产品线",
+      "具体产品",
+      "型号"
+    ],
+    "note": "statement contains formula term AND no product-line basis term → CONDITIONAL, evaluated before all other groups."
+  },
+  "composite_fallback": {
+    "rule": "COMPOSITE_FALLBACK",
+    "composite_terms": [
+      "功效",
+      "内容",
+      "达人",
+      "版本",
+      "电压",
+      "插头",
+      "认证",
+      "包装",
+      "说明书",
+      "售后",
+      "voc",
+      "配方",
+      "成分"
+    ],
+    "composite_threshold": 3,
+    "note": "raw material (full text) hits >= 3 composite terms → composite=true; unmatched statement falls back to GLOBAL if composite else CONDITIONAL."
+  },
+  "golden_vectors": [
+    {
+      "statement": "广州品牌出海案例明确其专注生活电器与个人护理小家电，销售覆盖80多个国家和地区。",
+      "expected": "GLOBAL"
+    },
+    {
+      "statement": "官方案例披露2023年在Amazon、AliExpress、TEMU、SHEIN、TikTok美国站销售额突破7000万元。",
+      "expected": "GLOBAL"
+    },
+    {
+      "statement": "多平台、多国家、研发、知识产权与内容本地化并存，复杂度和可验证性高。",
+      "expected": "GLOBAL"
+    },
+    {
+      "statement": "公司业务覆盖全球市场。",
+      "expected": "GLOBAL"
+    },
+    {
+      "statement": "产品面向多国家销售。",
+      "expected": "GLOBAL"
+    },
+    {
+      "statement": "官方案例显示销售额增长。",
+      "expected": "GLOBAL"
+    },
+    {
+      "statement": "销售及业务信息以官方披露为准。",
+      "expected": "GLOBAL"
+    },
+    {
+      "statement": "出海业务覆盖多个平台。",
+      "expected": "GLOBAL"
+    },
+    {
+      "statement": "该产品通过CE认证。",
+      "expected": "PARTIAL"
+    },
+    {
+      "statement": "产品电压为220V。",
+      "expected": "PARTIAL"
+    },
+    {
+      "statement": "使用欧规插头。",
+      "expected": "PARTIAL"
+    },
+    {
+      "statement": "说明书包含多语言版本。",
+      "expected": "PARTIAL"
+    },
+    {
+      "statement": "包装符合运输要求。",
+      "expected": "PARTIAL"
+    },
+    {
+      "statement": "需要国家版本适配。",
+      "expected": "PARTIAL"
+    },
+    {
+      "statement": "产品配方温和。",
+      "expected": "CONDITIONAL"
+    },
+    {
+      "statement": "成分安全无刺激。",
+      "expected": "CONDITIONAL"
+    },
+    {
+      "statement": "产品宣称有功效。",
+      "expected": "CONDITIONAL"
+    },
+    {
+      "statement": "售后由当地团队负责。",
+      "expected": "CONDITIONAL"
+    },
+    {
+      "statement": "VOC数据回流给产品团队。",
+      "expected": "CONDITIONAL"
+    },
+    {
+      "statement": "voc数据每周汇总。",
+      "expected": "CONDITIONAL"
+    },
+    {
+      "statement": "VOC 分析显示差评集中。",
+      "expected": "CONDITIONAL"
+    },
+    {
+      "statement": "voc 回流到选品。",
+      "expected": "CONDITIONAL"
+    },
+    {
+      "statement": "配方与成分属于在售商品的一部分。",
+      "expected": "CONDITIONAL"
+    },
+    {
+      "statement": "产品成分经过检测。",
+      "expected": "CONDITIONAL"
+    },
+    {
+      "statement": "功效表达受法规约束。",
+      "expected": "CONDITIONAL"
+    },
+    {
+      "statement": "售后VOC分类标签。",
+      "expected": "CONDITIONAL"
+    },
+    {
+      "statement": "有传闻称公司要上市。",
+      "expected": "UNSUPPORTED"
+    },
+    {
+      "statement": "该说法未经证实。",
+      "expected": "UNSUPPORTED"
+    },
+    {
+      "statement": "具体金额暂无法核实。",
+      "expected": "UNSUPPORTED"
+    },
+    {
+      "statement": "细节待核实。",
+      "expected": "UNSUPPORTED"
+    },
+    {
+      "statement": "配方有产品线依据。",
+      "expected": "CONDITIONAL"
+    },
+    {
+      "statement": "配方成分已按型号确认。",
+      "expected": "CONDITIONAL"
+    },
+    {
+      "statement": "配方经具体产品线验证。",
+      "expected": "CONDITIONAL"
+    },
+    {
+      "statement": "官方案例覆盖多国家。",
+      "expected": "GLOBAL"
+    },
+    {
+      "statement": "认证覆盖多国家版本。",
+      "expected": "GLOBAL"
+    },
+    {
+      "statement": "多平台覆盖多国家。",
+      "expected": "GLOBAL"
+    },
+    {
+      "statement": "全球覆盖多平台。",
+      "expected": "GLOBAL"
+    },
+    {
+      "statement": "出海平台覆盖全球。",
+      "expected": "GLOBAL"
+    },
+    {
+      "statement": "认证与电压需按国家适配。",
+      "expected": "PARTIAL"
+    },
+    {
+      "statement": "插头与电压按版本区分。",
+      "expected": "PARTIAL"
+    },
+    {
+      "statement": "包装与说明书按版本更新。",
+      "expected": "PARTIAL"
+    },
+    {
+      "statement": "功效与售后按地区评估。",
+      "expected": "CONDITIONAL"
+    },
+    {
+      "statement": "成分与VOC按批次记录。",
+      "expected": "CONDITIONAL"
+    },
+    {
+      "statement": "配方功效宣称需审核。",
+      "expected": "CONDITIONAL"
+    },
+    {
+      "statement": "VOC与售后问题分级。",
+      "expected": "CONDITIONAL"
+    },
+    {
+      "statement": "认证功效成分并存。",
+      "expected": "CONDITIONAL"
+    },
+    {
+      "statement": "覆盖国家版本电压认证。",
+      "expected": "GLOBAL"
+    },
+    {
+      "statement": "多国家电压插头适配。",
+      "expected": "GLOBAL"
+    },
+    {
+      "statement": "全球销售含国家版本。",
+      "expected": "GLOBAL"
+    },
+    {
+      "statement": "官方案例披露全球覆盖。",
+      "expected": "GLOBAL"
+    },
+    {
+      "statement": "产品覆盖多平台渠道。",
+      "expected": "GLOBAL"
+    },
+    {
+      "statement": "覆盖80多个国家和地区。",
+      "expected": "GLOBAL"
+    },
+    {
+      "statement": "销售额覆盖多国家。",
+      "expected": "GLOBAL"
+    },
+    {
+      "statement": "充电器插头按版本。",
+      "expected": "PARTIAL"
+    },
+    {
+      "statement": "适配器电压不同。",
+      "expected": "PARTIAL"
+    },
+    {
+      "statement": "说明书包装随版本。",
+      "expected": "PARTIAL"
+    },
+    {
+      "statement": "CE认证按国家。",
+      "expected": "PARTIAL"
+    },
+    {
+      "statement": "UL认证文件。",
+      "expected": "PARTIAL"
+    },
+    {
+      "statement": "RoHS认证检测报告。",
+      "expected": "PARTIAL"
+    },
+    {
+      "statement": "质检认证报告齐全。",
+      "expected": "PARTIAL"
+    },
+    {
+      "statement": "配方备案完成。",
+      "expected": "CONDITIONAL"
+    },
+    {
+      "statement": "成分表公开。",
+      "expected": "CONDITIONAL"
+    },
+    {
+      "statement": "功效测试报告。",
+      "expected": "CONDITIONAL"
+    },
+    {
+      "statement": "售后政策。",
+      "expected": "CONDITIONAL"
+    },
+    {
+      "statement": "VOC标签。",
+      "expected": "CONDITIONAL"
+    },
+    {
+      "statement": "小语种说明书。",
+      "expected": "PARTIAL"
+    },
+    {
+      "statement": "多语言包装。",
+      "expected": "PARTIAL"
+    },
+    {
+      "statement": "不同国家版本说明书。",
+      "expected": "PARTIAL"
+    },
+    {
+      "statement": "多种插头规格。",
+      "expected": "PARTIAL"
+    },
+    {
+      "statement": "多电压适配。",
+      "expected": "PARTIAL"
+    },
+    {
+      "statement": "某公司专注小家电出海。",
+      "expected": "GLOBAL"
+    },
+    {
+      "statement": "跨境多平台运营。",
+      "expected": "GLOBAL"
+    },
+    {
+      "statement": "海外市场多国家。",
+      "expected": "GLOBAL"
+    },
+    {
+      "statement": "出口多国家地区。",
+      "expected": "GLOBAL"
+    },
+    {
+      "statement": "平台覆盖海外。",
+      "expected": "GLOBAL"
+    },
+    {
+      "statement": "某品牌全球上市。",
+      "expected": "GLOBAL"
+    },
+    {
+      "statement": "覆盖欧洲多国。",
+      "expected": "GLOBAL"
+    },
+    {
+      "statement": "公司业务出海。",
+      "expected": "GLOBAL"
+    },
+    {
+      "statement": "产品涉及认证。",
+      "expected": "PARTIAL"
+    },
+    {
+      "statement": "产品有版本差异。",
+      "expected": "PARTIAL"
+    },
+    {
+      "statement": "含包装配件。",
+      "expected": "PARTIAL"
+    },
+    {
+      "statement": "配方升级。",
+      "expected": "CONDITIONAL"
+    },
+    {
+      "statement": "成分调整。",
+      "expected": "CONDITIONAL"
+    },
+    {
+      "statement": "功效升级。",
+      "expected": "CONDITIONAL"
+    },
+    {
+      "statement": "售后网点。",
+      "expected": "CONDITIONAL"
+    },
+    {
+      "statement": "VOC分析。",
+      "expected": "CONDITIONAL"
+    },
+    {
+      "statement": "voc分析工具。",
+      "expected": "CONDITIONAL"
+    },
+    {
+      "statement": "使用VOC分类。",
+      "expected": "CONDITIONAL"
+    },
+    {
+      "statement": "基于voc数据。",
+      "expected": "CONDITIONAL"
+    },
+    {
+      "statement": "配方功效VOC并存。",
+      "expected": "CONDITIONAL"
+    },
+    {
+      "statement": "有传闻称公司营收数据有问题。",
+      "expected": "UNSUPPORTED"
+    },
+    {
+      "statement": "成分数据未经证实。",
+      "expected": "CONDITIONAL"
+    },
+    {
+      "statement": "销售额待核实。",
+      "expected": "UNSUPPORTED"
+    },
+    {
+      "statement": "市场份额暂无法核实。",
+      "expected": "UNSUPPORTED"
+    },
+    {
+      "statement": "有传闻称其产品销量领先。",
+      "expected": "UNSUPPORTED"
+    },
+    {
+      "statement": "某型号合作情况待核实。",
+      "expected": "UNSUPPORTED"
+    },
+    {
+      "statement": "VOC关键词云。",
+      "expected": "CONDITIONAL"
+    },
+    {
+      "statement": "voc词频统计。",
+      "expected": "CONDITIONAL"
+    },
+    {
+      "statement": "多国家版本说明书。",
+      "expected": "GLOBAL"
+    },
+    {
+      "statement": "认证功效并存。",
+      "expected": "PARTIAL"
+    },
+    {
+      "statement": "售后VOC标签。",
+      "expected": "CONDITIONAL"
+    },
+    {
+      "statement": "voc回流机制。",
+      "expected": "CONDITIONAL"
+    },
+    {
+      "statement": "插头电压按国家。",
+      "expected": "PARTIAL"
+    },
+    {
+      "statement": "官方案例多平台。",
+      "expected": "GLOBAL"
+    }
+  ]
+}

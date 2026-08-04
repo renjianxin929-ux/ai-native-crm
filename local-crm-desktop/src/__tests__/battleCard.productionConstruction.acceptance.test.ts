@@ -43,7 +43,7 @@ async function confirmViaSession(customerId: string, proposal: AgentWriteProposa
 }
 
 async function importProposal(tools: ReturnType<typeof createBattleCardAgentTools>, keepFacts = 1) {
-  const preview = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE' });
+  const preview = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE', customer_id: 'cust-tinsol' });
   return tools.proposeConfirmIntelligenceImport({
     customer_id: 'cust-tinsol',
     raw_content: GOLDEN_SAMPLE_TINSOL,

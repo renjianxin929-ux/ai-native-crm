@@ -15,12 +15,12 @@ async function setupConfirmed() {
   const db = createSqliteDb();
   await createSchema(db);
   await seedCustomer(db);
-  const preview = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE' });
+  const preview = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE', customer_id: 'cust-tinsol' });
   const result = await confirmIntelligenceImport(preview, {
     customer_id: 'cust-tinsol',
     keep_fact_ids: preview.draft.extracted_facts.map(fact => fact.fact_id),
     keep_hypothesis_ids: preview.draft.extracted_hypotheses.map(hypothesis => hypothesis.hypothesis_id),
-  }, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE' });
+  }, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE', customer_id: 'cust-tinsol',  });
   return { db, preview, result };
 }
 

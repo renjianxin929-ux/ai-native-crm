@@ -6,6 +6,7 @@
 
 import type { DatabaseLike } from '../db';
 import { SqliteCrmEvidenceResolver } from '../customerMemory/repository';
+import { defaultAtomicWriteBackend } from '../battleCardUi/atomicWriteBackend';
 import type {
   CustomerHypothesisInput,
   CustomerHypothesisRow,
@@ -30,7 +31,15 @@ export async function sha256Hex(input: string): Promise<string> {
   return Array.from(new Uint8Array(digest)).map(byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
-/** 单事务包装：失败整体回滚。 */
+/**
+ * 单事务包装：失败整体回滚。
+ *
+ * ⚠️ 语义边界：仅对**单物理连接**适配器（测试 better-sqlite3 / 内存库）成立。
+ * 生产传输 tauri-plugin-sql（sqlx Pool）每次 execute 可能命中不同池连接，裸
+ * BEGIN/COMMIT/ROLLBACK 不构成可靠事务（已实测可产生部分提交）。
+ * 生产写入必须经 battleCardUi/atomicWriteBackend（单次 Tauri invoke + Rust 单连接事务）。
+ * 生产代码禁止调用本 helper。
+ */
 export async function withTransaction<T>(
   db: DatabaseLike,
   work: () => Promise<T>,
@@ -67,6 +76,8 @@ export class BattleCardEvidenceGuard {
   async assertAll(customerId: string, refs: readonly FactEvidenceRef[]): Promise<void> {
     for (const ref of refs) {
       if (ref.import_ref && ref.import_ref.trim()) continue;
+      // IMPORT_SOURCE：权威层自动生成的导入来源证据，无需查 CRM resolver
+      if (ref.evidence_type === 'IMPORT_SOURCE') continue;
       if (!ref.evidence_type || !ref.evidence_id) {
         throw new Error(`Battle card evidence ref is invalid for customer ${customerId}: ${JSON.stringify(ref)}`);
       }
@@ -348,7 +359,9 @@ export interface StageCardRepository {
 export function createStageCardRepository(
   db: DatabaseLike,
   _clock: () => string = () => new Date().toISOString(),
+  backend?: () => import('../battleCardUi/atomicWriteBackend').AtomicBattleCardWriteBackend | undefined,
 ): StageCardRepository {
+  const atomic = backend ?? (() => defaultAtomicWriteBackend());
   return {
     async nextVersion(customerId, stageCode) {
       const rows = await db.select<{ max_version: number | null }>(
@@ -398,6 +411,27 @@ export function createStageCardRepository(
       return rows[0] ?? null;
     },
     async confirm(cardId, by, at) {
+      // 生产：单次 Tauri invoke（Rust 同一连接单事务）。
+      const atomicBackend = atomic();
+      if (atomicBackend) {
+        const card = await this.get(cardId);
+        if (!card) throw new Error(`Stage card does not exist: ${cardId}`);
+        if (card.card_status !== 'DRAFT') throw new Error(`Stage card is not a draft: ${cardId}`);
+        const outcome = await atomicBackend.confirmStageCard({
+          customerId: card.customer_id,
+          cardId,
+          expectedVersion: card.version,
+          confirmedBy: by,
+          confirmedAt: at,
+        });
+        if (outcome.cardStatus !== 'CONFIRMED') {
+          throw new Error('Stage card confirm failed.');
+        }
+        const row = await this.get(cardId);
+        if (!row) throw new Error('Stage card confirm failed.');
+        return { ...row, card_status: 'CONFIRMED' as StageCardStatus, confirmed_by: by, confirmed_at: at };
+      }
+      // 测试/无 Tauri 传输：单连接事务（withTransaction 仅对单连接适配器语义正确）。
       return withTransaction(db, async () => {
         const card = await this.get(cardId);
         if (!card) throw new Error(`Stage card does not exist: ${cardId}`);
@@ -433,12 +467,13 @@ export interface BattleCardRepositories {
 export function createBattleCardRepositories(
   db: DatabaseLike,
   clock: () => string = () => new Date().toISOString(),
+  backend?: () => import('../battleCardUi/atomicWriteBackend').AtomicBattleCardWriteBackend | undefined,
 ): BattleCardRepositories {
   return {
     imports: createIntelligenceImportRepository(db, clock),
     facts: createReviewedFactRepository(db, clock),
     hypotheses: createHypothesisRepository(db, clock),
-    cards: createStageCardRepository(db, clock),
+    cards: createStageCardRepository(db, clock, backend),
     evidenceGuard: new BattleCardEvidenceGuard(db),
   };
 }

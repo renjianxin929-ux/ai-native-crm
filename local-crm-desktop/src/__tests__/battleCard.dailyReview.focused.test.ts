@@ -14,12 +14,12 @@ const NOW_ISO = '2026-08-01T12:00:00.000Z';
 const DAYS = (days: number) => new Date(Date.parse(NOW_ISO) - days * 24 * 60 * 60 * 1000).toISOString();
 
 async function seedImport(db: ReturnType<typeof createSqliteDb>, customerId: string): Promise<void> {
-  const preview = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE' });
+  const preview = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE', customer_id: customerId });
   await confirmIntelligenceImport(preview, {
     customer_id: customerId,
     keep_fact_ids: preview.draft.extracted_facts.slice(0, 1).map(fact => fact.fact_id),
     keep_hypothesis_ids: preview.draft.extracted_hypotheses.slice(0, 3).map(hypothesis => hypothesis.hypothesis_id),
-  }, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE' });
+  }, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE', customer_id: customerId });
 }
 
 describe('daily review queue rules', () => {
@@ -102,14 +102,14 @@ describe('daily review queue rules', () => {
     try {
       await createSchema(db);
       await seedCustomer(db, { id: 'cust-e', grade: 'C', next_action: 'CONTACT_AGAIN' });
-      const preview = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE' });
+      const preview = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE', customer_id: 'cust-e' });
       // 用 10 天前的时钟创建假设（陈旧）
       const oldClock = () => DAYS(10);
       await confirmIntelligenceImport(preview, {
         customer_id: 'cust-e',
         keep_fact_ids: [],
         keep_hypothesis_ids: preview.draft.extracted_hypotheses.slice(0, 3).map(hypothesis => hypothesis.hypothesis_id),
-      }, { db, clock: oldClock, source_system: 'FEISHU_BTABLE' });
+      }, { db, clock: oldClock, source_system: 'FEISHU_BTABLE', customer_id: 'cust-e',  });
 
       const review = createDailyReviewEngine({ db, clock: CLOCK });
       const result = await review.buildDailyBattleReviewQueue({ now: NOW_ISO });

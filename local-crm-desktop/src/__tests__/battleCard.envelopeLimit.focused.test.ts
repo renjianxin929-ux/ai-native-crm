@@ -237,7 +237,7 @@ describe('E. Confirm 侧防御', () => {
   async function registerThenCorruptOversized() {
     const proposal = await (async () => {
       const tools = createBattleCardAgentTools({ db, clock: CLOCK });
-      const preview = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE' });
+      const preview = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE', customer_id: 'cust-tinsol' });
       return tools.proposeConfirmIntelligenceImport({
         customer_id: 'cust-tinsol',
         raw_content: GOLDEN_SAMPLE_TINSOL,

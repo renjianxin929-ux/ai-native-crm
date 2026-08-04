@@ -104,13 +104,14 @@ export function createBattleCardAgentTools(deps: BattleCardAgentToolsDeps) {
     registry: BATTLE_CARD_TOOL_REGISTRY,
 
     // ── 1. 只读：预览导入（零写入） ──
-    async preview(rawContent: string, options: { source_system?: string; source_label?: string | null } = {}): Promise<ImportPreviewResult> {
+    async preview(rawContent: string, options: { source_system?: string; source_label?: string | null; customer_id?: string } = {}): Promise<ImportPreviewResult> {
       return previewIntelligenceImport(rawContent, {
         db: deps.db,
         repos,
         clock: deps.clock,
         source_system: options.source_system ?? 'FEISHU_BTABLE',
         source_label: options.source_label ?? null,
+        customer_id: options.customer_id ?? '',
       });
     },
 
@@ -270,6 +271,7 @@ export function createBattleCardWriteExecutor(deps: BattleCardAgentToolsDeps): B
         repos,
         clock: deps.clock,
         source_system: String(values.source_system ?? 'FEISHU_BTABLE'),
+        customer_id: customerId,
       });
       const decisions: ConfirmImportDecisions = {
         customer_id: customerId,
@@ -279,7 +281,13 @@ export function createBattleCardWriteExecutor(deps: BattleCardAgentToolsDeps): B
         fact_verifications: (values.fact_verifications ?? {}) as ConfirmImportDecisions['fact_verifications'],
         confirmed_by: 'HUMAN_CONFIRM',
       };
-      const result = await confirmIntelligenceImport(preview, decisions, { db: deps.db, repos, clock: deps.clock });
+      const result = await confirmIntelligenceImport(preview, decisions, {
+        db: deps.db,
+        repos,
+        clock: deps.clock,
+        source_system: String(values.source_system ?? 'FEISHU_BTABLE'),
+        customer_id: customerId,
+      });
       return {
         entity_id: result.import_id,
         effect: {

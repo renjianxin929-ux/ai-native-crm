@@ -59,14 +59,25 @@ function buildImportProposal(fact_verifications: unknown) {
 
 async function proposeWithVerifications(verifications: unknown) {
   const tools = createBattleCardAgentTools({ db, clock: CLOCK });
-  const preview = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE' });
+  const preview = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE', customer_id: 'cust-tinsol' });
   const keepFacts = preview.draft.extracted_facts.slice(0, 1).map(fact => fact.fact_id);
+  // 权威 Candidate 合同：旧顺序编号 fact_id → preview 真实 candidate_id（保持原语义）
+  const mapped = Array.isArray(verifications)
+    ? verifications.map((verification: { fact_id?: string }) => {
+      const indexMatch = verification.fact_id?.match(/^fact-company-(\d+)$/);
+      if (indexMatch) {
+        const candidate = preview.draft.extracted_facts[Number(indexMatch[1]) - 1];
+        if (candidate) return { ...verification, fact_id: candidate.fact_id };
+      }
+      return verification;
+    })
+    : verifications;
   return tools.proposeConfirmIntelligenceImport({
     customer_id: 'cust-tinsol',
     raw_content: GOLDEN_SAMPLE_TINSOL,
     keep_fact_ids: keepFacts,
     keep_hypothesis_ids: [],
-    fact_verifications: verifications as never,
+    fact_verifications: mapped as never,
   });
 }
 

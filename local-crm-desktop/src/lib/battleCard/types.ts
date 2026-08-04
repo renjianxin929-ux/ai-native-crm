@@ -39,12 +39,25 @@ export type FactVerificationStatus = 'PENDING' | 'VERIFIED' | 'CONFLICTED' | 'SU
 export type FactApplicability = 'GLOBAL' | 'PARTIAL' | 'CONDITIONAL' | 'UNSUPPORTED';
 export type FactCategory = 'COMPANY' | 'PRODUCT' | 'CHANNEL' | 'MARKET' | 'CERTIFICATION' | 'OPERATION' | 'OTHER';
 
-/** 证据引用：复用现有 Evidence 引用风格（CUSTOMER/FOLLOW_UP_RECORD/VISIT_RECORD/TASK）或导入内来源引用。 */
+/** 证据引用：复用现有 Evidence 引用风格（CUSTOMER/FOLLOW_UP_RECORD/VISIT_RECORD/TASK）或导入内来源引用。
+ *  IMPORT_SOURCE：权威 Import Source Evidence（Rust/TS 权威层自动生成，绑定字节跨距与哈希）。 */
 export interface FactEvidenceRef {
-  readonly evidence_type?: 'CUSTOMER' | 'FOLLOW_UP_RECORD' | 'VISIT_RECORD' | 'TASK';
+  readonly evidence_type?: 'CUSTOMER' | 'FOLLOW_UP_RECORD' | 'VISIT_RECORD' | 'TASK' | 'IMPORT_SOURCE';
   readonly evidence_id?: string;
   /** 指向 intelligence_imports 内的来源段落标识（如章节名 + 行号）。 */
   readonly import_ref?: string;
+  /** IMPORT_SOURCE 专属：来源 import 行 id。 */
+  readonly import_id?: string;
+  /** IMPORT_SOURCE 专属：parser contract 版本。 */
+  readonly parser_contract_version?: string;
+  /** IMPORT_SOURCE 专属：来源章节。 */
+  readonly source_section?: string;
+  /** IMPORT_SOURCE 专属：字节跨距。 */
+  readonly start_byte?: number;
+  readonly end_byte?: number;
+  /** IMPORT_SOURCE 专属：excerpt/statement 哈希。 */
+  readonly excerpt_sha256?: string;
+  readonly statement_sha256?: string;
 }
 
 export interface ReviewedFactRow {

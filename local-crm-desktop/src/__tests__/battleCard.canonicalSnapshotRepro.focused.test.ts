@@ -74,7 +74,7 @@ describe('P0-A nested reference aliasing reproduction', () => {
 
   it('A2) full composition: caller input mutation after production propose does not leak into confirm (regression guard)', async () => {
     const tools = createBattleCardAgentTools({ db, clock: CLOCK });
-    const preview = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE' });
+    const preview = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE', customer_id: 'cust-tinsol' });
     const keepFacts = preview.draft.extracted_facts.slice(0, 1).map(fact => fact.fact_id);
     const callerInput = [
       { fact_id: keepFacts[0]!, decision: 'VERIFY' as const, applicable_scope: '80+ 国家版本', evidence_refs: ['import:官方活动案例'] },

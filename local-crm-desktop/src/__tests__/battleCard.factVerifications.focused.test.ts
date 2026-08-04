@@ -199,14 +199,24 @@ async function confirmImport(proposal: Awaited<ReturnType<ReturnType<typeof crea
 
 async function importProposal(fact_verifications: readonly FactVerificationItem[] | undefined, keepFacts = 1) {
   const tools = createBattleCardAgentTools({ db, clock: CLOCK });
-  const preview = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE' });
+  const preview = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE', customer_id: 'cust-tinsol' });
   const keepFactIds = preview.draft.extracted_facts.slice(0, keepFacts).map(fact => fact.fact_id);
+  // 权威 Candidate 合同：fact_id 现在是 64-hex candidate_id；把测试里的旧顺序编号映射为 preview 真实 id（保持原语义）
+  const mappedVerifications = fact_verifications?.map(verification => {
+    const indexMatch = verification.fact_id.match(/^fact-company-(\d+)$/);
+    if (indexMatch) {
+      const index = Number(indexMatch[1]) - 1;
+      const candidate = preview.draft.extracted_facts[index];
+      if (candidate) return { ...verification, fact_id: candidate.fact_id };
+    }
+    return verification;
+  });
   return { tools, preview, proposal: await tools.proposeConfirmIntelligenceImport({
     customer_id: 'cust-tinsol',
     raw_content: GOLDEN_SAMPLE_TINSOL,
     keep_fact_ids: keepFactIds,
     keep_hypothesis_ids: [],
-    fact_verifications,
+    fact_verifications: mappedVerifications,
   }) };
 }
 
@@ -277,7 +287,7 @@ describe('E. 业务越权与全链路', () => {
     void proposal;
     const synthetic = `1. 主体与公开事实\n\n已核事实/证据：\n产品配方温和，成分安全（SYNTHETIC）。\n\n来源：SYNTHETIC\n\n10. 来源\nSYNTHETIC`;
     const tools = createBattleCardAgentTools({ db, clock: CLOCK });
-    const p2 = await previewIntelligenceImport(synthetic, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE' });
+    const p2 = await previewIntelligenceImport(synthetic, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE', customer_id: 'cust-tinsol' });
     const formulaFact = p2.draft.extracted_facts.find(fact => /配方|成分/.test(fact.statement))!;
     const proposal2 = await tools.proposeConfirmIntelligenceImport({
       customer_id: 'cust-tinsol',
@@ -293,7 +303,7 @@ describe('E. 业务越权与全链路', () => {
   it('28) CONDITIONAL 缺 Evidence → 拒绝 VERIFIED', async () => {
     const synthetic = `1. 主体与公开事实\n\n已核事实/证据：\n产品配方温和，成分安全（SYNTHETIC）。\n\n来源：SYNTHETIC\n\n10. 来源\nSYNTHETIC`;
     const tools = createBattleCardAgentTools({ db, clock: CLOCK });
-    const p2 = await previewIntelligenceImport(synthetic, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE' });
+    const p2 = await previewIntelligenceImport(synthetic, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE', customer_id: 'cust-tinsol' });
     const formulaFact = p2.draft.extracted_facts.find(fact => /配方|成分/.test(fact.statement))!;
     const proposal2 = await tools.proposeConfirmIntelligenceImport({
       customer_id: 'cust-tinsol',
@@ -309,7 +319,7 @@ describe('E. 业务越权与全链路', () => {
   it('29) CONDITIONAL 篡改为 GLOBAL → 拒绝且零残留', async () => {
     const synthetic = `1. 主体与公开事实\n\n已核事实/证据：\n产品配方温和，成分安全（SYNTHETIC）。\n\n来源：SYNTHETIC\n\n10. 来源\nSYNTHETIC`;
     const tools = createBattleCardAgentTools({ db, clock: CLOCK });
-    const p2 = await previewIntelligenceImport(synthetic, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE' });
+    const p2 = await previewIntelligenceImport(synthetic, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE', customer_id: 'cust-tinsol' });
     const formulaFact = p2.draft.extracted_facts.find(fact => /配方|成分/.test(fact.statement))!;
     const proposal2 = await tools.proposeConfirmIntelligenceImport({
       customer_id: 'cust-tinsol',
@@ -328,7 +338,7 @@ describe('E. 业务越权与全链路', () => {
   });
 
   it('30) 附带 customer_stage/customer_grade 字段 → Proposal 构造即拒绝', async () => {
-    const result = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE' });
+    const result = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE', customer_id: 'cust-tinsol' });
     const tools = createBattleCardAgentTools({ db, clock: CLOCK });
     await expect(tools.proposeConfirmIntelligenceImport({
       customer_id: 'cust-tinsol',
@@ -363,7 +373,7 @@ describe('E. 业务越权与全链路', () => {
 
   it('33b) 非数组 fact_verifications 在 Proposal 构造即拒绝（全链路）', async () => {
     const tools = createBattleCardAgentTools({ db, clock: CLOCK });
-    const preview = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE' });
+    const preview = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE', customer_id: 'cust-tinsol' });
     await expect(tools.proposeConfirmIntelligenceImport({
       customer_id: 'cust-tinsol',
       raw_content: GOLDEN_SAMPLE_TINSOL,

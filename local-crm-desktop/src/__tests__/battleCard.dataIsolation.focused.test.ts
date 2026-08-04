@@ -67,7 +67,7 @@ describe('production DB isolation', () => {
       };
       await initializeDatabaseSchema(dbLike);
       await seedCustomer(dbLike);
-      const preview = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db: dbLike, clock: CLOCK, source_system: 'FEISHU_BTABLE' });
+      const preview = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db: dbLike, clock: CLOCK, source_system: 'FEISHU_BTABLE', customer_id: 'cust-tinsol' });
       await confirmIntelligenceImport(preview, {
         customer_id: 'cust-tinsol',
         keep_fact_ids: preview.draft.extracted_facts.slice(0, 1).map(fact => fact.fact_id),
@@ -112,12 +112,12 @@ describe('E2E database is writable and persistent', () => {
       const db = openFileDb(dbPath);
       await createSchema(db);
       await seedCustomer(db, { id: 'cust-e2e', grade: 'B', next_action: 'CONTACT_AGAIN' });
-      const preview = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE' });
+      const preview = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE', customer_id: 'cust-e2e' });
       const result = await confirmIntelligenceImport(preview, {
         customer_id: 'cust-e2e',
         keep_fact_ids: preview.draft.extracted_facts.slice(0, 2).map(fact => fact.fact_id),
         keep_hypothesis_ids: preview.draft.extracted_hypotheses.slice(0, 2).map(hypothesis => hypothesis.hypothesis_id),
-      }, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE' });
+      }, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE', customer_id: 'cust-e2e',  });
       const repos = createBattleCardRepositories(db, CLOCK);
       expect((await repos.facts.listByCustomer('cust-e2e')).length).toBe(2);
       const quickCheck = await db.select<{ quick_check: string }>('PRAGMA quick_check');
@@ -158,12 +158,12 @@ describe('migration recoverability', () => {
       // 重建后可继续写入
       await seedCustomer(db, { id: 'cust-rebuild', grade: 'C' });
       const repos = createBattleCardRepositories(db, CLOCK);
-      const preview = await previewIntelligenceImport('# 主体与公开事实\n重建后客户（SYNTHETIC）\n\n# 来源\nSYNTHETIC', { db, clock: CLOCK, source_system: 'FEISHU_BTABLE' });
+      const preview = await previewIntelligenceImport('# 主体与公开事实\n重建后客户（SYNTHETIC）\n\n# 来源\nSYNTHETIC', { db, clock: CLOCK, source_system: 'FEISHU_BTABLE', customer_id: 'cust-rebuild' });
       await confirmIntelligenceImport(preview, {
         customer_id: 'cust-rebuild',
         keep_fact_ids: preview.draft.extracted_facts.map(fact => fact.fact_id),
         keep_hypothesis_ids: [],
-      }, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE' });
+      }, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE', customer_id: 'cust-rebuild',  });
       expect((await repos.facts.listByCustomer('cust-rebuild')).length).toBe(1);
     } finally {
       db.close();

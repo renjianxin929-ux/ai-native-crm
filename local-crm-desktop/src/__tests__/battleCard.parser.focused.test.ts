@@ -2,9 +2,11 @@
  * Agent B — 战前材料解析 focused tests（测试矩阵 A）。
  * 真实编号格式（附录 A）章节映射 / 事实假设分离 / 话术保真 / 同行 group / 来源映射 / 条件适用性 / 复合业务 / 确定性降级。
  */
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-import { parseIntelligenceMaterial, detectCompositeBusiness, determineApplicability, isFormulaConditional, INTELLIGENCE_SECTIONS, isPeerFalsePositive } from '../lib/battleCard/parser';
+import { parseIntelligenceMaterial, detectCompositeBusiness, determineApplicability, isFormulaConditional, INTELLIGENCE_SECTIONS, isCurrentSubjectEntityCandidate, isPeerFalsePositive } from '../lib/battleCard/parser';
 import { BATTLE_CARD_PARSER_VERSION } from '../lib/battleCard/schema';
 import {
   GOLDEN_SAMPLE_TINSOL,
@@ -170,6 +172,71 @@ describe('peer references group structure', () => {
   it('warns when a peer section is empty of companies', () => {
     const draft = parseIntelligenceMaterial(SYNTHETIC_PEERS_NO_BOUNDARY);
     expect(draft.peer_references.length).toBeLessThanOrEqual(1);
+  });
+});
+
+describe('generic current-subject exclusion', () => {
+  it('removes only the current Guangzhou subject and its material-derived short names', () => {
+    const subject = '广州电秀科技发展有限公司';
+    for (const candidate of ['广州电秀科技发展有限公司', '广州电秀', '电秀科技', '电秀科技发展']) {
+      expect(isCurrentSubjectEntityCandidate(candidate, subject), candidate).toBe(true);
+    }
+    for (const peer of ['SUPRENT', '触沃电子', 'FF FlashFish']) {
+      expect(isCurrentSubjectEntityCandidate(peer, subject), peer).toBe(false);
+    }
+  });
+
+  it('generalizes to unrelated Chinese subjects without deleting peers that merely share generic words', () => {
+    for (const candidate of ['深圳星河智能科技有限公司', '星河智能', '星河智能科技']) {
+      expect(isCurrentSubjectEntityCandidate(candidate, '深圳星河智能科技有限公司'), candidate).toBe(true);
+    }
+    for (const peer of ['云脉智能', '极光智能装备', '智能科技', '智能']) {
+      expect(isCurrentSubjectEntityCandidate(peer, '深圳星河智能科技有限公司'), peer).toBe(false);
+    }
+
+    expect(isCurrentSubjectEntityCandidate('远景设备', '杭州远景设备有限公司')).toBe(true);
+    expect(isCurrentSubjectEntityCandidate('远景能源', '杭州远景设备有限公司')).toBe(false);
+    expect(isCurrentSubjectEntityCandidate('远景科技', '杭州远景设备有限公司')).toBe(false);
+  });
+
+  it('uses normalized whole English token boundaries', () => {
+    const subject = 'Nova Home Technologies Limited';
+    expect(isCurrentSubjectEntityCandidate('Nova Home Technologies', subject)).toBe(true);
+    expect(isCurrentSubjectEntityCandidate('　ＮＯＶＡ　ＨＯＭＥ　', subject)).toBe(true);
+    expect(isCurrentSubjectEntityCandidate('NovaTech Solutions', subject)).toBe(false);
+    expect(isCurrentSubjectEntityCandidate('HomePro', subject)).toBe(false);
+  });
+
+  it('feeds the parsed subject name into peer parsing instead of a customer-specific forbidden list', () => {
+    const material = `广州电秀科技发展有限公司 战前卡
+
+# 同行校准
+同类硬件出海参照：
+广州电秀科技发展有限公司、广州电秀、电秀科技、电秀科技发展、SUPRENT、触沃电子、FF FlashFish
+
+# 来源
+SYNTHETIC 测试样本`;
+    expect(parseIntelligenceMaterial(material).peer_references.map(peer => peer.company_name)).toEqual(['SUPRENT', '触沃电子', 'FF FlashFish']);
+  });
+});
+
+describe('production parser has no customer-specific subject aliases', () => {
+  it('scans production Battle Card source only, excluding fixtures and test inputs', () => {
+    const roots = ['../lib/battleCard/', '../lib/battleCardUi/'].map(path => fileURLToPath(new URL(path, import.meta.url)));
+    const sourceFiles = roots.flatMap(function collect(directory): string[] {
+      return readdirSync(directory, { withFileTypes: true }).flatMap(entry => {
+        const path = `${directory}/${entry.name}`;
+        return entry.isDirectory() ? collect(path) : /\.(ts|tsx)$/.test(entry.name) && statSync(path).isFile() ? [path] : [];
+      });
+    });
+    const productionSource = sourceFiles.map(path => readFileSync(path, 'utf8')).join('\n');
+    for (const forbiddenCustomerName of ['广州电秀', '电秀科技', 'dianxiu']) {
+      expect(productionSource.toLocaleLowerCase('en-US')).not.toContain(forbiddenCustomerName.toLocaleLowerCase('en-US'));
+    }
+
+    const parserSource = readFileSync(fileURLToPath(new URL('../lib/battleCard/parser.ts', import.meta.url)), 'utf8');
+    const subjectRule = parserSource.slice(parserSource.indexOf('export function isCurrentSubjectEntityCandidate'));
+    expect(subjectRule).not.toMatch(/tinsol|bee\s*sting|广州|电秀/i);
   });
 });
 

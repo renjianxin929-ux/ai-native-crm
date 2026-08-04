@@ -1,5 +1,7 @@
 mod credential_migration;
 pub mod encrypted_credentials;
+mod battle_card_authoritative;
+mod battle_card_transactions;
 mod secure_credentials;
 mod trusted_host;
 
@@ -10,6 +12,8 @@ pub fn run() {
   tauri::Builder::default()
     .plugin(tauri_plugin_sql::Builder::default().build())
     .invoke_handler(tauri::generate_handler![
+      battle_card_transactions::confirm_battle_card_import_atomic_v1,
+      battle_card_transactions::confirm_battle_card_stage_card_atomic_v1,
       trusted_host::authorize_model_capability,
       trusted_host::execute_model_capability,
       trusted_host::probe_trusted_host_provider_health,

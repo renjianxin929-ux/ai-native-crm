@@ -46,7 +46,7 @@ async function confirmViaSession(customerId: string, proposal: AgentWriteProposa
 describe('battle card write tools honor Proposal/Confirm/Replay', () => {
   it('proposal precedes any write: zero rows before confirm', async () => {
     const { db, tools, boundary } = await setup();
-    const preview = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE' });
+    const preview = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE', customer_id: 'cust-tinsol' });
     const proposal = await tools.proposeConfirmIntelligenceImport({
       customer_id: 'cust-tinsol',
       raw_content: GOLDEN_SAMPLE_TINSOL,
@@ -71,7 +71,7 @@ describe('battle card write tools honor Proposal/Confirm/Replay', () => {
 
   it('confirm executes exactly once with effect output', async () => {
     const { db, tools, boundary } = await setup();
-    const preview = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE' });
+    const preview = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE', customer_id: 'cust-tinsol' });
     const proposal = await tools.proposeConfirmIntelligenceImport({
       customer_id: 'cust-tinsol',
       raw_content: GOLDEN_SAMPLE_TINSOL,
@@ -90,7 +90,7 @@ describe('battle card write tools honor Proposal/Confirm/Replay', () => {
 
   it('replay of the same confirmation writes nothing a second time', async () => {
     const { db, tools, boundary } = await setup();
-    const preview = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE' });
+    const preview = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE', customer_id: 'cust-tinsol' });
     const proposal = await tools.proposeConfirmIntelligenceImport({
       customer_id: 'cust-tinsol',
       raw_content: GOLDEN_SAMPLE_TINSOL,
@@ -107,7 +107,7 @@ describe('battle card write tools honor Proposal/Confirm/Replay', () => {
 
   it('scope switch invalidates pending proposals', async () => {
     const { db, tools, boundary } = await setup();
-    const preview = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE' });
+    const preview = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE', customer_id: 'cust-tinsol' });
     const proposal = await tools.proposeConfirmIntelligenceImport({
       customer_id: 'cust-tinsol',
       raw_content: GOLDEN_SAMPLE_TINSOL,
@@ -124,7 +124,7 @@ describe('battle card write tools honor Proposal/Confirm/Replay', () => {
 
   it('cancelled proposal cannot be confirmed (zero writes)', async () => {
     const { db, tools, boundary } = await setup();
-    const preview = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE' });
+    const preview = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE', customer_id: 'cust-tinsol' });
     const proposal = await tools.proposeConfirmIntelligenceImport({
       customer_id: 'cust-tinsol',
       raw_content: GOLDEN_SAMPLE_TINSOL,
@@ -145,7 +145,7 @@ describe('hypothesis status updates through the boundary', () => {
   it('writes status with audit and blocks stale expected_version', async () => {
     const { db, tools, boundary } = await setup();
     const repos = createBattleCardRepositories(db, CLOCK);
-    const preview = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE' });
+    const preview = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE', customer_id: 'cust-tinsol' });
     const importProposal = await tools.proposeConfirmIntelligenceImport({
       customer_id: 'cust-tinsol',
       raw_content: GOLDEN_SAMPLE_TINSOL,
@@ -187,7 +187,7 @@ describe('stage card confirmation through the boundary', () => {
   it('confirms exactly once with expected_version guard', async () => {
     const { db, tools, boundary } = await setup();
     const repos = createBattleCardRepositories(db, CLOCK);
-    const preview = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE' });
+    const preview = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE', customer_id: 'cust-tinsol' });
     const importProposal = await tools.proposeConfirmIntelligenceImport({
       customer_id: 'cust-tinsol',
       raw_content: GOLDEN_SAMPLE_TINSOL,
@@ -230,7 +230,7 @@ describe('stage card confirmation through the boundary', () => {
 describe('idempotency across repeated confirmations', () => {
   it('domain-level dedup keeps the second import confirm at zero writes', async () => {
     const { db, tools, boundary } = await setup();
-    const preview = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE' });
+    const preview = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE', customer_id: 'cust-tinsol' });
     const keepFactIds = preview.draft.extracted_facts.slice(0, 1).map(fact => fact.fact_id);
 
     const first = await tools.proposeConfirmIntelligenceImport({

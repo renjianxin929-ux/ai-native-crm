@@ -7,7 +7,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-import { BATTLE_CARD_V1_FULL_CHANGED_COHORT } from './finalUsabilityChangedFileCohort';
+import { BATTLE_CARD_UI_V1_R6_FULL_CHANGED_COHORT } from './finalUsabilityChangedFileCohort';
 
 import { parseIntelligenceMaterial } from '../lib/battleCard/parser';
 import { createBattleCardRepositories } from '../lib/battleCard/repository';
@@ -152,13 +152,13 @@ describe('formula/ingredient conditional boundary (P0-B)', () => {
     try {
       await createSchema(db);
       await seedCustomer(db);
-      const preview = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE' });
+      const preview = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE', customer_id: 'cust-tinsol' });
       const repos = createBattleCardRepositories(db, CLOCK);
       const result = await confirmIntelligenceImport(preview, {
         customer_id: 'cust-tinsol',
         keep_fact_ids: preview.draft.extracted_facts.map(fact => fact.fact_id),
         keep_hypothesis_ids: [],
-      }, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE' });
+      }, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE', customer_id: 'cust-tinsol',  });
 
       const persisted = await repos.facts.listByCustomer('cust-tinsol');
       // 配方不进入 reviewed_facts
@@ -175,7 +175,7 @@ describe('formula/ingredient conditional boundary (P0-B)', () => {
       await createSchema(db);
       await seedCustomer(db, { id: 'cust-cond', name: '条件客户' });
       const synthetic = `1. 主体与公开事实\n\n已核事实/证据：\n产品配方温和，成分安全（SYNTHETIC）。\n\n来源：SYNTHETIC\n\n10. 来源\nSYNTHETIC`;
-      const preview = await previewIntelligenceImport(synthetic, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE' });
+      const preview = await previewIntelligenceImport(synthetic, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE', customer_id: 'cust-cond' });
       const formulaFact = preview.draft.extracted_facts.find(fact => /配方|成分/.test(fact.statement));
       expect(formulaFact?.applicability).toBe('CONDITIONAL');
 
@@ -185,7 +185,7 @@ describe('formula/ingredient conditional boundary (P0-B)', () => {
         customer_id: 'cust-cond',
         keep_fact_ids: [formulaFact!.fact_id],
         keep_hypothesis_ids: [],
-      }, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE' });
+      }, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE', customer_id: 'cust-cond' });
       const persisted = await repos.facts.listByCustomer('cust-cond');
       expect(persisted).toHaveLength(1);
       // 默认 Confirm 不产生 VERIFIED
@@ -201,7 +201,7 @@ describe('formula/ingredient conditional boundary (P0-B)', () => {
       await createSchema(db);
       await seedCustomer(db, { id: 'cust-tamper', name: '篡改客户' });
       const synthetic = `1. 主体与公开事实\n\n已核事实/证据：\n产品配方温和，成分安全（SYNTHETIC）。\n\n来源：SYNTHETIC\n\n10. 来源\nSYNTHETIC`;
-      const preview = await previewIntelligenceImport(synthetic, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE' });
+      const preview = await previewIntelligenceImport(synthetic, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE', customer_id: 'cust-tamper' });
       const formulaFact = preview.draft.extracted_facts.find(fact => /配方|成分/.test(fact.statement));
       expect(formulaFact?.applicability).toBe('CONDITIONAL');
 
@@ -241,13 +241,13 @@ describe('full changed cohort exact-set guard (P1-B)', () => {
       [...collect(['diff', '--name-only']), ...collect(['diff', '--cached', '--name-only']), ...collect(['ls-files', '--others', '--exclude-standard'])]
         .map(file => file.replace(/^local-crm-desktop\//, '')),
     );
-    const expected = new Set(BATTLE_CARD_V1_FULL_CHANGED_COHORT);
+    const expected = new Set(BATTLE_CARD_UI_V1_R6_FULL_CHANGED_COHORT);
     const missing = [...expected].filter(file => !actual.has(file));
     const extra = [...actual].filter(file => !expected.has(file));
     expect(missing).toEqual([]);
     expect(extra).toEqual([]);
     expect(actual.size).toBe(expected.size);
-    expect(actual.size).toBe(38);
+    expect(actual.size).toBe(BATTLE_CARD_UI_V1_R6_FULL_CHANGED_COHORT.length);
   });
 });
 
@@ -258,7 +258,7 @@ describe('appendix A preview/cancel/confirm lifecycle (reviewer口径)', () => {
       await createSchema(db);
       await seedCustomer(db);
       const before = await db.select('SELECT id FROM intelligence_imports');
-      const preview = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE' });
+      const preview = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE', customer_id: 'cust-tinsol' });
       expect(preview.writes).toBe(0);
       expect(await db.select('SELECT id FROM intelligence_imports')).toEqual(before);
 
@@ -275,7 +275,7 @@ describe('appendix A preview/cancel/confirm lifecycle (reviewer口径)', () => {
     try {
       await createSchema(db);
       await seedCustomer(db);
-      const preview = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE' });
+      const preview = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE', customer_id: 'cust-tinsol' });
       const keepFacts = preview.draft.extracted_facts.map(fact => fact.fact_id);
       const keepHyps = preview.draft.extracted_hypotheses.map(hypothesis => hypothesis.hypothesis_id);
 
@@ -284,11 +284,11 @@ describe('appendix A preview/cancel/confirm lifecycle (reviewer口径)', () => {
         keep_fact_ids: keepFacts,
         keep_hypothesis_ids: keepHyps,
         confirmed_by: 'reviewer',
-      }, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE' });
+      }, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE', customer_id: 'cust-tinsol',  });
       expect(first.deduped).toBe(false);
       expect(await db.select('SELECT id FROM intelligence_imports')).toHaveLength(1);
 
-      const preview2 = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE' });
+      const preview2 = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE', customer_id: 'cust-tinsol' });
       const second = await confirmIntelligenceImport(preview2, {
         customer_id: 'cust-tinsol',
         keep_fact_ids: keepFacts,

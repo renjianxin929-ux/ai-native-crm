@@ -6,6 +6,77 @@
 
 import { BATTLE_CARD_PARSER_VERSION } from './schema';
 import type { FactApplicability, FeishuValueStatement } from './types';
+import {
+  determineApplicabilityByContract,
+  detectCompositeBusinessByContract,
+  isFormulaConditionalByContract,
+} from './applicabilityContract';
+import { sha256HexSync, canonicalJsonStringify } from '../salesAgentTools/confirmedWrite';
+
+/** 解析视图：不再全局归一化（P0-A 修复——Source Span 必须基于原始字节）。
+ *  行尾 CRLF 由行扫描器识别（line_ending），Candidate 内部 CRLF 保留。 */
+export function normalizeRawForParsing(rawContent: string): string {
+  return rawContent;
+}
+
+/** Source Span Contract 版本（raw-byte line scanner 合同）。 */
+export const SOURCE_SPAN_CONTRACT_VERSION = 'battle-card-source-span-v1';
+
+/**
+ * Authoritative Candidate ID（与 Rust build_candidate_id 同算法）：
+ * SHA-256(canonical envelope {raw_content_sha256, parser_contract_version, candidate_kind,
+ * source_section, start_byte, end_byte, statement_sha256})。
+ * 稳定绑定：内容 / 契约版本 / 类型 / 章节 / 字节跨距 / 正文哈希。
+ */
+export function buildCandidateId(input: {
+  readonly rawContentSha256: string;
+  readonly parserContractVersion: string;
+  readonly sourceSpanContractVersion: string;
+  readonly customerId: string;
+  readonly importScopeId: string;
+  readonly candidateKind: 'FACT' | 'HYPOTHESIS';
+  readonly sourceSection: string;
+  readonly startByte: number;
+  readonly endByte: number;
+  readonly sourceExcerptSha256: string;
+  readonly statementSha256: string;
+}): string {
+  const envelope = {
+    raw_content_sha256: input.rawContentSha256,
+    parser_contract_version: input.parserContractVersion,
+    source_span_contract_version: input.sourceSpanContractVersion,
+    customer_id: input.customerId,
+    import_scope_id: input.importScopeId,
+    candidate_kind: input.candidateKind,
+    source_section: input.sourceSection,
+    start_byte: input.startByte,
+    end_byte: input.endByte,
+    source_excerpt_sha256: input.sourceExcerptSha256,
+    statement_sha256: input.statementSha256,
+  };
+  return sha256HexSync(canonicalJsonStringify(envelope));
+}
+
+/**
+ * Authoritative Import Scope：绑定 customer_id + raw_content_sha256 + 双契约版本。
+ * import_scope_id = SHA-256(canonical envelope)。TS/Rust 同一合同。
+ */
+export function buildImportScopeId(input: {
+  readonly customerId: string;
+  readonly rawContentSha256: string;
+  readonly parserContractVersion: string;
+  readonly sourceSpanContractVersion: string;
+  readonly sourceKind: string;
+}): string {
+  const envelope = {
+    customer_id: input.customerId,
+    raw_content_sha256: input.rawContentSha256,
+    parser_contract_version: input.parserContractVersion,
+    source_span_contract_version: input.sourceSpanContractVersion,
+    source_kind: input.sourceKind,
+  };
+  return sha256HexSync(canonicalJsonStringify(envelope));
+}
 
 // ── 章节定义 ──
 
@@ -65,8 +136,15 @@ export interface DraftFact {
   readonly source_lines: readonly number[];
   /** 来源章节（保留 source section）。 */
   readonly source_section: IntelligenceSectionKey;
-  /** 原文 excerpt（逐字保留，最多 200 字）。 */
+  /** 权威原文 excerpt（逐字保留，精确等于 raw UTF-8 Source Span）。 */
   readonly source_excerpt: string;
+  /** Authoritative Candidate 字段（P0-A）：字节跨距与哈希。 */
+  readonly start_byte: number;
+  readonly end_byte: number;
+  readonly excerpt_sha256: string;
+  readonly statement_sha256: string;
+  readonly parser_contract_version: string;
+  readonly source_span_contract_version: string;
 }
 
 export interface DraftHypothesis {
@@ -81,7 +159,15 @@ export interface DraftHypothesis {
   readonly evidence_refs: readonly { import_ref: string }[];
   readonly source_lines: readonly number[];
   readonly source_section: IntelligenceSectionKey;
+  /** 权威原文 excerpt（逐字保留，精确等于 raw UTF-8 Source Span）。 */
   readonly source_excerpt: string;
+  /** Authoritative Candidate 字段（P0-A）：字节跨距与哈希。 */
+  readonly start_byte: number;
+  readonly end_byte: number;
+  readonly excerpt_sha256: string;
+  readonly statement_sha256: string;
+  readonly parser_contract_version: string;
+  readonly source_span_contract_version: string;
 }
 
 export interface DraftScenario {
@@ -148,11 +234,7 @@ export interface IntelligenceDraft {
   readonly reasoning: { readonly mode: 'DETERMINISTIC' | 'MODEL_ENHANCED'; readonly model_called: false };
 }
 
-// ── 关键词规则 ──
-
-const COMPOSITE_BUSINESS_TERMS = [
-  '功效', '内容', '达人', '版本', '电压', '插头', '认证', '包装', '说明书', '售后', 'VOC', '配方', '成分',
-] as const;
+// ── 关键词规则（类别词表仍为 parser 本地；适用性词表已收敛到共享合同）──
 
 const FACT_CATEGORY_KEYWORDS: Readonly<Record<string, readonly string[]>> = {
   CERTIFICATION: ['认证', 'CE', 'FCC', 'UL', 'RoHS', '质检'],
@@ -161,10 +243,6 @@ const FACT_CATEGORY_KEYWORDS: Readonly<Record<string, readonly string[]>> = {
   PRODUCT: ['产品', '小家电', '功效', '配方', '成分', '型号', '硬件'],
   OPERATION: ['售后', 'VOC', '包装', '说明书', '物流', '库存', '客服'],
 };
-
-const GLOBAL_TERMS = ['出海', '多国家', '多平台', '官方案例', '销售及业务信息', '全球', '覆盖'];
-const PARTIAL_TERMS = ['认证', '电压', '插头', '国家版本', '版本', '说明书', '包装'];
-const CONDITIONAL_TERMS = ['配方', '成分', '功效', '售后', 'VOC'];
 
 // ── 行解析基础 ──
 
@@ -178,6 +256,11 @@ interface ParsedLine {
   readonly start_offset: number;
   /** 原始行文本长度（不含换行符；raw body 边界计算用）。 */
   readonly raw_length: number;
+  /** 原始字节坐标（P0-A：Source Span 只来自原始字节位置）。 */
+  readonly content_start_byte: number;
+  readonly content_end_byte: number;
+  readonly raw_end_byte: number;
+  readonly line_ending: 'LF' | 'CRLF' | 'NONE';
 }
 
 /** 全角标点/数字转半角（仅用于标题识别的合理变体归一，正文保留原文）。 */
@@ -224,26 +307,39 @@ function detectNumberedTitle(text: string): string | null {
 function parseLines(rawContent: string): ParsedLine[] {
   const result: ParsedLine[] = [];
   let offset = 0;
-  for (const [index, line] of rawContent.split(/\r?\n/).entries()) {
+  let byteOffset = 0;
+  const encoder = new TextEncoder();
+  const lines = rawContent.split('\n');
+  const total = lines.length;
+  for (const [index, line] of lines.entries()) {
     const start = offset;
+    const rawLineBytes = encoder.encode(line);
+    const hasCR = rawLineBytes.length > 0 && rawLineBytes[rawLineBytes.length - 1] === 0x0d;
+    const contentByteLength = hasCR ? rawLineBytes.length - 1 : rawLineBytes.length;
+    const contentStartByte = byteOffset;
+    const contentEndByte = byteOffset + contentByteLength;
+    const rawEndByte = byteOffset + rawLineBytes.length;
+    const hasNewline = index < total - 1;
+    const lineEnding: 'LF' | 'CRLF' | 'NONE' = !hasNewline ? 'NONE' : hasCR ? 'CRLF' : 'LF';
     const trimmed = line.trim();
     if (trimmed) {
       const heading = trimmed.match(/^(#{1,6})\s+(.+)$/);
       if (heading) {
-        result.push({ line_number: index + 1, text: normalizeLine(trimmed), is_title: true, is_item: false, title: normalizeLine(trimmed), start_offset: start, raw_length: line.length });
+        result.push({ line_number: index + 1, text: normalizeLine(trimmed), is_title: true, is_item: false, title: normalizeLine(trimmed), start_offset: start, raw_length: line.length, content_start_byte: contentStartByte, content_end_byte: contentEndByte, raw_end_byte: rawEndByte, line_ending: lineEnding });
       } else {
         const numberedTitle = detectNumberedTitle(trimmed);
         if (numberedTitle) {
-          result.push({ line_number: index + 1, text: numberedTitle, is_title: true, is_item: false, title: numberedTitle, start_offset: start, raw_length: line.length });
+          result.push({ line_number: index + 1, text: numberedTitle, is_title: true, is_item: false, title: numberedTitle, start_offset: start, raw_length: line.length, content_start_byte: contentStartByte, content_end_byte: contentEndByte, raw_end_byte: rawEndByte, line_ending: lineEnding });
         } else {
           const itemMatch = trimmed.match(/^([-*•]|\d+[.、）)]|[一二三四五六七八九十]+[、.])\s*(.+)$/);
-          result.push({ line_number: index + 1, text: normalizeLine(trimmed), is_title: false, is_item: Boolean(itemMatch), title: null, start_offset: start, raw_length: line.length });
+          result.push({ line_number: index + 1, text: normalizeLine(trimmed), is_title: false, is_item: Boolean(itemMatch), title: null, start_offset: start, raw_length: line.length, content_start_byte: contentStartByte, content_end_byte: contentEndByte, raw_end_byte: rawEndByte, line_ending: lineEnding });
         }
       }
     } else {
-      result.push({ line_number: index + 1, text: trimmed, is_title: false, is_item: false, title: null, start_offset: start, raw_length: line.length });
+      result.push({ line_number: index + 1, text: trimmed, is_title: false, is_item: false, title: null, start_offset: start, raw_length: line.length, content_start_byte: contentStartByte, content_end_byte: contentEndByte, raw_end_byte: rawEndByte, line_ending: lineEnding });
     }
     offset += line.length + 1; // 含行尾换行符
+    byteOffset += rawLineBytes.length + 1;
   }
   return result.filter(line => line.text.length > 0 || line.is_title);
 }
@@ -264,28 +360,18 @@ function matchSection(title: string): IntelligenceSectionKey | null {
   return null;
 }
 
-// ── 适用性判定 ──
+// ── 适用性判定（共享合同 battle-card-applicability-v1 驱动；TS/Rust 同一 JSON）──
 
 export function determineApplicability(statement: string, contextComposite: boolean): FactApplicability {
-  const text = statement.toLowerCase();
-  // 配方/成分缺少产品线依据时，CONDITIONAL 是最强信号，优先于其他关键词（warning 与持久化同源）
-  if (isFormulaConditional(statement)) return 'CONDITIONAL';
-  if (GLOBAL_TERMS.some(term => text.includes(term))) return 'GLOBAL';
-  if (PARTIAL_TERMS.some(term => text.includes(term))) return 'PARTIAL';
-  if (CONDITIONAL_TERMS.some(term => text.includes(term))) return 'CONDITIONAL';
-  return contextComposite ? 'GLOBAL' : 'CONDITIONAL';
+  return determineApplicabilityByContract(statement, contextComposite);
 }
 
 export function detectCompositeBusiness(text: string): boolean {
-  const hits = COMPOSITE_BUSINESS_TERMS.filter(term => text.includes(term));
-  return hits.length >= 3;
+  return detectCompositeBusinessByContract(text);
 }
 
 export function isFormulaConditional(statement: string): boolean {
-  const text = statement.toLowerCase();
-  const hasFormula = text.includes('配方') || text.includes('成分');
-  const hasProductLineBasis = text.includes('产品线') || text.includes('具体产品') || text.includes('型号');
-  return hasFormula && !hasProductLineBasis;
+  return isFormulaConditionalByContract(statement);
 }
 
 function factCategoryFor(statement: string, section: IntelligenceSectionKey): string {
@@ -389,15 +475,38 @@ function importRefFor(key: IntelligenceSectionKey, line: number): string {
 
 // ── 解析器 ──
 
-export function parseIntelligenceMaterial(rawContent: string): IntelligenceDraft {
+export function parseIntelligenceMaterial(rawContent: string, options: { customer_id?: string; source_kind?: string } = {}): IntelligenceDraft {
   const warnings: string[] = [];
-  const lines = parseLines(rawContent);
-  const { sections, warnings: groupingWarnings } = groupBySections(lines, rawContent);
+  // 原始字节扫描（P0-A）：不做全局归一化；span 基于原始字节位置
+  const view = normalizeRawForParsing(rawContent);
+  const lines = parseLines(view);
+  const { sections, warnings: groupingWarnings } = groupBySections(lines, view);
   warnings.push(...groupingWarnings);
   const composite = detectCompositeBusiness(rawContent);
   if (composite) {
     warnings.push('检测到复合业务属性（功效/内容/认证/版本/售后等并存），按复合业务处理，不判定为行业冲突。');
   }
+  const rawContentSha256 = sha256HexSync(rawContent);
+  const customerId = options.customer_id ?? '';
+  const importScopeId = buildImportScopeId({
+    customerId,
+    rawContentSha256,
+    parserContractVersion: BATTLE_CARD_PARSER_VERSION,
+    sourceSpanContractVersion: SOURCE_SPAN_CONTRACT_VERSION,
+    sourceKind: options.source_kind ?? 'MANUAL_PASTE',
+  });
+  const viewBytes = new TextEncoder().encode(view);
+  const viewDecoder = new TextDecoder('utf-8', { fatal: true });
+  const lineByteMap = new Map(lines.map(line => [line.line_number, line] as const));
+  const sliceRawBytes = (startByte: number, endByte: number): string => {
+    const boundedEnd = Math.min(endByte, viewBytes.length);
+    if (startByte < 0 || boundedEnd < startByte) return '';
+    try {
+      return viewDecoder.decode(viewBytes.subarray(startByte, boundedEnd));
+    } catch {
+      return '';
+    }
+  };
 
   // 1) 候选事实：仅章节 1（主体与公开事实）内的已核事实/证据条目与普通段落；
   //    元数据行（等级/来源/边界/口径）与“已核事实/证据”标记行不进入 statement。
@@ -409,21 +518,51 @@ export function parseIntelligenceMaterial(rawContent: string): IntelligenceDraft
     if (item.text.length < 4) continue;
     if (metaLabelPattern.test(item.text)) continue;
     if (preamblePattern.test(item.text)) continue;
-    const applicability = determineApplicability(item.text, composite);
+    const statement = item.text;
+    const firstLine = item.line_numbers[0] ?? 0;
+    const lastLine = item.line_numbers[item.line_numbers.length - 1] ?? firstLine;
+    const firstLineInfo = lineByteMap.get(firstLine);
+    const lastLineInfo = lineByteMap.get(lastLine);
+    // P0-A：Source Span 只来自原始字节位置（半开区间，不含末尾行结束符，保留内部行结束符）
+    const startByte = firstLineInfo?.content_start_byte ?? 0;
+    const endByte = lastLineInfo?.content_end_byte ?? startByte;
+    const sourceExcerpt = sliceRawBytes(startByte, endByte) || statement.slice(0, 200);
+    const statementSha256 = sha256HexSync(statement);
+    const sourceExcerptSha256 = sha256HexSync(sourceExcerpt);
+    const candidateId = buildCandidateId({
+      rawContentSha256,
+      parserContractVersion: BATTLE_CARD_PARSER_VERSION,
+      sourceSpanContractVersion: SOURCE_SPAN_CONTRACT_VERSION,
+      customerId,
+      importScopeId,
+      candidateKind: 'FACT',
+      sourceSection: 'company',
+      startByte,
+      endByte,
+      sourceExcerptSha256,
+      statementSha256,
+    });
+    const applicability = determineApplicability(statement, composite);
     extractedFacts.push({
-      fact_id: `fact-company-${extractedFacts.length + 1}`,
-      fact_category: factCategoryFor(item.text, 'company'),
-      statement: item.text,
+      fact_id: candidateId,
+      fact_category: factCategoryFor(statement, 'company'),
+      statement,
       confidence: 0.8,
       applicability,
       normalized_value: null,
-      evidence_refs: [{ import_ref: importRefFor('company', item.line_numbers[0] ?? 0) }],
+      evidence_refs: [{ import_ref: importRefFor('company', firstLine) }],
       source_lines: item.line_numbers,
       source_section: 'company',
-      source_excerpt: item.text.slice(0, 200),
+      source_excerpt: sourceExcerpt,
+      start_byte: startByte,
+      end_byte: endByte,
+      excerpt_sha256: sourceExcerptSha256,
+      statement_sha256: statementSha256,
+      parser_contract_version: BATTLE_CARD_PARSER_VERSION,
+      source_span_contract_version: SOURCE_SPAN_CONTRACT_VERSION,
     });
-    if (isFormulaConditional(item.text)) {
-      warnings.push(`“${item.text.slice(0, 40)}…”含配方/成分表述且缺少具体产品线依据，已标为 CONDITIONAL。`);
+    if (isFormulaConditional(statement)) {
+      warnings.push(`“${statement.slice(0, 40)}…”含配方/成分表述且缺少具体产品线依据，已标为 CONDITIONAL。`);
     }
   }
 
@@ -439,7 +578,7 @@ export function parseIntelligenceMaterial(rawContent: string): IntelligenceDraft
     if (markerMatch) {
       // 单行：`H1：xxx`
       pendingMarker = null;
-      extractedHypotheses.push(makeHypothesis(extractedHypotheses.length, markerMatch[1], markerMatch[3].trim(), item.line_numbers, validationQuestions[extractedHypotheses.length] ?? null, warnings));
+      extractedHypotheses.push(makeHypothesis(extractedHypotheses.length, markerMatch[1], markerMatch[3].trim(), item.line_numbers, validationQuestions[extractedHypotheses.length] ?? null, warnings, lineByteMap, rawContentSha256, sliceRawBytes, customerId, importScopeId));
       continue;
     }
     const markerOnly = item.text.match(/^(H\d+)(（待验证）)?\s*[：:]\s*$/);
@@ -449,12 +588,11 @@ export function parseIntelligenceMaterial(rawContent: string): IntelligenceDraft
     }
     if (pendingMarker) {
       if (item.text.length < 4) continue;
-      extractedHypotheses.push(makeHypothesis(extractedHypotheses.length, pendingMarker.marker, item.text, [...pendingMarker.line_numbers, ...item.line_numbers], validationQuestions[extractedHypotheses.length] ?? null, warnings));
+      extractedHypotheses.push(makeHypothesis(extractedHypotheses.length, pendingMarker.marker, item.text, [...pendingMarker.line_numbers, ...item.line_numbers], validationQuestions[extractedHypotheses.length] ?? null, warnings, lineByteMap, rawContentSha256, sliceRawBytes, customerId, importScopeId));
       pendingMarker = null;
       continue;
     }
-    if (item.text.length < 4) continue;
-    extractedHypotheses.push(makeHypothesis(extractedHypotheses.length, null, item.text, item.line_numbers, validationQuestions[extractedHypotheses.length] ?? null, warnings));
+    // P1-A：非 H 编号段落（如“以上均不是已发生事实…”边界说明）不得 fallback 成 Hypothesis。
   }
 
   // 3) Solution scenarios：4 章落地点场景 + 4C 实现层（含验收指标）
@@ -519,10 +657,17 @@ export function parseIntelligenceMaterial(rawContent: string): IntelligenceDraft
     },
   };
 
-  // 5) 同行校准：4D 章节内字段标签 + 值区；公司列表按 `、,，;；` 拆分；group context 继承给每个 peer
-  const peers = parsePeerGroup(sections, composite, warnings);
+  // 5) 候选客户（只给名称候选，不猜 customer_id）。同行排除只使用这份当前输入中已解析的主体名。
+  const firstContentLine = lines.find(line => !line.is_title && line.text.length >= 2);
+  const firstLineCompany = firstContentLine ? extractCompanyFromFirstLine(firstContentLine.text) : null;
+  const candidateCustomer = firstLineCompany
+    ? { name: firstLineCompany, matched_names: [firstLineCompany] as readonly string[] }
+    : null;
 
-  // 6) 人工确认门禁 / POC / 风险边界 / 条件适用项
+  // 6) 同行校准：4D 章节内字段标签 + 值区；公司列表按 `、,，;；` 拆分；group context 继承给每个 peer
+  const peers = parsePeerGroup(sections, composite, warnings, candidateCustomer?.name ?? null);
+
+  // 7) 人工确认门禁 / POC / 风险边界 / 条件适用项
   const humanGateItems = itemsOf(sections, 'human_gates');
   const humanReviewBoundaries = humanGateItems.map(item => item.text);
   const pocItems = itemsOf(sections, 'poc');
@@ -541,14 +686,6 @@ export function parseIntelligenceMaterial(rawContent: string): IntelligenceDraft
   const conditionalItems = [...formulaItems];
   if (conditionalItems.length === 0) {
     conditionalItems.push(...extractedFacts.filter(fact => fact.applicability === 'CONDITIONAL').map(fact => fact.statement.slice(0, 120)));
-  }
-
-  // 7) 候选客户（只给名称候选，不猜 customer_id）
-  let candidateCustomer: { name: string | null; matched_names: readonly string[] } | null = null;
-  const firstContentLine = lines.find(line => !line.is_title && line.text.length >= 2);
-  const firstLineCompany = firstContentLine ? extractCompanyFromFirstLine(firstContentLine.text) : null;
-  if (firstLineCompany) {
-    candidateCustomer = { name: firstLineCompany, matched_names: [firstLineCompany] };
   }
 
   // 8) 来源映射
@@ -590,18 +727,46 @@ export function parseIntelligenceMaterial(rawContent: string): IntelligenceDraft
 }
 
 function makeHypothesis(
-  index: number,
+  _index: number,
   marker: string | null,
   statement: string,
   lineNumbers: readonly number[],
   question: string | null,
   warnings: string[],
+  lineByteMap: ReadonlyMap<number, ParsedLine>,
+  rawContentSha256: string,
+  sliceRawBytes: (startByte: number, endByte: number) => string,
+  customerId: string,
+  importScopeId: string,
 ): DraftHypothesis {
   if (!question) {
     warnings.push(`假设“${statement.slice(0, 30)}…”缺少对应验证问题（首轮挖需问题不足），需人工补充。`);
   }
+  const firstLine = lineNumbers[0] ?? 0;
+  const lastLine = lineNumbers[lineNumbers.length - 1] ?? firstLine;
+  const firstLineInfo = lineByteMap.get(firstLine);
+  const lastLineInfo = lineByteMap.get(lastLine);
+  // P0-A：Source Span 只来自原始字节位置（半开区间，不含末尾行结束符，保留内部行结束符）
+  const startByte = firstLineInfo?.content_start_byte ?? 0;
+  const endByte = lastLineInfo?.content_end_byte ?? startByte;
+  const sourceExcerpt = sliceRawBytes(startByte, endByte) || statement.slice(0, 200);
+  const statementSha256 = sha256HexSync(statement);
+  const sourceExcerptSha256 = sha256HexSync(sourceExcerpt);
+  const candidateId = buildCandidateId({
+    rawContentSha256,
+    parserContractVersion: BATTLE_CARD_PARSER_VERSION,
+    sourceSpanContractVersion: SOURCE_SPAN_CONTRACT_VERSION,
+    customerId,
+    importScopeId,
+    candidateKind: 'HYPOTHESIS',
+    sourceSection: 'problem_hypotheses',
+    startByte,
+    endByte,
+    sourceExcerptSha256,
+    statementSha256,
+  });
   return {
-    hypothesis_id: `hyp-${index + 1}`,
+    hypothesis_id: candidateId,
     category: 'PROBLEM',
     statement,
     rationale: marker ? `${marker} 假设` : null,
@@ -609,10 +774,16 @@ function makeHypothesis(
     why_it_matters: null,
     validation_question: question,
     disconfirm_condition: null,
-    evidence_refs: [{ import_ref: importRefFor('problem_hypotheses', lineNumbers[0] ?? 0) }],
+    evidence_refs: [{ import_ref: importRefFor('problem_hypotheses', firstLine) }],
     source_lines: lineNumbers,
     source_section: 'problem_hypotheses',
-    source_excerpt: statement.slice(0, 200),
+    source_excerpt: sourceExcerpt,
+    start_byte: startByte,
+    end_byte: endByte,
+    excerpt_sha256: sourceExcerptSha256,
+    statement_sha256: statementSha256,
+    parser_contract_version: BATTLE_CARD_PARSER_VERSION,
+    source_span_contract_version: SOURCE_SPAN_CONTRACT_VERSION,
   };
 }
 
@@ -621,6 +792,7 @@ function parsePeerGroup(
   sections: readonly SectionContent[],
   _composite: boolean,
   warnings: string[],
+  parsedCompanyName: string | null,
 ): DraftPeerReference[] {
   const peers: DraftPeerReference[] = [];
   const peerItems = itemsOf(sections, 'peers');
@@ -656,8 +828,8 @@ function parsePeerGroup(
   for (const line of companyLines) {
     const names = line.text.split(/[、,，;；]/).map(name => name.trim()).filter(name => name.length >= 2);
     for (const name of names) {
-      if (isPeerFalsePositive(name)) {
-        warnings.push(`同行候选“${name}”被判定为字段标签/平台/系统名，未进入 peer references。`);
+      if (isPeerFalsePositive(name) || isCurrentSubjectEntityCandidate(name, parsedCompanyName)) {
+        warnings.push(`同行候选“${name}”被判定为字段标签/平台/系统名或当前主体，未进入 peer references。`);
         continue;
       }
       peers.push({
@@ -678,7 +850,7 @@ function parsePeerGroup(
   if (peers.length === 0) {
     for (const item of peerItems) {
       const companyName = extractCompanyName(item.text);
-      if (!companyName || isPeerFalsePositive(companyName)) continue;
+      if (!companyName || isPeerFalsePositive(companyName) || isCurrentSubjectEntityCandidate(companyName, parsedCompanyName)) continue;
       peers.push({
         company_name: companyName,
         comparison_level: item.text.includes('跨行业') || item.text.includes('其他行业') ? 'CROSS_INDUSTRY' : 'SAME_INDUSTRY',
@@ -702,12 +874,80 @@ export function isPeerFalsePositive(name: string): boolean {
   const exactForbidden = new Set([
     'Amazon', 'AliExpress', 'TEMU', 'SHEIN', 'TikTok', 'Shopee', 'Amazon平台', 'TikTok Shop',
     'ERP', 'PIM', 'PLM', 'WMS', 'MES', 'LIMS', 'QMS', 'CRM',
-    'TINSOL', 'Bee sting', '广州电秀', '电秀科技',
+    'TINSOL', 'Bee sting',
     '同类硬件出海参照', '同体量', '同阶段', '同城对照', '体量口径提醒', '为什么可比', '不可直接照搬',
   ]);
   if (exactForbidden.has(normalized)) return true;
   if (/(平台|系统|参照|提醒|可比|照搬|口径|阶段|体量)/.test(normalized)) return true;
   return false;
+}
+
+/**
+ * 当前材料主体的通用同行排除。
+ *
+ * 只比较已经从当前输入解析出的公司名：不维护客户名、别名或黄金样本的专用名单。
+ * 中文必须是至少四个字符的连续、非纯通用实体片段；英文必须在完整 token 边界上匹配。
+ */
+export function isCurrentSubjectEntityCandidate(peerCandidate: string, parsedCompanyName: string | null | undefined): boolean {
+  if (!parsedCompanyName) return false;
+
+  const candidate = stripLegalEntitySuffix(normalizeEntityName(peerCandidate));
+  const subject = stripLegalEntitySuffix(normalizeEntityName(parsedCompanyName));
+  if (!candidate || !subject || !hasMeaningfulSubjectEntityCandidate(candidate)) return false;
+  if (candidate === subject) return true;
+
+  const usesChinese = /[\u4e00-\u9fff]/.test(candidate) || /[\u4e00-\u9fff]/.test(subject);
+  if (usesChinese) {
+    // 中文没有空格 token；只允许完整的、足够长的连续片段，绝不以任意两字命中为依据。
+    return candidate.length >= 4 && (subject.includes(candidate) || candidate.includes(subject));
+  }
+
+  const candidateTokens = entityTokens(peerCandidate);
+  const subjectTokens = entityTokens(parsedCompanyName);
+  if (candidateTokens.length === 0 || subjectTokens.length === 0) return false;
+  return containsWholeTokenSequence(subjectTokens, candidateTokens)
+    || containsWholeTokenSequence(candidateTokens, subjectTokens);
+}
+
+function normalizeEntityName(value: string): string {
+  return value
+    .normalize('NFKC')
+    .trim()
+    .toLocaleLowerCase('en-US')
+    // 保留业务名称中的中文、英文与数字；空格及常见分隔符不影响同一主体判断。
+    .replace(/[^\u4e00-\u9fffA-Za-z0-9]/g, '');
+}
+
+function stripLegalEntitySuffix(value: string): string {
+  const suffixes = [
+    '有限责任公司', '股份有限公司', '有限公司', '集团有限公司',
+    'limited', 'ltd', 'incorporated', 'inc', 'corporation', 'corp',
+  ];
+  for (const suffix of suffixes) {
+    if (value.endsWith(suffix) && value.length > suffix.length) return value.slice(0, -suffix.length);
+  }
+  return value;
+}
+
+function hasMeaningfulSubjectEntityCandidate(normalizedCandidate: string): boolean {
+  if (/[\u4e00-\u9fff]/.test(normalizedCandidate)) {
+    if (normalizedCandidate.length < 4) return false;
+    // 纯地区/行业/法人形式词不能单独成为主体别名。
+    const properPart = normalizedCandidate.replace(/有限责任公司|股份有限公司|有限公司|集团|公司|科技|贸易|发展|智能|设备|电子|实业|网络|信息|商务|服务|产业|供应链|品牌|企业/g, '');
+    return properPart.length > 0;
+  }
+  return normalizedCandidate.length >= 4;
+}
+
+function entityTokens(value: string): readonly string[] {
+  const suffixTokens = new Set(['limited', 'ltd', 'incorporated', 'inc', 'corporation', 'corp']);
+  return (value.normalize('NFKC').toLocaleLowerCase('en-US').match(/[a-z0-9]+/g) ?? [])
+    .filter(token => !suffixTokens.has(token));
+}
+
+function containsWholeTokenSequence(container: readonly string[], sequence: readonly string[]): boolean {
+  if (sequence.length > container.length) return false;
+  return container.some((_, start) => sequence.every((token, offset) => container[start + offset] === token));
 }
 
 function extractCompanyName(text: string): string | null {
@@ -728,7 +968,7 @@ function extractCompanyFromFirstLine(text: string): string | null {
   // `编号｜XXX有限公司`（全角/半角分隔符）
   const bar = text.match(/[｜|]\s*([\u4e00-\u9fa5A-Za-z0-9]{2,40}?(?:有限公司|有限责任公司|集团|公司))/);
   if (bar) return bar[1];
-  // 直接以公司名开头（`广州电秀科技发展有限公司 战前卡`）
+  // 直接以公司名开头（`某主体有限公司 战前卡`）
   const direct = text.match(/^([\u4e00-\u9fa5A-Za-z0-9]{2,40}?(?:有限公司|有限责任公司|集团|公司))/);
   if (direct) return direct[1];
   return null;

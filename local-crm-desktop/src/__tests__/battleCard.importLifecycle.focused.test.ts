@@ -17,7 +17,7 @@ describe('preview is read-only', () => {
     const db = createSqliteDb();
     try {
       await createSchema(db);
-      const preview = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE' });
+      const preview = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE', customer_id: 'cust-tinsol' });
 
       expect(preview.writes).toBe(0);
       expect(preview.content_hash.length).toBe(64);
@@ -43,7 +43,7 @@ describe('confirm writes precisely', () => {
       await seedCustomer(db);
       const repos = createBattleCardRepositories(db, CLOCK);
 
-      const preview = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE' });
+      const preview = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE', customer_id: 'cust-tinsol' });
       const keepFactIds = preview.draft.extracted_facts.slice(0, 2).map(fact => fact.fact_id);
       const keepHypothesisIds = preview.draft.extracted_hypotheses.slice(0, 3).map(hypothesis => hypothesis.hypothesis_id);
 
@@ -51,7 +51,7 @@ describe('confirm writes precisely', () => {
         customer_id: 'cust-tinsol',
         keep_fact_ids: keepFactIds,
         keep_hypothesis_ids: keepHypothesisIds,
-      }, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE' });
+      }, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE', customer_id: 'cust-tinsol',  });
 
       expect(result.facts_written).toBe(2);
       expect(result.hypotheses_written).toBe(3);
@@ -82,7 +82,7 @@ describe('confirm writes precisely', () => {
       await seedCustomer(db);
       const repos = createBattleCardRepositories(db, CLOCK);
 
-      const preview = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE' });
+      const preview = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE', customer_id: 'cust-tinsol' });
       const keepFactIds = preview.draft.extracted_facts.slice(0, 2).map(fact => fact.fact_id);
       const verified = keepFactIds[0]!;
 
@@ -93,7 +93,7 @@ describe('confirm writes precisely', () => {
         fact_verifications: [
           { fact_id: verified, decision: 'VERIFY', applicable_scope: '80+ 国家版本', evidence_refs: ['import:官方活动案例'] },
         ],
-      }, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE' });
+      }, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE', customer_id: 'cust-tinsol' });
 
       const facts = await repos.facts.listByCustomer('cust-tinsol');
       expect(facts).toHaveLength(2);
@@ -116,14 +116,14 @@ describe('confirm writes precisely', () => {
       await createSchema(db);
       await seedCustomer(db);
 
-      const preview = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE' });
+      const preview = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE', customer_id: 'cust-tinsol' });
       const first = await confirmIntelligenceImport(preview, {
         customer_id: 'cust-tinsol',
         keep_fact_ids: preview.draft.extracted_facts.slice(0, 1).map(fact => fact.fact_id),
         keep_hypothesis_ids: [],
-      }, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE' });
+      }, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE', customer_id: 'cust-tinsol',  });
 
-      const previewAgain = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE' });
+      const previewAgain = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE', customer_id: 'cust-tinsol' });
       expect(previewAgain.duplicate_of).toBe(first.import_id);
 
       const second = await confirmIntelligenceImport(previewAgain, {
@@ -150,7 +150,7 @@ describe('confirm writes precisely', () => {
       await createSchema(db);
       await seedCustomer(db);
 
-      const preview = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE' });
+      const preview = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE', customer_id: 'cust-tinsol' });
       // 人工未选定客户
       const result = await confirmIntelligenceImport(preview, {}, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE' });
 
@@ -174,7 +174,7 @@ describe('confirm writes precisely', () => {
       await createSchema(db);
       await seedCustomer(db);
 
-      const preview = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE' });
+      const preview = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE', customer_id: 'cust-tinsol' });
       // 保留一个不存在的 fact_id 触发内部逻辑错误（不存在于 draft → 正常跳过）……
       // 改用注入损坏的 repository：插入事实时抛错
       const repos = createBattleCardRepositories(db, CLOCK);
@@ -189,7 +189,7 @@ describe('confirm writes precisely', () => {
           customer_id: 'cust-tinsol',
           keep_fact_ids: preview.draft.extracted_facts.slice(0, 1).map(fact => fact.fact_id),
           keep_hypothesis_ids: [],
-        }, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE', repos: brokenRepos }),
+        }, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE', repos: brokenRepos, customer_id: 'cust-tinsol' }),
       ).rejects.toThrow('mid-transaction failure');
 
       // 回滚：导入行、事实、假设全部为零
@@ -207,7 +207,7 @@ describe('cancel is zero-write', () => {
     const db = createSqliteDb();
     try {
       await createSchema(db);
-      const preview = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE' });
+      const preview = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE', customer_id: 'cust-tinsol' });
       const result = await cancelIntelligenceImport(preview);
 
       expect(result.cancelled).toBe(true);

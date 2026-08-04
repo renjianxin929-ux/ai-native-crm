@@ -14,7 +14,7 @@ import { CLOCK, createSchema, createSqliteDb, GOLDEN_SAMPLE_TINSOL, NOW, seedCus
 async function seedTinsolWithImport(db: ReturnType<typeof createSqliteDb>): Promise<void> {
   await createSchema(db);
   await seedCustomer(db);
-  const preview = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE' });
+  const preview = await previewIntelligenceImport(GOLDEN_SAMPLE_TINSOL, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE', customer_id: 'cust-tinsol' });
   const keepFactIds = preview.draft.extracted_facts.slice(0, 4).map(fact => fact.fact_id);
   // 显式核实（新契约：keep 仅 PENDING；卡片只读 VERIFIED）
   const factVerifications = keepFactIds.map(factId => ({
@@ -28,7 +28,7 @@ async function seedTinsolWithImport(db: ReturnType<typeof createSqliteDb>): Prom
     keep_fact_ids: keepFactIds,
     keep_hypothesis_ids: preview.draft.extracted_hypotheses.slice(0, 3).map(hypothesis => hypothesis.hypothesis_id),
     fact_verifications: factVerifications,
-  }, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE' });
+  }, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE', customer_id: 'cust-tinsol',  });
 }
 
 describe('stage card generation', () => {
@@ -100,12 +100,12 @@ describe('stage card generation', () => {
 
       // 假设不足时不编造：构造只有 1 条假设的客户
       await seedCustomer(db, { id: 'cust-sparse', name: '稀疏假设客户' });
-      const preview = await previewIntelligenceImport(`# 当前问题假设\nH1：只有一条假设（SYNTHETIC）\n\n# 来源\nSYNTHETIC`, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE' });
+      const preview = await previewIntelligenceImport(`# 当前问题假设\nH1：只有一条假设（SYNTHETIC）\n\n# 来源\nSYNTHETIC`, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE', customer_id: 'cust-sparse' });
       await confirmIntelligenceImport(preview, {
         customer_id: 'cust-sparse',
         keep_fact_ids: [],
         keep_hypothesis_ids: preview.draft.extracted_hypotheses.slice(0, 1).map(hypothesis => hypothesis.hypothesis_id),
-      }, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE' });
+      }, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE', customer_id: 'cust-sparse',  });
 
       const sparseCard = await engine.generateStageCardDraft('cust-sparse', 'NEW_LEAD');
       const sparsePayload = parsePayload(sparseCard.payload_json);

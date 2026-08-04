@@ -76,9 +76,9 @@ describe('adversarial: no fake success / no mock AI', () => {
     try {
       await createSchema(db);
       await seedCustomer(db, { id: 'cust-noverify', grade: 'C' });
-      const preview = await previewIntelligenceImport(SYNTHETIC_NO_TITLES, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE' });
+      const preview = await previewIntelligenceImport(SYNTHETIC_NO_TITLES, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE', customer_id: 'cust-noverify' });
       // 人工不保留任何事实
-      const result = await confirmIntelligenceImport(preview, { customer_id: 'cust-noverify', keep_fact_ids: [], keep_hypothesis_ids: [] }, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE' });
+      const result = await confirmIntelligenceImport(preview, { customer_id: 'cust-noverify', keep_fact_ids: [], keep_hypothesis_ids: [] }, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE', customer_id: 'cust-noverify',  });
       expect(result.facts_written).toBe(0);
       const repos = createBattleCardRepositories(db, CLOCK);
       expect(await repos.facts.listByCustomer('cust-noverify')).toHaveLength(0);
@@ -94,12 +94,12 @@ describe('adversarial: completeness rules', () => {
     try {
       await createSchema(db);
       await seedCustomer(db, { id: 'cust-hyp', grade: 'C' });
-      const preview = await previewIntelligenceImport(SYNTHETIC_COMPOSITE_TERMS, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE' });
+      const preview = await previewIntelligenceImport(SYNTHETIC_COMPOSITE_TERMS, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE', customer_id: 'cust-hyp' });
       await confirmIntelligenceImport(preview, {
         customer_id: 'cust-hyp',
         keep_fact_ids: [],
         keep_hypothesis_ids: preview.draft.extracted_hypotheses.map(hypothesis => hypothesis.hypothesis_id),
-      }, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE' });
+      }, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE', customer_id: 'cust-hyp',  });
 
       const engine = createStageCardEngine({ db, clock: CLOCK });
       const card = await engine.generateStageCardDraft('cust-hyp', 'NEW_LEAD');
@@ -121,12 +121,12 @@ describe('adversarial: completeness rules', () => {
     try {
       await createSchema(db);
       await seedCustomer(db, { id: 'cust-rej', grade: 'C' });
-      const preview = await previewIntelligenceImport(SYNTHETIC_COMPOSITE_TERMS, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE' });
+      const preview = await previewIntelligenceImport(SYNTHETIC_COMPOSITE_TERMS, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE', customer_id: 'cust-rej' });
       await confirmIntelligenceImport(preview, {
         customer_id: 'cust-rej',
         keep_fact_ids: [],
         keep_hypothesis_ids: preview.draft.extracted_hypotheses.map(hypothesis => hypothesis.hypothesis_id),
-      }, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE' });
+      }, { db, clock: CLOCK, source_system: 'FEISHU_BTABLE', customer_id: 'cust-rej',  });
 
       const repos = createBattleCardRepositories(db, CLOCK);
       const hypothesis = (await repos.hypotheses.listByCustomer('cust-rej'))[0]!;
