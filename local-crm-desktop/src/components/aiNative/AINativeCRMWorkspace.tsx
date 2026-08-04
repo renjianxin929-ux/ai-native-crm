@@ -31,6 +31,7 @@ import {
 import { formatUserFacingErrorMessage } from '../../lib/salesAgentUi/formatUserFacingError';
 import type { SearchableCustomer } from '../../lib/salesAgentTools/searchCustomers';
 import { SalesAgentInteractionWorkspace } from './SalesAgentInteractionWorkspace';
+import { SalesAgentBattleCardEntry } from './SalesAgentBattleCardEntry';
 
 const profile = getActiveVerticalProfile();
 const productionProfile = resolveVerticalAIProfile();
@@ -179,6 +180,7 @@ export default function AINativeCRMWorkspace() {
       {error && <div role="alert" className="app-db-error">{error}</div>}
 
       <div className="agent-stage agent-stage-final">
+        <SalesAgentBattleCardEntry customerId={selectedCustomerId} customerName={customerName} />
         <SalesAgentInteractionWorkspace
           customerId={selectedCustomerId}
           customerName={customerName}

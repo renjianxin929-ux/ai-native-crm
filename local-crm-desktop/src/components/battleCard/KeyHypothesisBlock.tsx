@@ -1,0 +1,77 @@
+import type { KeyHypothesisView } from '../../lib/battleCardUi/battleCardViewModels';
+import { FACT_APPLICABILITY_SHORT, HYPOTHESIS_STATUS_LABELS } from '../../lib/battleCardUi/battleCardLabels';
+
+export interface KeyHypothesisBlockProps {
+  readonly hypotheses: readonly KeyHypothesisView[];
+  /** 假设状态更新入口（真实 Proposal 由父级发起）。 */
+  readonly onUpdateStatus?: (hypothesisId: string) => void;
+}
+
+export function KeyHypothesisBlock({ hypotheses, onUpdateStatus }: KeyHypothesisBlockProps) {
+  return (
+    <section className="bc-section" data-testid="bc-key-hypotheses" aria-label="三个关键假设">
+      <h3 className="bc-section-title">
+        三个关键假设
+        <span className="bc-section-count">{hypotheses.length}</span>
+      </h3>
+      <div className="bc-hypotheses">
+        {hypotheses.map((hypothesis, index) => (
+          <article
+            key={hypothesis.hypothesis_id}
+            className={`bc-hypothesis${hypothesis.is_placeholder ? ' is-placeholder' : ''}`}
+            data-testid={`bc-hypothesis-${index}`}
+            data-hypothesis-id={hypothesis.hypothesis_id}
+          >
+            <div className="bc-hypothesis-head">
+              <div className="bc-hypothesis-statement">
+                {hypothesis.is_placeholder ? (
+                  hypothesis.statement
+                ) : (
+                  <>H{index + 1}：{hypothesis.statement}</>
+                )}
+              </div>
+              <div className="bc-hypothesis-meta">
+                <span className="bc-pill bc-pill-warning" data-testid={`bc-hyp-status-${index}`}>
+                  {HYPOTHESIS_STATUS_LABELS[hypothesis.status as keyof typeof HYPOTHESIS_STATUS_LABELS] ?? hypothesis.status}
+                </span>
+                <span className="bc-pill bc-pill-neutral">
+                  {FACT_APPLICABILITY_SHORT[hypothesis.applicability as keyof typeof FACT_APPLICABILITY_SHORT] ?? hypothesis.applicability}
+                </span>
+              </div>
+            </div>
+            {!hypothesis.is_placeholder ? (
+              <>
+                <div className="bc-hypothesis-detail">
+                  {hypothesis.why_it_matters ? (
+                    <div className="bc-detail-item"><span className="bc-detail-label">为什么重要</span><span>{hypothesis.why_it_matters}</span></div>
+                  ) : null}
+                  {hypothesis.validation_question ? (
+                    <div className="bc-detail-item"><span className="bc-detail-label">怎么验证</span><span>{hypothesis.validation_question}</span></div>
+                  ) : null}
+                  {hypothesis.disconfirm_condition ? (
+                    <div className="bc-detail-item"><span className="bc-detail-label">什么情况会推翻</span><span>{hypothesis.disconfirm_condition}</span></div>
+                  ) : null}
+                  <div className="bc-detail-item"><span className="bc-detail-label">Evidence</span><span>{hypothesis.evidence_count} 条</span></div>
+                </div>
+                {onUpdateStatus ? (
+                  <div className="bc-hypothesis-actions">
+                    <button
+                      type="button"
+                      className="bc-btn bc-btn-sm"
+                      data-testid={`bc-hyp-update-${index}`}
+                      onClick={() => onUpdateStatus(hypothesis.hypothesis_id)}
+                    >
+                      更新假设状态
+                    </button>
+                  </div>
+                ) : null}
+              </>
+            ) : (
+              <p className="bc-hypothesis-detail">该占位不可编辑；请补充信息后重新生成作战卡。</p>
+            )}
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}

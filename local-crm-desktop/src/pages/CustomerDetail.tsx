@@ -7,6 +7,12 @@ import { parseRoughTime } from '../lib/timeParser';
 import { GRADE_LABELS, STAGE_LABELS, WECHAT_ADD_LABELS, WECHAT_SEARCH_LABELS, INTENT_LABELS, PHONE_FEEDBACK_LABELS, NEXT_ACTION_LABELS, VISIT_OUTCOME_LABELS, CHANNEL_LABELS, CONTACT_RESULT_LABELS } from '../lib/types';
 import type { Customer, FollowUpRecord, VisitRecord } from '../lib/types';
 import { getDb } from '../lib/db';
+const BATTLE_CARD_STATUS_SHORT: Record<string, string> = {
+  NONE: '无',
+  DRAFT: '草稿',
+  CONFIRMED: '已确认',
+  REVIEW_DUE: '待复核',
+};
 import CustomerForm from '../components/CustomerForm';
 import FollowUpForm from '../components/FollowUpForm';
 import VisitForm from '../components/VisitForm';
@@ -379,6 +385,9 @@ export default function CustomerDetail({ onRefresh }: Props) {
           </div>
         </div>
         <div className="btn-group">
+          <button className="btn btn-sm" onClick={() => navigate(`/customers/${customer.id}/battle-card`)}>
+            作战卡{customer.battle_card_status && customer.battle_card_status !== 'NONE' ? ` · ${BATTLE_CARD_STATUS_SHORT[customer.battle_card_status]}` : ''}
+          </button>
           <button className="btn btn-sm" onClick={() => setShowFollowUp(true)}>
             <MessageSquare size={14} /> 记录跟进
           </button>

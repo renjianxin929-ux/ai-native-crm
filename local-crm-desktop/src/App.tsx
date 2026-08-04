@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Routes, Route, NavLink, useLocation } from 'react-router-dom';
-import { Users, Settings, BriefcaseBusiness, Sparkles } from 'lucide-react';
+import { Users, Settings, BriefcaseBusiness, Sparkles, ListChecks } from 'lucide-react';
 import CustomerList from './pages/CustomerList';
 import CustomerDetail from './pages/CustomerDetail';
 import FollowUpRecords from './pages/FollowUpRecords';
@@ -11,6 +11,8 @@ import LeadImportCenterPage from './pages/LeadImportCenterPage';
 import LeadWorkbenchPage from './pages/LeadWorkbenchPage';
 import AISettingsPage from './pages/AISettingsPage';
 import AINativeCRMWorkspace from './components/aiNative/AINativeCRMWorkspace';
+import CustomerBattleCardPage from './pages/CustomerBattleCardPage';
+import DailyBattleReviewPage from './pages/DailyBattleReviewPage';
 import type { Customer } from './lib/types';
 import { listCustomers } from './lib/db';
 import './App.css';
@@ -48,6 +50,7 @@ export default function App() {
 
   const navItems = [
     { to: '/ai-workspace', icon: Sparkles, label: 'Sales Agent', match: 'agent' as const },
+    { to: '/battle-review', icon: ListChecks, label: '今日复盘', match: 'exact' as const },
     { to: '/customers', icon: Users, label: '客户', match: 'exact' as const },
     { to: '/lead-workbench', icon: BriefcaseBusiness, label: '获客作业台', match: 'exact' as const },
     { to: '/settings', icon: Settings, label: '设置', match: 'settings' as const },
@@ -101,6 +104,8 @@ export default function App() {
           <Route path="/" element={<AINativeCRMWorkspace />} />
           <Route path="/customers" element={<CustomerList customers={customers} onRefresh={refreshAll} />} />
           <Route path="/customers/:id" element={<CustomerDetail onRefresh={refreshAll} />} />
+          <Route path="/customers/:id/battle-card" element={<CustomerBattleCardPage />} />
+          <Route path="/battle-review" element={<DailyBattleReviewPage />} />
           <Route path="/follow-ups" element={<FollowUpRecords />} />
           <Route path="/visits" element={<VisitRecords />} />
           <Route path="/ai-workspace" element={<AINativeCRMWorkspace />} />

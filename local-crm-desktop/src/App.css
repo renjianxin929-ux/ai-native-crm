@@ -2803,3 +2803,37 @@ tr.clickable {
   .agent-insight-grid { grid-template-columns: 1fr; }
   .agent-composer { border-radius: 22px; flex-wrap: wrap; }
 }
+
+/* ── Battle Card UI V1 — Sales Agent 入口条（仅本区块，作用域 .agent-battle-entry） ── */
+.agent-battle-entry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 0 20px 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.72);
+  font-size: 13px;
+}
+
+.agent-battle-entry-info {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  color: var(--text-secondary);
+  min-width: 0;
+}
+
+.agent-battle-entry-info strong {
+  color: var(--text-heading);
+}
+
+.agent-battle-entry-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
