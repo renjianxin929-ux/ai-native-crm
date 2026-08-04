@@ -7,7 +7,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-import { BATTLE_CARD_UI_V1_R6_FULL_CHANGED_COHORT } from './finalUsabilityChangedFileCohort';
+import { FRESH_PROFILE_SCHEMA_RUNTIME_REPAIR_FULL_CHANGED_COHORT } from './finalUsabilityChangedFileCohort';
 
 import { parseIntelligenceMaterial } from '../lib/battleCard/parser';
 import { createBattleCardRepositories } from '../lib/battleCard/repository';
@@ -241,13 +241,13 @@ describe('full changed cohort exact-set guard (P1-B)', () => {
       [...collect(['diff', '--name-only']), ...collect(['diff', '--cached', '--name-only']), ...collect(['ls-files', '--others', '--exclude-standard'])]
         .map(file => file.replace(/^local-crm-desktop\//, '')),
     );
-    const expected = new Set(BATTLE_CARD_UI_V1_R6_FULL_CHANGED_COHORT);
+    const expected = new Set(FRESH_PROFILE_SCHEMA_RUNTIME_REPAIR_FULL_CHANGED_COHORT);
     const missing = [...expected].filter(file => !actual.has(file));
     const extra = [...actual].filter(file => !expected.has(file));
     expect(missing).toEqual([]);
     expect(extra).toEqual([]);
     expect(actual.size).toBe(expected.size);
-    expect(actual.size).toBe(BATTLE_CARD_UI_V1_R6_FULL_CHANGED_COHORT.length);
+    expect(actual.size).toBe(FRESH_PROFILE_SCHEMA_RUNTIME_REPAIR_FULL_CHANGED_COHORT.length);
   });
 });
 

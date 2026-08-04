@@ -28,6 +28,9 @@ CREATE TABLE IF NOT EXISTS customers (
   deal_amount REAL,
   paid_at TEXT,
   closed_at TEXT,
+  current_stage_card_id TEXT,
+  battle_card_status TEXT NOT NULL DEFAULT 'NONE',
+  last_battle_review_at TEXT,
   notes TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL

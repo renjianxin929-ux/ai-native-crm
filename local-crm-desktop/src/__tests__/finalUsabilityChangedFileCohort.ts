@@ -489,6 +489,31 @@ export const BATTLE_CARD_UI_V1_R6_TRACKED_CHANGED_FILES = [
   ...BATTLE_CARD_UI_V1_R4_TRACKED_CHANGED_FILES,
   'src/__tests__/battleCard.parser.focused.test.ts',
 ] as const;
+
+/**
+ * Fresh Profile Schema Runtime Repair（2026-08-04）：默认构建的 Schema 初始化
+ * single-flight、旧库指针补齐与 Customer 投影闭合合同。该集合刻意不包含 UI、
+ * Parser、Fact Authority、事务或 Provider 文件。
+ */
+export const FRESH_PROFILE_SCHEMA_RUNTIME_REPAIR_FULL_CHANGED_COHORT = [
+  'src-tauri/migrations/001_initial.sql',
+  'src-tauri/migrations/005_customer_battle_card.sql',
+  'src/__tests__/battleCard.dataFidelity.focused.test.ts',
+  'src/__tests__/finalUsabilityChangedFileCohort.ts',
+  'src/__tests__/freshProfileSchemaRuntime.repair.test.ts',
+  'src/lib/db.ts',
+] as const;
+
+export const FRESH_PROFILE_SCHEMA_RUNTIME_REPAIR_SRC_CHANGED_COHORT = FRESH_PROFILE_SCHEMA_RUNTIME_REPAIR_FULL_CHANGED_COHORT
+  .filter(file => file.startsWith('src/')) as readonly string[];
+
+export const FRESH_PROFILE_SCHEMA_RUNTIME_REPAIR_TRACKED_CHANGED_COHORT = [
+  'src-tauri/migrations/001_initial.sql',
+  'src-tauri/migrations/005_customer_battle_card.sql',
+  'src/__tests__/battleCard.dataFidelity.focused.test.ts',
+  'src/__tests__/finalUsabilityChangedFileCohort.ts',
+  'src/lib/db.ts',
+] as const;
 export const BATTLE_CARD_UI_V1_R3_FULL_CHANGED_COHORT = [
   ...BATTLE_CARD_UI_V1_R2_FULL_CHANGED_COHORT,
   'src-tauri/src/battle_card_authoritative.rs',
@@ -558,7 +583,10 @@ export function hasExactFinalUsabilityChangedFileSet(actualFiles: readonly strin
     || hasSameNormalizedFileSet(actualFiles, BATTLE_CARD_UI_V1_R6_CHANGED_FILES)
     || hasSameNormalizedFileSet(actualFiles, BATTLE_CARD_UI_V1_R6_SRC_CHANGED_FILES)
     || hasSameNormalizedFileSet(actualFiles, BATTLE_CARD_UI_V1_R6_SRC_PACKAGE_CHANGED_FILES)
-    || hasSameNormalizedFileSet(actualFiles, BATTLE_CARD_UI_V1_R6_TRACKED_CHANGED_FILES);
+    || hasSameNormalizedFileSet(actualFiles, BATTLE_CARD_UI_V1_R6_TRACKED_CHANGED_FILES)
+    || hasSameNormalizedFileSet(actualFiles, FRESH_PROFILE_SCHEMA_RUNTIME_REPAIR_FULL_CHANGED_COHORT)
+    || hasSameNormalizedFileSet(actualFiles, FRESH_PROFILE_SCHEMA_RUNTIME_REPAIR_SRC_CHANGED_COHORT)
+    || hasSameNormalizedFileSet(actualFiles, FRESH_PROFILE_SCHEMA_RUNTIME_REPAIR_TRACKED_CHANGED_COHORT);
 }
 
 export function hasExactFinalUsabilityTrackedChangedFileSet(actualFiles: readonly string[]): boolean {

@@ -14,6 +14,8 @@ export interface DatabaseLike {
 
 let dbInstance: DatabaseLike | null = null;
 let dbInitError: string | null = null;
+let dbInitialization: Promise<DatabaseLike> | null = null;
+let databaseLoaderForTests: (() => Promise<DatabaseLike>) | null = null;
 
 /**
  * 测试后门（与 sessionWriteStateStore.__resetSessionWriteStateStoreForTests 同惯例）：
@@ -23,30 +25,50 @@ let dbInitError: string | null = null;
 export function __setDbInstanceForTests(db: DatabaseLike | null): void {
   dbInstance = db;
   dbInitError = null;
+  dbInitialization = null;
+}
+
+/** Test-only seam for initialization race/failure coverage; production always loads the Tauri SQL plugin. */
+export function __setDatabaseLoaderForTests(loader: (() => Promise<DatabaseLike>) | null): void {
+  databaseLoaderForTests = loader;
+  dbInstance = null;
+  dbInitError = null;
+  dbInitialization = null;
 }
 
 async function getDb(): Promise<DatabaseLike> {
   if (dbInstance) return dbInstance;
+  if (dbInitError) throw new Error(dbInitError);
 
-  try {
-    const { default: Database } = await import('@tauri-apps/plugin-sql');
-    const loadedDb = await Database.load('sqlite:personal-crm.db');
-    await initializeDatabaseSchema(loadedDb);
-    dbInstance = loadedDb;
-    return loadedDb;
-  } catch (e: unknown) {
-    const errMsg = e instanceof Error ? e.message : String(e);
+  if (!dbInitialization) {
+    dbInitialization = (async () => {
+      try {
+        const loadedDb = databaseLoaderForTests
+          ? await databaseLoaderForTests()
+          : await (async () => {
+            const { default: Database } = await import('@tauri-apps/plugin-sql');
+            return Database.load('sqlite:personal-crm.db') as Promise<DatabaseLike>;
+          })();
+        await initializeDatabaseSchema(loadedDb);
+        dbInstance = loadedDb;
+        return loadedDb;
+      } catch (e: unknown) {
+        const errMsg = e instanceof Error ? e.message : String(e);
 
-    // 仅测试环境允许显式启用内存 DB
-    if (import.meta.env.VITE_ALLOW_MEMORY_DB === 'true') {
-      console.warn('Tauri SQL 不可用，测试环境使用内存存储');
-      dbInstance = createMemoryDb();
-      return dbInstance;
-    }
+        // 仅测试环境允许显式启用内存 DB
+        if (!databaseLoaderForTests && import.meta.env.VITE_ALLOW_MEMORY_DB === 'true') {
+          console.warn('Tauri SQL 不可用，测试环境使用内存存储');
+          dbInstance = createMemoryDb();
+          return dbInstance;
+        }
 
-    dbInitError = `数据库初始化失败: ${errMsg}`;
-    throw new Error(dbInitError, { cause: e });
+        dbInitError = `数据库初始化失败: ${errMsg}`;
+        throw new Error(dbInitError, { cause: e });
+      }
+    })();
   }
+
+  return dbInitialization;
 }
 
 export async function initializeDatabaseSchema(db: DatabaseLike): Promise<void> {
@@ -55,6 +77,41 @@ export async function initializeDatabaseSchema(db: DatabaseLike): Promise<void> 
   await ensureLeadWorkbenchSchema(db);
   await ensureCustomerMemorySchema(db);
   await ensureBattleCardSchema(db);
+}
+
+/**
+ * Closed customer projection used by every customer read. The order is an
+ * application contract, never the physical order produced by `SELECT *`.
+ */
+export const CUSTOMER_ROW_DECODER_FIELDS = [
+  'id', 'name', 'customer_grade', 'stage', 'contact_method', 'wechat_id',
+  'phone_number', 'wechat_search_status', 'is_key_decision_maker', 'wechat_add_status', 'has_replied',
+  'intent_level', 'phone_feedback', 'can_schedule_visit', 'visit_scheduled_at',
+  'rough_visit_time_text', 'parsed_visit_reminder_at', 'time_parse_status',
+  'time_parse_note', 'next_follow_up_at', 'last_contacted_at', 'last_feedback_type',
+  'next_action', 'no_show_count', 'lost_reason', 'payment_status', 'deal_amount',
+  'paid_at', 'closed_at', 'website', 'region', 'industry',
+  'contact_person', 'email', 'address', 'pitch_angle', 'qualification_reason', 'source',
+  'current_stage_card_id', 'battle_card_status', 'last_battle_review_at',
+  'notes', 'created_at', 'updated_at',
+] as const;
+
+export const CUSTOMER_SELECT_PROJECTION = CUSTOMER_ROW_DECODER_FIELDS.join(', ');
+
+export function decodeCustomerRow(row: Record<string, unknown>): Customer {
+  const missing = CUSTOMER_ROW_DECODER_FIELDS.filter(field => !Object.prototype.hasOwnProperty.call(row, field));
+  if (missing.length > 0) {
+    throw new Error(`Customer row projection mismatch: missing ${missing.join(', ')}`);
+  }
+  return row as unknown as Customer;
+}
+
+async function selectCustomerRows(db: DatabaseLike, suffix: string, bindings: unknown[] = []): Promise<Customer[]> {
+  const rows = await db.select<Record<string, unknown>>(
+    `SELECT ${CUSTOMER_SELECT_PROJECTION} FROM customers ${suffix}`,
+    bindings,
+  );
+  return rows.map(decodeCustomerRow);
 }
 
 const BASE_SCHEMA_SQL = [
@@ -97,6 +154,9 @@ const BASE_SCHEMA_SQL = [
     pitch_angle TEXT,
     qualification_reason TEXT,
     source TEXT,
+    current_stage_card_id TEXT,
+    battle_card_status TEXT NOT NULL DEFAULT 'NONE',
+    last_battle_review_at TEXT,
     notes TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
@@ -241,7 +301,7 @@ function createMemoryDb(): DatabaseLike {
       if (trimmed.startsWith('insert')) {
         const table = extractTable(sql);
         if (table && store[table]) {
-          store[table].push(buildRow(table, bindings));
+          store[table].push(buildRow(table, sql, bindings));
         }
       } else if (trimmed.startsWith('update')) {
         const table = extractTable(sql);
@@ -301,12 +361,26 @@ function extractTable(sql: string): string {
   return match ? match[1] : '';
 }
 
-function buildRow(table: string, bindings: unknown[]): Record<string, unknown> {
+function buildRow(table: string, sql: string, bindings: unknown[]): Record<string, unknown> {
   const row: Record<string, unknown> = {};
-  const cols = getColumnsForTable(table);
+  const insertColumns = sql.match(/INSERT\s+INTO\s+\w+\s*\(([\s\S]*?)\)\s*VALUES/i)?.[1];
+  const cols = insertColumns
+    ? insertColumns.split(',').map(column => column.trim()).filter(Boolean)
+    : getColumnsForTable(table);
   cols.forEach((col, i) => {
     if (i < bindings.length) row[col] = bindings[i];
   });
+  if (table === 'customers') {
+    const defaults: Record<string, unknown> = {
+      customer_grade: 'C', stage: 'NEW_LEAD', wechat_add_status: 'NOT_ADDED', has_replied: 0,
+      intent_level: 'UNKNOWN', can_schedule_visit: 0, time_parse_status: 'NOT_PARSED',
+      last_feedback_type: 'UNKNOWN', no_show_count: 0, payment_status: 'NOT_STARTED',
+      battle_card_status: 'NONE',
+    };
+    for (const column of getColumnsForTable(table)) {
+      if (!Object.prototype.hasOwnProperty.call(row, column)) row[column] = defaults[column] ?? null;
+    }
+  }
   return row;
 }
 
@@ -398,12 +472,12 @@ export async function createCustomer(
 
 export async function listCustomers(): Promise<Customer[]> {
   const db = await getDb();
-  return db.select<Customer>('SELECT * FROM customers ORDER BY updated_at DESC');
+  return selectCustomerRows(db, 'ORDER BY updated_at DESC');
 }
 
 export async function getCustomer(id: string): Promise<Customer | null> {
   const db = await getDb();
-  const rows = await db.select<Customer>('SELECT * FROM customers WHERE id = ?', [id]);
+  const rows = await selectCustomerRows(db, 'WHERE id = ?', [id]);
   return rows[0] || null;
 }
 
@@ -543,10 +617,7 @@ export async function searchCustomersInDb(
   const limit = Math.min(Math.max(filters.limit ?? 50, 1), 50);
   const offset = Math.max(filters.offset ?? 0, 0);
   // LIMIT/OFFSET are trusted integers from this function, never from model output.
-  return db.select<Customer>(
-    `SELECT * FROM customers ${where} ORDER BY updated_at DESC LIMIT ${limit} OFFSET ${offset}`,
-    bindings,
-  );
+  return selectCustomerRows(db, `${where} ORDER BY updated_at DESC LIMIT ${limit} OFFSET ${offset}`, bindings);
 }
 
 /** Exact COUNT for the same parameterized filters used by searchCustomersInDb. */
@@ -608,11 +679,11 @@ export function createCrmRepository(db: DatabaseLike, now: () => string = () => 
       return countCustomersInDb(db, { ...filters, now: filters.now ?? now() });
     },
     async getCustomer(id: string): Promise<Customer | null> {
-      const rows = await db.select<Customer>('SELECT * FROM customers WHERE id = ?', [id]);
+      const rows = await selectCustomerRows(db, 'WHERE id = ?', [id]);
       return rows[0] || null;
     },
     async listCustomers(): Promise<Customer[]> {
-      return db.select<Customer>('SELECT * FROM customers ORDER BY updated_at DESC');
+      return selectCustomerRows(db, 'ORDER BY updated_at DESC');
     },
   };
 }

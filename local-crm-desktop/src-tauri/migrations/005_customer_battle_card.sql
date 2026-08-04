@@ -91,7 +91,6 @@ CREATE INDEX IF NOT EXISTS idx_reviewed_facts_customer ON reviewed_facts(custome
 CREATE INDEX IF NOT EXISTS idx_customer_hypotheses_customer ON customer_hypotheses(customer_id, status);
 CREATE INDEX IF NOT EXISTS idx_customer_stage_cards_customer ON customer_stage_cards(customer_id, stage_code, version DESC);
 
--- customers 主表最小指针字段（仅缺失时添加）
-ALTER TABLE customers ADD COLUMN current_stage_card_id TEXT;
-ALTER TABLE customers ADD COLUMN battle_card_status TEXT NOT NULL DEFAULT 'NONE';
-ALTER TABLE customers ADD COLUMN last_battle_review_at TEXT;
+-- customers 主表指针字段由 001 的新库基线一次性创建。
+-- 旧库由运行时 ensureBattleCardCustomerPointers 先 PRAGMA table_info 再逐列补齐；
+-- 此处绝不执行无条件 ALTER TABLE，以免第二次启动或并发初始化重复添加列。
