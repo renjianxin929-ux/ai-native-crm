@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "e2e-webdriver",
+  "description": "e2e-only capability: embedded W3C WebDriver server (tauri-plugin-wdio-webdriver). Loaded only for e2e builds via build.rs capabilities_path_pattern; production builds narrow the ACL to capabilities/default.json and never reference this permission.",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "wdio-webdriver:default"
+  ]
+}

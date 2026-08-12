@@ -514,6 +514,60 @@ export const FRESH_PROFILE_SCHEMA_RUNTIME_REPAIR_TRACKED_CHANGED_COHORT = [
   'src/__tests__/finalUsabilityChangedFileCohort.ts',
   'src/lib/db.ts',
 ] as const;
+
+/**
+ * Mac Real-App Customer Discovery Fix（2026-08-12）：filterNormalization 名称-地区词
+ * 冲突修复（完整客户名内嵌地区词被 KNOWN_REGIONS 抢占为 region 过滤，导致真实
+ * Mac DB 中 region 为空的客户无法通过名称解析）+ macOS 真实 GUI E2E 基础设施
+ * （嵌入式 WebDriver server 注册 + E2E 驱动脚本 macOS 适配）+ 本次变更的守卫登记文件。
+ */
+export const MAC_REAL_APP_CUSTOMER_DISCOVERY_FIX_FULL_CHANGED_COHORT = [
+  'src/lib/salesAgentTools/filterNormalization.ts',
+  'src/__tests__/battleCard.dataFidelity.focused.test.ts',
+  'src/__tests__/finalUsabilityChangedFileCohort.ts',
+  'src/__tests__/salesAgentPortfolioSearch.focused.test.ts',
+  'src/__tests__/confirmedActionContract.readiness.test.ts',
+  'src/__tests__/modelRouterRuntime.readiness.test.ts',
+  'src/__tests__/readOnlyAgent.readiness.test.ts',
+  'src/__tests__/readOnlyAgentLiveDryRun.readiness.test.ts',
+  'src/__tests__/readOnlyAgentSnapshotAdapter.readiness.test.ts',
+  'src/__tests__/readOnlySnapshotLoader.readiness.test.ts',
+  'src/__tests__/suggestOnlyAgent.readiness.test.ts',
+  'src/__tests__/tauriE2EIsolation.focused.test.ts',
+  'scripts/real_tauri_e2e.py',
+  'src-tauri/Cargo.lock',
+  'src-tauri/Cargo.toml',
+  'src-tauri/build.rs',
+  'src-tauri/capabilities/e2e-webdriver.json',
+  'src-tauri/src/lib.rs',
+  'src-tauri/tauri.e2e.conf.json',
+] as const;
+
+export const MAC_REAL_APP_CUSTOMER_DISCOVERY_FIX_SRC_CHANGED_COHORT = MAC_REAL_APP_CUSTOMER_DISCOVERY_FIX_FULL_CHANGED_COHORT
+  .filter(file => file.startsWith('src/')) as readonly string[];
+
+/**
+ * V0.1 Release Candidate（2026-08-12 二审）：在 Mac Real-App Customer Discovery Fix
+ * 19 文件基础上，追加 V0.1 版本元数据调整（package.json / tauri.conf.json /
+ * Cargo.toml / Cargo.lock / src/lib/version.ts / src/__tests__/version.test.ts 中
+ * 不在 MAC cohort 的部分）。纯 release metadata，不涉及业务行为。
+ */
+export const V0_1_RC_FULL_CHANGED_COHORT = [
+  ...MAC_REAL_APP_CUSTOMER_DISCOVERY_FIX_FULL_CHANGED_COHORT,
+  'package.json',
+  'src-tauri/tauri.conf.json',
+  'src/lib/version.ts',
+  'src/__tests__/version.test.ts',
+  'V0_1_RC_ARTIFACT_MANIFEST.md',
+] as const;
+
+/** src/ 前缀口径的 V0.1 RC cohort（readiness 守卫只收集 src/ 文件）。 */
+export const V0_1_RC_SRC_CHANGED_COHORT = V0_1_RC_FULL_CHANGED_COHORT
+  .filter(file => file.startsWith('src/')) as readonly string[];
+
+/** src/ + package.json（readiness 守卫的 src/+package.json+lock.yaml 口径）。 */
+export const V0_1_RC_SRC_PACKAGE_CHANGED_COHORT = V0_1_RC_FULL_CHANGED_COHORT
+  .filter(file => file.startsWith('src/') || file === 'package.json') as readonly string[];
 export const BATTLE_CARD_UI_V1_R3_FULL_CHANGED_COHORT = [
   ...BATTLE_CARD_UI_V1_R2_FULL_CHANGED_COHORT,
   'src-tauri/src/battle_card_authoritative.rs',
@@ -586,7 +640,12 @@ export function hasExactFinalUsabilityChangedFileSet(actualFiles: readonly strin
     || hasSameNormalizedFileSet(actualFiles, BATTLE_CARD_UI_V1_R6_TRACKED_CHANGED_FILES)
     || hasSameNormalizedFileSet(actualFiles, FRESH_PROFILE_SCHEMA_RUNTIME_REPAIR_FULL_CHANGED_COHORT)
     || hasSameNormalizedFileSet(actualFiles, FRESH_PROFILE_SCHEMA_RUNTIME_REPAIR_SRC_CHANGED_COHORT)
-    || hasSameNormalizedFileSet(actualFiles, FRESH_PROFILE_SCHEMA_RUNTIME_REPAIR_TRACKED_CHANGED_COHORT);
+    || hasSameNormalizedFileSet(actualFiles, FRESH_PROFILE_SCHEMA_RUNTIME_REPAIR_TRACKED_CHANGED_COHORT)
+    || hasSameNormalizedFileSet(actualFiles, MAC_REAL_APP_CUSTOMER_DISCOVERY_FIX_FULL_CHANGED_COHORT)
+    || hasSameNormalizedFileSet(actualFiles, MAC_REAL_APP_CUSTOMER_DISCOVERY_FIX_SRC_CHANGED_COHORT)
+    || hasSameNormalizedFileSet(actualFiles, V0_1_RC_FULL_CHANGED_COHORT)
+    || hasSameNormalizedFileSet(actualFiles, V0_1_RC_SRC_CHANGED_COHORT)
+    || hasSameNormalizedFileSet(actualFiles, V0_1_RC_SRC_PACKAGE_CHANGED_COHORT);
 }
 
 export function hasExactFinalUsabilityTrackedChangedFileSet(actualFiles: readonly string[]): boolean {

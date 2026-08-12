@@ -19,7 +19,162 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from playwright.sync_api import Page, sync_playwright
+# macOS has no Chromium CDP in WKWebView; the e2e app embeds a W3C WebDriver
+# server (tauri-plugin-wdio-webdriver) instead. The shims below expose the
+# playwright subset this script uses over selenium's WebDriver client.
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import NoSuchElementException
+
+
+class _PlaywrightCompat:
+    """Dummy sync_playwright() context so run_independent_full keeps its structure."""
+
+    chromium = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args: Any) -> bool:
+        return False
+
+
+def _xpath_attr_text(tag: str, name: str, exact: bool) -> str:
+    attr = f"@aria-label='{name}'" if exact else f"contains(@aria-label,'{name}')"
+    text = f"normalize-space()='{name}'" if exact else f"contains(normalize-space(),'{name}')"
+    return f"({tag}[{attr}] | {tag}[{text}])"
+
+
+class CompatLocator:
+    """Minimal playwright-locator-compatible wrapper over a selenium element query."""
+
+    def __init__(self, driver: Any, by: str, value: str) -> None:
+        self.driver = driver
+        self.by = by
+        self.value = value
+
+    def _all(self) -> list[Any]:
+        return list(self.driver.find_elements(self.by, self.value))
+
+    def _first_visible_or_first(self) -> Any:
+        for element in self._all():
+            if element.is_displayed():
+                return element
+        elements = self._all()
+        if elements:
+            return elements[0]
+        raise NoSuchElementException(f"no element for {self.by}={self.value}")
+
+    def wait_for(self, state: str = "visible", timeout: int = 15000) -> "CompatLocator":
+        condition = EC.visibility_of_element_located if state == "visible" else EC.invisibility_of_element_located
+        WebDriverWait(self.driver, timeout / 1000).until(condition((self.by, self.value)))
+        return self
+
+    def click(self, force: bool = False) -> "CompatLocator":
+        self._first_visible_or_first().click()
+        return self
+
+    def fill(self, text: str) -> "CompatLocator":
+        element = self._first_visible_or_first()
+        element.clear()
+        element.send_keys(text)
+        return self
+
+    def count(self) -> int:
+        return len(self._all())
+
+    @property
+    def first(self) -> "CompatLocator":
+        return self
+
+    def is_visible(self) -> bool:
+        return any(element.is_displayed() for element in self._all())
+
+    def get_attribute(self, name: str) -> str | None:
+        elements = self._all()
+        for element in elements:
+            if element.is_displayed():
+                return element.get_attribute(name)
+        return elements[0].get_attribute(name) if elements else None
+
+    def inner_text(self) -> str:
+        elements = self._all()
+        return elements[0].text if elements else ""
+
+    def set_input_files(self, paths: Any) -> "CompatLocator":
+        element = self._first_visible_or_first()
+        path_text = str(paths)
+        # The embedded WKWebView WebDriver server cannot set file inputs via
+        # send_keys (JS value setter throws InvalidStateError). Inject the file
+        # through a DataTransfer so React's change handler receives it.
+        import base64 as _base64
+        import json as _json
+        from pathlib import Path as _Path
+        path = _Path(path_text)
+        data = _base64.b64encode(path.read_bytes()).decode("ascii")
+        mime = {
+            ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+            ".webp": "image/webp", ".ico": "image/x-icon",
+        }.get(path.suffix.lower(), "application/octet-stream")
+        name_js = _json.dumps(path.name)
+        script = (
+            "var input = arguments[0];"
+            f"var bytes = Uint8Array.from(atob('{data}'), function(c) {{ return c.charCodeAt(0); }});"
+            f"var file = new File([bytes], {name_js}, {{ type: '{mime}' }});"
+            "var dt = new DataTransfer();"
+            "dt.items.add(file);"
+            "input.files = dt.files;"
+            "input.dispatchEvent(new Event('change', { bubbles: true }));"
+            "return input.files.length;"
+        )
+        self.driver.execute_script(script, element)
+        return self
+
+
+class CompatPage:
+    """playwright Page-compatible subset backed by selenium (macOS WebDriver)."""
+
+    def __init__(self, driver: Any) -> None:
+        self.driver = driver
+
+    def get_by_label(self, name: str) -> CompatLocator:
+        xpath = f"(//*[@aria-label='{name}'] | //label[normalize-space()='{name}']/following-sibling::*[1] | //textarea[@placeholder='{name}'] | //input[@placeholder='{name}'])"
+        return CompatLocator(self.driver, By.XPATH, xpath)
+
+    def get_by_role(self, role: str, name: str | None = None, exact: bool = False) -> CompatLocator:
+        label = name or ""
+        if role == "button":
+            xpath = _xpath_attr_text("//button", label, exact)
+        elif role == "region":
+            match = f"@aria-label='{label}'" if exact else f"contains(@aria-label,'{label}')"
+            xpath = f"(//*[@role='region' and {match}] | //section[{match}])"
+        else:
+            xpath = f"(//*[@role='{role}'] | //*[contains(@aria-label,'{label}')])"
+        return CompatLocator(self.driver, By.XPATH, xpath)
+
+    def locator(self, css: str) -> CompatLocator:
+        return CompatLocator(self.driver, By.CSS_SELECTOR, css)
+
+    def wait_for_timeout(self, ms: int) -> None:
+        time.sleep(ms / 1000)
+
+    def wait_for_load_state(self, state: str = "domcontentloaded") -> None:
+        return None
+
+    def reload(self, wait_until: str | None = None) -> None:
+        self.driver.refresh()
+
+    def bring_to_front(self) -> None:
+        try:
+            self.driver.switch_to.window(self.driver.current_window_handle)
+        except Exception:
+            pass
+
+    def screenshot(self, path: str, full_page: bool = False) -> str:
+        self.driver.get_screenshot_as_file(str(path))
+        return str(path)
 
 
 TERMINAL_STAGES = {"candidate", "portfolio", "clarification", "result", "proposal", "confirmation", "success", "error", "input"}
@@ -151,7 +306,7 @@ def db_snapshot(path: Path) -> dict[str, Any]:
                 "mtime_ns": companion.stat().st_mtime_ns,
                 "sha256": hashlib.sha256(companion.read_bytes()).hexdigest(),
             })
-    connection = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    connection = sqlite3.connect(str(path))
     connection.row_factory = sqlite3.Row
     try:
         result["quick_check"] = connection.execute("PRAGMA quick_check").fetchone()[0]
@@ -349,6 +504,10 @@ class VideoRecorder:
         (root / "videos").mkdir(parents=True, exist_ok=True)
 
     def start(self, name: str) -> str:
+        if shutil.which("ffmpeg") is None:
+            # Video evidence is optional; degrade to no-op when ffmpeg is absent.
+            self.active[name] = None
+            return ""
         path = self.root / "videos" / f"{name}.mp4"
         process = subprocess.Popen([
             "ffmpeg", "-y", "-f", "gdigrab", "-framerate", "8", "-i", "desktop",
@@ -360,7 +519,7 @@ class VideoRecorder:
 
     def stop(self, name: str) -> None:
         process = self.active.pop(name, None)
-        if not process:
+        if process is None:
             return
         if process.stdin:
             try:
@@ -917,8 +1076,10 @@ def wait_for_port_closed(port: int, timeout_seconds: float = 15) -> None:
 
 
 def sqlite_online_backup(source: Path, destination: Path) -> None:
+    if not source.exists():
+        raise FileNotFoundError(f"Backup source database is missing: {source}")
     destination.parent.mkdir(parents=True, exist_ok=True)
-    source_connection = sqlite3.connect(f"file:{source}?mode=ro", uri=True)
+    source_connection = sqlite3.connect(str(source))
     destination_connection = sqlite3.connect(destination)
     try:
         source_connection.backup(destination_connection)
@@ -941,28 +1102,32 @@ def restore_isolated_e2e_database(source: Path, destination: Path) -> None:
 def stop_process_tree(process: subprocess.Popen[Any]) -> None:
     if process.poll() is not None:
         return
-    subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+    if platform.system() == "Windows":
+        subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+    else:
+        try:
+            # The e2e app / vite are spawned with start_new_session=True so their
+            # process group is separate from this script; killpg never hits us.
+            os.killpg(os.getpgid(process.pid), 9)  # macOS/Linux: kill the whole process group
+        except (ProcessLookupError, PermissionError):
+            process.kill()
     process.wait(timeout=8)
 
 
-def connect_tauri_page(playwright: Any, cdp: str, timeout_seconds: float = 45, process: subprocess.Popen[Any] | None = None) -> tuple[Any, Page]:
+def connect_tauri_page(webdriver_url: str, timeout_seconds: float = 45, process: subprocess.Popen[Any] | None = None) -> tuple[Any, CompatPage]:
     deadline = time.monotonic() + timeout_seconds
     last_error: Exception | None = None
     while time.monotonic() < deadline:
         if process is not None and process.poll() is not None:
-            raise RuntimeError(f"Tauri E2E process exited before CDP became ready: exit={process.returncode}")
+            raise RuntimeError(f"Tauri E2E process exited before WebDriver became ready: exit={process.returncode}")
         try:
-            browser = playwright.chromium.connect_over_cdp(cdp)
-            pages = [page for context in browser.contexts for page in context.pages]
-            if pages:
-                page = next((candidate for candidate in pages if "127.0.0.1:5173" in candidate.url), pages[0])
-                page.bring_to_front()
-                return browser, page
-            browser.close()
-        except Exception as cause:  # Playwright exposes transport-specific subclasses.
+            driver = webdriver.Remote(command_executor=webdriver_url, options=webdriver.ChromeOptions())
+            driver.set_page_load_timeout(15)
+            return driver, CompatPage(driver)
+        except Exception as cause:  # WebDriverException subclasses cover transport errors.
             last_error = cause
         time.sleep(0.5)
-    raise TimeoutError(f"Tauri CDP page did not appear at {cdp}: {last_error}")
+    raise TimeoutError(f"Tauri WebDriver page did not appear at {webdriver_url}: {last_error}")
 
 
 def run_independent_full(args: argparse.Namespace, evidence_root: Path) -> None:
@@ -982,7 +1147,10 @@ def run_independent_full(args: argparse.Namespace, evidence_root: Path) -> None:
     sqlite_online_backup(baseline_source, baseline_db)
     live_pre_run = evidence_root / "scenario-databases" / "live-e2e-db-pre-run" / "personal-crm.db"
     sqlite_online_backup(live_e2e_db, live_pre_run)
-    normal_db = Path(os.environ.get("APPDATA", r"C:\Users\Administrator\AppData\Roaming")) / "com.localcrm.desktop" / "personal-crm.db"
+    if platform.system() == "Windows":
+        normal_db = Path(os.environ.get("APPDATA", r"C:\Users\Administrator\AppData\Roaming")) / "com.localcrm.desktop" / "personal-crm.db"
+    else:
+        normal_db = Path.home() / "Library" / "Application Support" / "com.localcrm.desktop" / "personal-crm.db"
     normal_before = db_snapshot(normal_db)
     (evidence_root / "normal-db-before.json").write_text(json.dumps(normal_before, ensure_ascii=False, indent=2, default=str) + "\n", encoding="utf-8")
     environment_manifest = {
@@ -1017,8 +1185,40 @@ def run_independent_full(args: argparse.Namespace, evidence_root: Path) -> None:
     videos = VideoRecorder(evidence_root)
     shared_video_paths: dict[str, str] = {}
     results: list[dict[str, Any]] = []
+    # macOS debug builds load the dev server URL. Ensure a VITE_E2E_PROFILE
+    # dev server is running on 5173, spawning it when absent (and stopping it
+    # when this script started it).
+    vite_process: subprocess.Popen[Any] | None = None
+    popen_kwargs: dict[str, Any] = {}
+    if platform.system() != "Windows":
+        # Separate session so stop_process_tree's killpg cannot reach this script.
+        popen_kwargs["start_new_session"] = True
     try:
-        with sync_playwright() as playwright:
+        with socket.socket() as probe:
+            vite_running = probe.connect_ex(("127.0.0.1", 5173)) == 0
+        if not vite_running:
+            vite_env = os.environ.copy()
+            vite_env["VITE_E2E_PROFILE"] = "1"
+            vite_process = subprocess.Popen(
+                ["npm", "run", "dev", "--", "--port", "5173", "--strictPort"],
+                cwd=repo, env=vite_env,
+                stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT,
+                **popen_kwargs,
+            )
+            deadline = time.monotonic() + 60
+            while time.monotonic() < deadline:
+                with socket.socket() as probe:
+                    if probe.connect_ex(("127.0.0.1", 5173)) == 0:
+                        break
+                if vite_process.poll() is not None:
+                    raise RuntimeError(f"vite dev server exited early: {vite_process.returncode}")
+                time.sleep(0.5)
+    except Exception:
+        if vite_process is not None:
+            stop_process_tree(vite_process)
+        raise
+    try:
+        with _PlaywrightCompat() as playwright:
             scenario_numbers = [args.scenario] if args.scenario is not None else list(range(1, 45))
             for number in scenario_numbers:
                 if number == 1:
@@ -1043,6 +1243,7 @@ def run_independent_full(args: argparse.Namespace, evidence_root: Path) -> None:
                 app_log = (log_dir / f"{scenario_id}-tauri.log").open("wb")
                 app_env = os.environ.copy()
                 app_env["VITE_E2E_PROFILE"] = "1"
+                app_env["TAURI_WEBDRIVER_PORT"] = "4445"
                 app_env["AI_NATIVE_CRM_E2E_EVIDENCE_ROOT"] = str(evidence_root)
                 if number == 15:
                     app_env["AI_NATIVE_CRM_E2E_UNCONFIGURED_CAPABILITIES"] = "SEMANTIC_INTENT_ROUTING"
@@ -1053,10 +1254,10 @@ def run_independent_full(args: argparse.Namespace, evidence_root: Path) -> None:
                 try:
                     last_start_error: Exception | None = None
                     for start_attempt in range(1, 3):
-                        wait_for_port_closed(9223)
-                        app = subprocess.Popen([str(app_binary)], cwd=repo, env=app_env, stdout=app_log, stderr=subprocess.STDOUT)
+                        wait_for_port_closed(4445)
+                        app = subprocess.Popen([str(app_binary)], cwd=repo, env=app_env, stdout=app_log, stderr=subprocess.STDOUT, **popen_kwargs)
                         try:
-                            browser, page = connect_tauri_page(playwright, args.cdp, process=app)
+                            browser, page = connect_tauri_page(args.webdriver, process=app)
                             break
                         except Exception as cause:
                             last_start_error = cause
@@ -1073,12 +1274,12 @@ def run_independent_full(args: argparse.Namespace, evidence_root: Path) -> None:
                 finally:
                     if browser is not None:
                         try:
-                            browser.close()
+                            browser.quit()
                         except Exception:
                             pass
                     if app is not None:
                         stop_process_tree(app)
-                    wait_for_port_closed(9223)
+                    wait_for_port_closed(4445)
                     app_log.close()
                 sqlite_online_backup(live_e2e_db, scenario_root / "personal-crm-after.db")
 
@@ -1097,6 +1298,8 @@ def run_independent_full(args: argparse.Namespace, evidence_root: Path) -> None:
         write_results(evidence_root, results)
     finally:
         videos.stop_all()
+        if vite_process is not None:
+            stop_process_tree(vite_process)
         restore_isolated_e2e_database(live_pre_run, live_e2e_db)
 
     normal_after = db_snapshot(normal_db)
@@ -1165,7 +1368,7 @@ def capture_smoke(page: Page, evidence_root: Path) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--evidence-root", required=True)
-    parser.add_argument("--cdp", default="http://127.0.0.1:9223")
+    parser.add_argument("--webdriver", default="http://127.0.0.1:4445")
     parser.add_argument("--e2e-db", default=r"C:\Users\Administrator\AppData\Roaming\com.localcrm.desktop.e2e\personal-crm.db")
     parser.add_argument("--baseline-db")
     parser.add_argument("--full", action="store_true")
@@ -1185,18 +1388,15 @@ def main() -> None:
     if args.independent_full or args.full or args.scenario is not None:
         run_independent_full(args, evidence_root)
         return
-    with sync_playwright() as playwright:
-        browser = playwright.chromium.connect_over_cdp(args.cdp)
-        pages = [page for context in browser.contexts for page in context.pages]
-        if not pages:
-            raise RuntimeError("No visible Tauri WebView page exposed over CDP")
-        page = next((candidate for candidate in pages if "127.0.0.1:5173" in candidate.url), pages[0])
+    browser, page = connect_tauri_page(args.webdriver)
+    try:
         page.bring_to_front()
         if args.capture_smoke:
             capture_smoke(page, evidence_root)
         else:
             recon(page, evidence_root, args)
-        browser.close()
+    finally:
+        browser.quit()
 
 
 if __name__ == "__main__":

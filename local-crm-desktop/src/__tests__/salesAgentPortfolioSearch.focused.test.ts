@@ -92,6 +92,46 @@ describe('Sales Agent portfolio search', () => {
     expect(norm.is_customer_lookup).toBe(true);
   });
 
+  it('whole-utterance company name with embedded region word keeps full name_query (real-app discovery fix)', () => {
+    const norm = normalizeCustomerSearchFilters('广州ABC科技有限公司', NOW);
+    expect(norm.is_portfolio_query).toBe(false);
+    expect(norm.filters).toMatchObject({ name_query: '广州ABC科技有限公司' });
+    expect(norm.filters.region).toBeUndefined();
+    expect(norm.is_customer_lookup).toBe(true);
+  });
+
+  it('whole-utterance company name with embedded region AND industry words keeps full name_query', () => {
+    const norm = normalizeCustomerSearchFilters('广州生物科技有限公司', NOW);
+    expect(norm.is_portfolio_query).toBe(false);
+    expect(norm.filters).toMatchObject({ name_query: '广州生物科技有限公司' });
+    expect(norm.filters.region).toBeUndefined();
+    expect(norm.filters.industry).toBeUndefined();
+    expect(norm.is_customer_lookup).toBe(true);
+  });
+
+  it('browse phrase ending in company suffix stays a region portfolio query, not a name', () => {
+    for (const phrase of ['看看广州公司', '关注广州公司', '推荐广州公司']) {
+      const norm = normalizeCustomerSearchFilters(phrase, NOW);
+      expect(norm.is_portfolio_query).toBe(true);
+      expect(norm.filters).toMatchObject({ region: '广州' });
+      expect(norm.filters.name_query).toBeUndefined();
+    }
+  });
+
+  it('bare known region/industry token + company suffix stays a portfolio query', () => {
+    for (const phrase of ['广州公司', '生物公司']) {
+      const norm = normalizeCustomerSearchFilters(phrase, NOW);
+      expect(norm.is_portfolio_query).toBe(true);
+      expect(norm.filters.name_query).toBeUndefined();
+    }
+  });
+
+  it('deictic "哪家公司" is not treated as an entity name', () => {
+    const norm = normalizeCustomerSearchFilters('哪家公司', NOW);
+    expect(norm.filters.name_query).toBeUndefined();
+    expect(norm.is_customer_lookup).toBe(false);
+  });
+
   it('executeSearchCustomersTool portfolio returns SQLite total_matches and page_size 20', async () => {
     const fixture = await openSalesAgentSqliteFixture();
     try {

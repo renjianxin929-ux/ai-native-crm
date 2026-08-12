@@ -135,6 +135,33 @@ function extractQuotedOrMarkedName(message: string): string | null {
   return null;
 }
 
+/**
+ * Strong company-name suffixes. Used to recognize a whole utterance as an
+ * entity name when no lookup verb / quote boundary is present, so that a name
+ * like "广州ABC科技有限公司" is not misread as a region-only portfolio query.
+ */
+const STRONG_COMPANY_NAME_SUFFIX = /(公司|有限|股份|集团|科技|实业)$/;
+
+function looksLikeWholeCompanyName(text: string): boolean {
+  const t = text.trim();
+  const core = t.replace(STRONG_COMPANY_NAME_SUFFIX, '');
+  return (
+    t.length >= 4 && t.length <= 40
+    && STRONG_COMPANY_NAME_SUFFIX.test(t)
+    && !/[的得做]/.test(t)
+    // Browse / compare / deictic phrases ending in a company suffix are NOT
+    // entity names ("并排看这些公司", "所有公司", "哪家公司", "看看广州公司").
+    && !/(这些|那些|这家|那家|哪家|所有|全部|并排|哪些|什么|怎么|看看|看下|查看|了解|关注|推荐|这家公司|那家公司)/.test(t)
+    // A bare "known region/industry token + company suffix" is a browse phrase
+    // ("广州公司", "生物公司"), not an entity name. Multi-token company names
+    // like "广州生物科技有限公司" keep the full name_query.
+    && !((KNOWN_REGIONS as readonly string[]).includes(core) || (KNOWN_INDUSTRIES as readonly string[]).includes(core))
+    && !LOOKUP_VERB.test(t)
+    && !PORTFOLIO.test(t)
+    && !CLEAR_SCOPE.test(t)
+  );
+}
+
 /** Strip known structured filter tokens so leftover text can be treated as a name fragment. */
 function stripFilterTokens(raw: string, filters: NormalizedCustomerSearchFilters): string {
   let text = raw;
@@ -180,7 +207,12 @@ export function normalizeCustomerSearchFilters(message: string, nowIso?: string)
   const is_clear_scope = CLEAR_SCOPE.test(trimmed);
   const is_scoped_analysis = SCOPED_ANALYSIS.test(trimmed) && !LOOKUP_VERB.test(trimmed) && !is_explicit_switch;
 
-  const markedRaw = extractQuotedOrMarkedName(trimmed);
+  const extractedMarkedRaw = extractQuotedOrMarkedName(trimmed);
+  // A whole utterance that is itself a company name (no lookup verb / no browse
+  // phrase) must keep its name_query instead of degrading to region/industry
+  // structural filters — "广州ABC科技有限公司" is an entity, not a region browse.
+  const wholeCompanyNameCandidate = !extractedMarkedRaw && looksLikeWholeCompanyName(trimmed);
+  const markedRaw = extractedMarkedRaw ?? (wholeCompanyNameCandidate ? trimmed : null);
   const hasExplicitQuotedName = /[「『""](.+?)[」』""]/.test(trimmed);
   const isDirectEntityLookup = Boolean(markedRaw && DIRECT_ENTITY_LOOKUP_VERB.test(trimmed));
   const markedRawIsStructuredPortfolioTarget = Boolean(
@@ -196,23 +228,34 @@ export function normalizeCustomerSearchFilters(message: string, nowIso?: string)
       }).length === 0,
   );
   // Company-name lookups may embed region/industry tokens (华南生物) — do not treat those as structural filters.
-  if (markedRaw && LOOKUP_VERB.test(trimmed) && !markedRawIsStructuredPortfolioTarget && !/[的得做]/.test(markedRaw)) {
-    if (region && markedRaw.length > region.length + 1
-      && (isDirectEntityLookup || markedRaw.startsWith(region))) {
+  const markedNameEntityBoundary = wholeCompanyNameCandidate
+    || LOOKUP_VERB.test(trimmed)
+    || Boolean(markedRaw && region && markedRaw.startsWith(region) && !/[的得做]/.test(markedRaw));
+  if (markedRaw && markedNameEntityBoundary && !markedRawIsStructuredPortfolioTarget && !/[的得做]/.test(markedRaw)) {
+    // A whole utterance that is itself the company name is an explicit entity
+    // boundary: every embedded region/industry token belongs to the name
+    // ("广州生物科技有限公司" must not keep industry=生物 and AND it dead).
+    if (wholeCompanyNameCandidate) {
       region = undefined;
-    }
-    if (industry && markedRaw.length > industry.length + 1
-      && (isDirectEntityLookup || markedRaw.endsWith(industry))) {
       industry = undefined;
+    } else {
+      if (region && markedRaw.length > region.length + 1
+        && (isDirectEntityLookup || markedRaw.startsWith(region))) {
+        region = undefined;
+      }
+      if (industry && markedRaw.length > industry.length + 1
+        && (isDirectEntityLookup || markedRaw.endsWith(industry))) {
+        industry = undefined;
+      }
     }
   }
   const structural = Boolean(region || industry || customer_grade || intent_level || inactive_days || stage);
   // Prefer structured filters — do not treat "广州做机械设备的" or "东莞的 A 类" as a customer name.
   let name_query: string | undefined;
-  if ((hasExplicitQuotedName || isDirectEntityLookup) && markedRaw) {
-    // Quotation is an explicit entity boundary. Preserve the full company name
-    // even when it happens to contain region/industry vocabulary (华南生物).
-    // Direct switch/open/search-by-name verbs provide the same entity boundary.
+  if ((hasExplicitQuotedName || isDirectEntityLookup || wholeCompanyNameCandidate) && markedRaw) {
+    // Quotation / direct-entity verb / whole-utterance-company-name is an explicit
+    // entity boundary. Preserve the full company name even when it contains
+    // region/industry vocabulary (华南生物, 广州生物科技有限公司).
     name_query = markedRaw;
   } else if (!structural && markedRaw) {
     name_query = markedRaw;

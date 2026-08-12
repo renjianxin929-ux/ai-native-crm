@@ -2,7 +2,7 @@
 name = "app"
 default-run = "app"
 autobins = false
-version = "0.4.0"
+version = "0.1.0"
 description = "A Tauri App"
 authors = ["you"]
 license = ""
@@ -14,7 +14,7 @@ rust-version = "1.77.2"
 default = []
 # Compile-time-only transport for the dedicated com.localcrm.desktop.e2e app.
 # Production builds do not activate or contain this execution branch.
-e2e = []
+e2e = ["dep:tauri-plugin-wdio-webdriver"]
 # Manual one-shot migration utility. Normal GUI builds and bundles do not enable it.
 migration-tool = []
 
@@ -34,7 +34,7 @@ path = "src/bin/migrate_plaintext_credentials.rs"
 required-features = ["migration-tool"]
 
 [build-dependencies]
-tauri-build = { version = "2.6.2", features = [] }
+tauri-build = { version = "2", features = [] }
 
 [dependencies]
 serde_json = "1.0"
@@ -55,3 +55,4 @@ sha2 = "0.10"
 keyring = { version = "3.6.3", features = ["apple-native"] }
 aes-gcm = "0.10"
 rand = "0.9.5"
+tauri-plugin-wdio-webdriver = { version = "1", optional = true }

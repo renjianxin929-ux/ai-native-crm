@@ -9,7 +9,7 @@ use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-  tauri::Builder::default()
+  let builder = tauri::Builder::default()
     .plugin(tauri_plugin_sql::Builder::default().build())
     .invoke_handler(tauri::generate_handler![
       battle_card_transactions::confirm_battle_card_import_atomic_v1,
@@ -39,7 +39,12 @@ pub fn run() {
         )?;
       }
       Ok(())
-    })
+    });
+  // Embedded W3C WebDriver server — e2e builds only, never in production.
+  // Enables real-GUI E2E automation on macOS (WKWebView has no external driver).
+  #[cfg(feature = "e2e")]
+  let builder = builder.plugin(tauri_plugin_wdio_webdriver::init());
+  builder
     .build(tauri::generate_context!())
     .expect("error while building tauri application")
     .run(|app_handle, event| {

@@ -7,7 +7,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-import { FRESH_PROFILE_SCHEMA_RUNTIME_REPAIR_FULL_CHANGED_COHORT } from './finalUsabilityChangedFileCohort';
+import { FRESH_PROFILE_SCHEMA_RUNTIME_REPAIR_FULL_CHANGED_COHORT, MAC_REAL_APP_CUSTOMER_DISCOVERY_FIX_FULL_CHANGED_COHORT, V0_1_RC_FULL_CHANGED_COHORT } from './finalUsabilityChangedFileCohort';
 
 import { parseIntelligenceMaterial } from '../lib/battleCard/parser';
 import { createBattleCardRepositories } from '../lib/battleCard/repository';
@@ -234,20 +234,27 @@ describe('formula/ingredient conditional boundary (P0-B)', () => {
 });
 
 describe('full changed cohort exact-set guard (P1-B)', () => {
-  it('actual full changed set equals FULL_CHANGED_COHORT bidirectionally (no subset / source-only)', () => {
+  it('actual full changed set equals a registered FULL_CHANGED_COHORT bidirectionally (no subset / source-only)', () => {
     const repoRoot = new URL('../../', import.meta.url);
     const collect = (args: string[]) => execFileSync('git', args, { cwd: repoRoot, encoding: 'utf8' }).trim().split(/\r?\n/).filter(Boolean);
     const actual = new Set(
       [...collect(['diff', '--name-only']), ...collect(['diff', '--cached', '--name-only']), ...collect(['ls-files', '--others', '--exclude-standard'])]
         .map(file => file.replace(/^local-crm-desktop\//, '')),
     );
-    const expected = new Set(FRESH_PROFILE_SCHEMA_RUNTIME_REPAIR_FULL_CHANGED_COHORT);
-    const missing = [...expected].filter(file => !actual.has(file));
-    const extra = [...actual].filter(file => !expected.has(file));
-    expect(missing).toEqual([]);
-    expect(extra).toEqual([]);
-    expect(actual.size).toBe(expected.size);
-    expect(actual.size).toBe(FRESH_PROFILE_SCHEMA_RUNTIME_REPAIR_FULL_CHANGED_COHORT.length);
+    // Clean committed tree is a valid terminal state (every registered cohort
+    // has been committed); an empty change set matches no cohort by design.
+    if (actual.size === 0) return;
+    const registered = [
+      FRESH_PROFILE_SCHEMA_RUNTIME_REPAIR_FULL_CHANGED_COHORT,
+      MAC_REAL_APP_CUSTOMER_DISCOVERY_FIX_FULL_CHANGED_COHORT,
+      V0_1_RC_FULL_CHANGED_COHORT,
+    ];
+    const matched = registered.find(cohort => {
+      const expected = new Set(cohort);
+      return actual.size === expected.size && [...actual].every(file => expected.has(file));
+    });
+    expect(matched).toBeDefined();
+    expect(actual.size).toBe(matched!.length);
   });
 });
 

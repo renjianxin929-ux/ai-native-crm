@@ -4,7 +4,8 @@
   "identifier": "com.localcrm.desktop.e2e",
   "build": {
     "devUrl": "http://127.0.0.1:5173",
-    "beforeDevCommand": null
+    "beforeDevCommand": null,
+    "beforeBuildCommand": null
   },
   "app": {
     "windows": [
@@ -14,8 +15,7 @@
         "width": 1200,
         "height": 800,
         "resizable": true,
-        "fullscreen": false,
-        "additionalBrowserArgs": "--remote-debugging-port=9223 --remote-allow-origins=*"
+        "fullscreen": false
       }
     ]
   },

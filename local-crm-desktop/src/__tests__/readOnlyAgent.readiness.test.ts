@@ -219,6 +219,7 @@ describe('Read-only Agent readiness gate', () => {
     const changedFiles = [
       ...execFileSync('git', ['diff', '--name-only'], { encoding: 'utf8' }).trim().split(/\r?\n/),
       ...execFileSync('git', ['diff', '--cached', '--name-only'], { encoding: 'utf8' }).trim().split(/\r?\n/),
+      ...execFileSync('git', ['ls-files', '--others', '--exclude-standard'], { encoding: 'utf8' }).trim().split(/\r?\n/),
     ].filter(Boolean).map(file => file.replace(/^local-crm-desktop\//, ''));
     if (hasExactFinalUsabilityChangedFileSet(changedFiles)) return;
     if (hasExactModelCapabilitiesPhase13ChangedFileSet(changedFiles)) return;

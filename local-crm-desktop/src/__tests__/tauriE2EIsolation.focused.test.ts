@@ -19,15 +19,26 @@ describe('Tauri E2E database isolation', () => {
     expect(source).not.toContain('local-crm-e2e');
   });
 
-  it('uses a dedicated non-bundled E2E identifier and test-only CDP port', () => {
+  it('uses a dedicated non-bundled E2E identifier and embedded WebDriver setup', () => {
     const e2e = readJson('src-tauri/tauri.e2e.conf.json');
     const source = readFileSync(resolve(repoRoot, 'src-tauri/tauri.e2e.conf.json'), 'utf8');
 
     expect(e2e.productName).toBe('local-crm-e2e');
     expect(e2e.identifier).toBe('com.localcrm.desktop.e2e');
     expect(e2e.bundle).toMatchObject({ active: false });
-    expect(source).toContain('--remote-debugging-port=9223');
+    // CDP era (--remote-debugging-port) is gone: macOS WKWebView is driven via
+    // the embedded W3C WebDriver plugin (tauri-plugin-wdio-webdriver) instead.
+    expect(source).not.toContain('remote-debugging-port');
     expect(source).not.toContain('com.localcrm.desktop/personal-crm.db');
+  });
+
+  it('keeps the wdio WebDriver permission e2e-only via the build.rs ACL pattern', () => {
+    const productionCap = readJson('src-tauri/capabilities/default.json');
+    const buildRs = readFileSync(resolve(repoRoot, 'src-tauri/build.rs'), 'utf8');
+
+    expect(JSON.stringify(productionCap)).not.toContain('wdio-webdriver');
+    expect(buildRs).toContain('capabilities_path_pattern');
+    expect(buildRs).toContain('capabilities/default.json');
   });
 
   it('exposes the flavor only through the explicit Tauri config merge command', () => {

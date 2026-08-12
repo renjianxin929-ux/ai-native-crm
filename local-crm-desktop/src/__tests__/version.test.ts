@@ -5,7 +5,7 @@ import { APP_VERSION } from '../lib/version';
 
 describe('app version', () => {
   it('exports the current app version from one shared module', () => {
-    expect(APP_VERSION).toBe('0.4.0');
+    expect(APP_VERSION).toBe('0.1.0');
   });
 
   it('SettingsPage uses the shared app version instead of a local hard-coded value', () => {
