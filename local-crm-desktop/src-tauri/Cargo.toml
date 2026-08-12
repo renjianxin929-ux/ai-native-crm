@@ -52,3 +52,6 @@ zeroize = "1.8"
 uuid = { version = "1.18", features = ["v4"] }
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
 sha2 = "0.10"
+keyring = { version = "3.6.3", features = ["apple-native"] }
+aes-gcm = "0.10"
+rand = "0.9.5"

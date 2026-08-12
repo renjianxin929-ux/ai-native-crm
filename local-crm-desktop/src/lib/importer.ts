@@ -53,22 +53,22 @@ export interface ImportResult {
 // ── Field synonym map ──
 
 export const FIELD_SYNONYMS: Record<ImportableCrmField, string[]> = {
-  name: ['客户名称', '客户名', '姓名', '名称', '客户', '公司名称', '公司'],
-  customer_grade: ['客户等级', '等级', '客户分层', 'A1-A3等级', 'A1A3等级', '原始等级/分数', '优先级'],
-  wechat_id: ['微信', '微信号', '微信ID', '微信账号', 'wx', 'wechat'],
-  phone_number: ['手机', '手机号', '手机/电话', '电话/手机', '电话', '联系电话', 'phone', 'mobile'],
+  name: ['客户名称', '客户名', '姓名', '名称', '客户', '公司名称', '公司', '企业名称', 'name', 'company', 'company name', 'customer name'],
+  customer_grade: ['客户等级', '等级', '客户分层', 'A1-A3等级', 'A1A3等级', '原始等级/分数', '优先级', 'grade'],
+  wechat_id: ['微信', '微信号', '微信ID', '微信账号', 'wx', 'wechat', 'wechat id'],
+  phone_number: ['手机', '手机号', '手机/电话', '电话/手机', '电话', '联系电话', 'phone', 'mobile', 'phone number', 'tel', 'telephone'],
   is_key_decision_maker: ['是否关键KP', '关键KP', 'KP', '决策人', '关键人', '是否决策人'],
   wechat_search_status: ['微信搜索状态', '是否搜到', '搜索状态', '账号状态'],
   wechat_add_status: ['微信添加状态', '添加状态', '是否添加', '是否通过', '微信是否通过'],
-  intent_level: ['意向', '意向度', '客户意向', '意向等级'],
+  intent_level: ['意向', '意向度', '客户意向', '意向等级', 'intention'],
   phone_feedback: ['电话反馈', '沟通反馈', '反馈', '电话结果'],
-  next_follow_up_at: ['下次跟进', '下次跟进时间', '约访时间', '面访时间', '跟进时间'],
-  website: ['官网', '域名', '网站'],
-  region: ['城市/区域', '城市', '区域'],
-  industry: ['行业/产品', '行业'],
-  contact_person: ['联系人'],
-  email: ['邮箱'],
-  address: ['地址'],
+  next_follow_up_at: ['下次跟进', '下次跟进时间', '约访时间', '面访时间', '跟进时间', 'next follow up'],
+  website: ['官网', '域名', '网站', 'website'],
+  region: ['城市/区域', '城市', '区域', '地区', 'city', 'region'],
+  industry: ['行业/产品', '行业', 'industry'],
+  contact_person: ['联系人', 'contact'],
+  email: ['邮箱', 'email', 'e-mail'],
+  address: ['地址', 'address'],
   pitch_angle: ['推荐切入点'],
   qualification_reason: ['判断原因'],
   source: ['来源文件', '来源Sheet', '来源行', '来源'],
@@ -138,16 +138,40 @@ export function mapToWechatSearchStatus(value: string): WechatSearchStatus {
 
 // ── Field detection ──
 
+function normalizeHeader(header: string): string {
+  return header
+    .replace(/[\u3000\u00A0]/g, ' ')       // 全角/不间断空格 → 半角
+    .replace(/[（(【\[]([^）)】\]]*)[）)】\]]/g, '') // 括号标注（如“客户名称（必填）”）
+    .replace(/[*＊]/g, '')                 // 星号标注
+    .trim()
+    .toLowerCase();
+}
+
 export function detectCrmField(header: string): ImportableCrmField | null {
   if (!header || !header.trim()) return null;
-  const h = header.trim().toLowerCase();
+  const h = normalizeHeader(header);
 
+  // 1) 精确匹配（规范化后）
   for (const [field, synonyms] of Object.entries(FIELD_SYNONYMS)) {
     if (synonyms.some(s => s.toLowerCase() === h)) {
       return field as ImportableCrmField;
     }
   }
-  return null;
+
+  // 2) 包含匹配兜底（如“客户名称/公司名称”含“公司名称”，“手机号码”含“手机”）
+  //    按同义词长度降序，取最具体的先命中
+  const candidates: Array<{ field: ImportableCrmField; synonym: string }> = [];
+  for (const [field, synonyms] of Object.entries(FIELD_SYNONYMS)) {
+    for (const synonym of synonyms) {
+      const normalizedSynonym = synonym.toLowerCase();
+      if (normalizedSynonym.length >= 2 && h.includes(normalizedSynonym)) {
+        candidates.push({ field: field as ImportableCrmField, synonym: normalizedSynonym });
+      }
+    }
+  }
+  if (candidates.length === 0) return null;
+  candidates.sort((a, b) => b.synonym.length - a.synonym.length);
+  return candidates[0].field;
 }
 
 export function autoDetectFields(headers: string[]): FieldMapping[] {
@@ -164,14 +188,6 @@ export function autoDetectFields(headers: string[]): FieldMapping[] {
     }
     return { sourceColumn: h, crmField: null };
   });
-}
-
-function tableScore(headers: string[]): number {
-  const mapping = autoDetectFields(headers);
-  const fields = mapping.map(m => m.crmField).filter(Boolean);
-  const hasName = fields.includes('name');
-
-  return fields.length + (hasName ? 3 : 0);
 }
 
 export function findBestImportTable(sheets: Record<string, string[][]>): ImportPreview & { sheetName: string } {
@@ -191,7 +207,12 @@ export function findBestImportTable(sheets: Record<string, string[][]>): ImportP
       const rows = data.slice(rowIndex + 1);
       const nonEmptyRows = rows.filter(row => row.some(cell => String(cell ?? '').trim().length > 0)).length;
       const mergedSheetBonus = /合并|去重|总表|全部/.test(sheetName) ? 1000 : 0;
-      const score = tableScore(headers) * 100 + Math.min(nonEmptyRows, 999) + mergedSheetBonus;
+      const fields = autoDetectFields(headers).filter(m => m.crmField);
+      const hasName = fields.some(m => m.crmField === 'name');
+      // 命中字段的行一定是候选表头；完全未命中时按行数退化（原逻辑），避免把数据行误当表头。
+      // 阈值取 10_000 量级：仍保证"命中字段的表头行"优先于"未命中的大数据行"，
+      // 但不会像 1_000_000 那样彻底压过行数/合并表信息，避免误选命中单个弱字段的附页标题行。
+      const score = (fields.length > 0 ? 10_000 : 0) + fields.length * 100 + (hasName ? 300 : 0) + Math.min(nonEmptyRows, 999) + mergedSheetBonus;
 
       if (score > best.score) {
         best = {

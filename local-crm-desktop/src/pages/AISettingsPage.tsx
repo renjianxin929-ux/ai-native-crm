@@ -83,7 +83,7 @@ export default function AISettingsPage() {
       await configureTrustedHostCredential({ capability: provider.capability, provider: draft.provider, endpoint: draft.endpoint, model: draft.model, apiKey: draft.apiKey });
       setDrafts(current => ({ ...current, [provider.capability]: { ...current[provider.capability], apiKey: '' } }));
       await testTrustedHostProviderConnection(provider.capability);
-      setMessage('配置已由 Rust 使用 DPAPI 加密保存，显式连接检查完成。');
+      setMessage('配置已由 Rust 使用系统安全存储加密保存，显式连接检查完成。');
       await refresh();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : '保存或连接检查失败');
@@ -106,7 +106,7 @@ export default function AISettingsPage() {
       <div className="page-body">
         <section className="card" data-testid="trusted-host-settings">
           <h3 className="section-title"><Shield size={16} /> 本地加密模型配置</h3>
-          <p style={{ color: 'var(--text-secondary)', fontSize: 13 }}>API Key 由 Rust 使用 Windows DPAPI Current User Scope 加密后写入本地 SQLite。页面不回显旧 Key，也不会把 Key 保存到浏览器存储。</p>
+          <p style={{ color: 'var(--text-secondary)', fontSize: 13 }}>API Key 由 Rust 使用系统安全存储（Windows DPAPI / macOS Keychain）加密后写入本地 SQLite。页面不回显旧 Key，也不会把 Key 保存到浏览器存储。</p>
           <div style={{ display: 'grid', gap: 14 }}>
             {PROVIDERS.map(provider => {
               const status = statuses.find(item => item.capability === provider.capability);

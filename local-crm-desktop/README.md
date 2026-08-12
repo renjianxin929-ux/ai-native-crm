@@ -2,6 +2,11 @@
 
 本地桌面CRM系统，基于 Tauri 2.x + React + TypeScript + SQLite，数据完全存储在本机。
 
+## 支持平台
+
+- **Windows**（x64，WebView2）
+- **macOS**（Apple Silicon / Intel，WKWebView）
+
 ## v0.4.0 新特性
 
 - **双模型 AI 架构**: DeepSeek 负责所有纯文本分析（通话/微信文本/跟进建议/每日总结），Qwen (DashScope) 负责多模态识别（截图/图片结构化提取）
@@ -37,26 +42,39 @@
 
 ```bash
 npm install
-npm test          # 运行 277 个测试
+npm test          # 运行完整测试套件
 npm run dev       # 启动开发服务器 + Tauri 窗口
 npm run build     # 前端构建
-npx tauri build   # 桌面安装包（NSIS + MSI）
+npx tauri build   # 桌面安装包（按当前平台生成 NSIS/MSI 或 DMG）
 ```
 
 ## 构建产物
+
+**Windows**
 
 - `src-tauri/target/release/app.exe` — 可执行文件
 - `src-tauri/target/release/bundle/nsis/local-crm_0.4.0_x64-setup.exe` — NSIS 安装器
 - `src-tauri/target/release/bundle/msi/local-crm_0.4.0_x64_en-US.msi` — MSI 安装器
 
-交付目录: `E:\新建文件夹 (3)\New project\runs\local-crm-v0.4.0\`
+**macOS**
+
+- `src-tauri/target/release/bundle/dmg/local-crm_0.4.0_aarch64.dmg` — DMG 安装镜像（`npx tauri build` 自动按当前平台生成）
 
 ## 数据库
 
-- **位置**: `%APPDATA%/com.localcrm.desktop/personal-crm.db`（设置页可查看实际路径）
+- **位置**: 应用数据目录下的 `personal-crm.db`（设置页可查看实际路径）
+  - Windows: `%APPDATA%/com.localcrm.desktop/personal-crm.db`
+  - macOS: `~/Library/Application Support/com.localcrm.desktop/personal-crm.db`
 - **类型**: SQLite 单文件
 - **表**: customers, follow_up_records, visit_records, tasks, settings, ai_drafts
 - **迁移**: 自动检测缺失列并 ALTER TABLE ADD COLUMN
+
+## AI Provider Key 安全存储
+
+- Windows: DPAPI Current User Scope（`ai_provider_credentials` 表）
+- macOS: Keychain（AES-256-GCM 主密钥存钥匙串，密文存 `ai_provider_credentials` 表）
+- 页面不回显旧 Key，Key 不写入浏览器存储、不出现在日志
+- Provider Key 按设备独立存储，需要在每台设备上分别配置
 
 ## 备份与恢复
 
@@ -105,8 +123,8 @@ src-tauri/
 
 ## 当前限制
 
-- 仅 Windows x64（macOS/Linux 未测试）
-- 音频识别功能待接入（UI 已预留，P1 优先级）
+- 语音输入依赖 Web Speech API，受运行平台 WebView 支持限制（macOS WKWebView 不支持该 API，页面会提示改用文字输入）
+- Battle Card 原文导入为单条粘贴（Markdown 风格文本）；暂不支持 Excel 批量导入 Battle Card
 - 无云同步/多用户/登录
 - 无自动备份（需手动导出 JSON）
 - AI 截图识别依赖 Qwen DashScope API（需阿里云账号）

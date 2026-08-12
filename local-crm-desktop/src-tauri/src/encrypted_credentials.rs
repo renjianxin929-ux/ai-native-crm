@@ -9,7 +9,12 @@ use zeroize::Zeroizing;
 
 pub const TEXT_REASONING: &str = "TEXT_REASONING";
 pub const VISION_REASONING: &str = "VISION_REASONING";
+#[cfg(windows)]
 pub const ENCRYPTION_SCHEME: &str = "WINDOWS_DPAPI_CURRENT_USER_V1";
+#[cfg(target_os = "macos")]
+pub const ENCRYPTION_SCHEME: &str = "MACOS_KEYCHAIN_AES256_GCM_V1";
+#[cfg(not(any(windows, target_os = "macos")))]
+pub const ENCRYPTION_SCHEME: &str = "UNSUPPORTED_PLATFORM_V1";
 const ENTROPY: &[u8] = b"com.localcrm.desktop::ai_provider_credentials::v1";
 const MAX_PLAINTEXT_BYTES: usize = 4096;
 const MAX_CIPHERTEXT_BYTES: usize = 16 * 1024;
@@ -565,11 +570,127 @@ fn crypt_with_entropy(protecting: bool, input: &[u8], entropy: &[u8]) -> Result<
   Ok(output)
 }
 
-#[cfg(not(windows))]
-fn protect(_plaintext: &[u8]) -> Result<Vec<u8>, String> { Err("Windows DPAPI is unavailable".into()) }
+#[cfg(target_os = "macos")]
+mod macos_keychain {
+  use aes_gcm::aead::{Aead, KeyInit};
+  use aes_gcm::{Aes256Gcm, Key, Nonce};
+  use keyring::Entry;
+  use std::sync::{Mutex, OnceLock};
+  use zeroize::Zeroizing;
 
-#[cfg(not(windows))]
-fn unprotect(_ciphertext: &[u8]) -> Result<Zeroizing<Vec<u8>>, String> { Err("Windows DPAPI is unavailable".into()) }
+  const KEYCHAIN_SERVICE: &str = "com.localcrm.desktop::ai_provider_credentials::v1";
+  const KEYCHAIN_ACCOUNT: &str = "aes256-gcm-master-key";
+  const KEY_LEN: usize = 32;
+  const NONCE_LEN: usize = 12;
+  const FORMAT_VERSION: u8 = 1;
+
+  #[cfg(test)]
+  pub(super) const TEST_KEYCHAIN_SERVICE: &str = KEYCHAIN_SERVICE;
+  #[cfg(test)]
+  pub(super) const TEST_KEYCHAIN_ACCOUNT: &str = KEYCHAIN_ACCOUNT;
+
+  /// 进程内缓存 master key。
+  static MASTER_KEY_CACHE: OnceLock<Zeroizing<Vec<u8>>> = OnceLock::new();
+  /// 初始化专用锁：串行化"读取/创建/写回 Keychain"副作用，
+  /// 保证并发首次使用只生成一把密钥（防止进程缓存与 Keychain 内容不一致导致重启解密失败）。
+  static MASTER_KEY_INIT: Mutex<()> = Mutex::new(());
+
+  pub fn master_key() -> Result<&'static Zeroizing<Vec<u8>>, String> {
+    if let Some(cached) = MASTER_KEY_CACHE.get() {
+      return Ok(cached);
+    }
+    let _guard = MASTER_KEY_INIT.lock().map_err(|_| "macOS keychain lock poisoned".to_string())?;
+    if let Some(cached) = MASTER_KEY_CACHE.get() {
+      return Ok(cached);
+    }
+    let key = load_or_create_master_key()?;
+    Ok(MASTER_KEY_CACHE.get_or_init(|| key))
+  }
+
+  fn load_or_create_master_key() -> Result<Zeroizing<Vec<u8>>, String> {
+    load_or_create_master_key_for(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)
+  }
+
+  pub(super) fn load_or_create_master_key_for(service: &str, account: &str) -> Result<Zeroizing<Vec<u8>>, String> {
+    let entry = Entry::new(service, account).map_err(|_| "macOS keychain unavailable".to_string())?;
+    // 仅"无条目"才允许创建新 master key；已存在的 malformed/不可读条目必须 fail closed，
+    // 不能静默删除替换（否则既有 SQLite 密文会被孤立、重启后无法解密）。
+    match entry.get_secret() {
+      Ok(existing) => {
+        if existing.len() == KEY_LEN {
+          return Ok(Zeroizing::new(existing));
+        }
+        return Err("macOS keychain master key is malformed".into());
+      }
+      Err(keyring::Error::NoEntry) => {}
+      Err(_) => return Err("macOS keychain master key read failed".into()),
+    }
+    let mut key = Zeroizing::new(vec![0u8; KEY_LEN]);
+    rand::RngCore::fill_bytes(&mut rand::rng(), &mut key);
+    entry.set_secret(key.as_slice()).map_err(|_| "macOS keychain write failed".to_string())?;
+    let readback = entry.get_secret().map_err(|_| "macOS keychain write verification failed".to_string())?;
+    if readback.len() != KEY_LEN || readback.as_slice() != key.as_slice() {
+      return Err("macOS keychain write verification failed".into());
+    }
+    Ok(key)
+  }
+
+  pub fn encrypt_with_key(key: &[u8], plaintext: &[u8]) -> Result<Vec<u8>, String> {
+    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key));
+    let mut nonce_bytes = [0u8; NONCE_LEN];
+    rand::RngCore::fill_bytes(&mut rand::rng(), &mut nonce_bytes);
+    let ciphertext = cipher.encrypt(Nonce::from_slice(&nonce_bytes), plaintext)
+      .map_err(|_| "credential encryption failed".to_string())?;
+    let mut output = Vec::with_capacity(1 + NONCE_LEN + ciphertext.len());
+    output.push(FORMAT_VERSION);
+    output.extend_from_slice(&nonce_bytes);
+    output.extend_from_slice(&ciphertext);
+    Ok(output)
+  }
+
+  pub fn decrypt_with_key(key: &[u8], ciphertext: &[u8]) -> Result<Zeroizing<Vec<u8>>, String> {
+    if ciphertext.len() < 1 + NONCE_LEN || ciphertext[0] != FORMAT_VERSION {
+      return Err("credential decryption failed".into());
+    }
+    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key));
+    let nonce = Nonce::from_slice(&ciphertext[1..1 + NONCE_LEN]);
+    let plaintext = cipher.decrypt(nonce, &ciphertext[1 + NONCE_LEN..])
+      .map_err(|_| "credential decryption failed".to_string())?;
+    Ok(Zeroizing::new(plaintext))
+  }
+
+  pub fn protect(plaintext: &[u8]) -> Result<Vec<u8>, String> {
+    let key = master_key()?;
+    encrypt_with_key(key.as_slice(), plaintext)
+  }
+
+  pub fn unprotect(ciphertext: &[u8]) -> Result<Zeroizing<Vec<u8>>, String> {
+    let key = master_key()?;
+    decrypt_with_key(key.as_slice(), ciphertext)
+  }
+}
+
+#[cfg(target_os = "macos")]
+fn protect(plaintext: &[u8]) -> Result<Vec<u8>, String> {
+  if plaintext.is_empty() || plaintext.len() > MAX_PLAINTEXT_BYTES { return Err("credential is empty or too large".into()); }
+  let encrypted = macos_keychain::protect(plaintext)?;
+  if encrypted.is_empty() || encrypted.len() > MAX_CIPHERTEXT_BYTES || encrypted.as_slice() == plaintext {
+    return Err("credential encryption verification failed".into());
+  }
+  Ok(encrypted)
+}
+
+#[cfg(target_os = "macos")]
+fn unprotect(ciphertext: &[u8]) -> Result<Zeroizing<Vec<u8>>, String> {
+  if ciphertext.is_empty() || ciphertext.len() > MAX_CIPHERTEXT_BYTES { return Err("credential decryption failed".into()); }
+  macos_keychain::unprotect(ciphertext)
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
+fn protect(_plaintext: &[u8]) -> Result<Vec<u8>, String> { Err("credential encryption unavailable on this platform".into()) }
+
+#[cfg(not(any(windows, target_os = "macos")))]
+fn unprotect(_ciphertext: &[u8]) -> Result<Zeroizing<Vec<u8>>, String> { Err("credential decryption unavailable on this platform".into()) }
 
 #[cfg(all(test, windows))]
 mod tests {
@@ -640,4 +761,133 @@ mod tests {
     assert!(!error.contains("fixture-sensitive-material"));
   }
 
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod macos_tests {
+  use super::macos_keychain::{decrypt_with_key, encrypt_with_key, master_key, protect, unprotect};
+  use super::{EncryptedCredentialStore, ProviderCredentialInput, TEXT_REASONING};
+  use sqlx::Connection;
+  use zeroize::Zeroizing;
+
+  fn fixed_test_key() -> [u8; 32] { [0x42u8; 32] }
+
+  #[test]
+  fn aes_gcm_round_trip_with_fixed_key_is_not_plaintext() {
+    let secret = b"fixture-api-key-never-persist";
+    let encrypted = encrypt_with_key(&fixed_test_key(), secret).unwrap();
+    assert_ne!(encrypted, secret);
+    assert_eq!(decrypt_with_key(&fixed_test_key(), &encrypted).unwrap().as_slice(), secret);
+  }
+
+  #[test]
+  fn aes_gcm_tampered_ciphertext_fails_closed() {
+    let secret = b"fixture-api-key-never-persist";
+    let mut encrypted = encrypt_with_key(&fixed_test_key(), secret).unwrap();
+    let last = encrypted.len() - 1;
+    encrypted[last] ^= 0x01;
+    assert!(decrypt_with_key(&fixed_test_key(), &encrypted).is_err());
+  }
+
+  #[test]
+  fn aes_gcm_wrong_key_fails_closed() {
+    let secret = b"fixture-api-key-never-persist";
+    let encrypted = encrypt_with_key(&fixed_test_key(), secret).unwrap();
+    let wrong_key = [0x24u8; 32];
+    assert!(decrypt_with_key(&wrong_key, &encrypted).is_err());
+  }
+
+  #[test]
+  fn aes_gcm_rejects_truncated_and_unknown_version_ciphertext() {
+    let secret = b"fixture-api-key-never-persist";
+    let encrypted = encrypt_with_key(&fixed_test_key(), secret).unwrap();
+    assert!(decrypt_with_key(&fixed_test_key(), &encrypted[..5]).is_err());
+    let mut bad_version = encrypted.clone();
+    bad_version[0] = 0x7F;
+    assert!(decrypt_with_key(&fixed_test_key(), &bad_version).is_err());
+  }
+
+  // Keychain 集成测试：在无法访问 macOS Keychain 的受限环境（CI/SSH）中跳过，
+  // 在用户 GUI 会话中真实验证 protect/unprotect 全链路。
+  fn keychain_available() -> bool { master_key().is_ok() }
+
+  #[test]
+  fn keychain_integration_protect_unprotect_round_trip() {
+    if !keychain_available() {
+      eprintln!("SKIP: macOS Keychain 当前环境不可访问（受限会话）；AES-GCM 纯函数测试已覆盖加密逻辑");
+      return;
+    }
+    let secret = b"fixture-api-key-never-persist";
+    let encrypted = protect(secret).unwrap();
+    assert_ne!(encrypted, secret);
+    assert_eq!(unprotect(&encrypted).unwrap().as_slice(), secret);
+  }
+
+  #[test]
+  fn concurrent_first_initialization_yields_one_stable_key() {
+    if !keychain_available() {
+      eprintln!("SKIP: macOS Keychain 当前环境不可访问（受限会话）；并发初始化测试跳过");
+      return;
+    }
+    // 并发使用：所有线程必须拿到同一把 master key（初始化 Mutex + double-check 串行化副作用）。
+    // 无论本测试先于还是后于其他测试运行（缓存空/满），结果都必须一致。
+    let handles: Vec<_> = (0..8).map(|_| std::thread::spawn(|| master_key().map(|k| k.clone()))).collect();
+    let results: Vec<Result<Zeroizing<Vec<u8>>, String>> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+    for result in &results {
+      assert!(result.is_ok(), "concurrent master_key failed: {:?}", result.as_ref().err());
+    }
+    let first = results[0].as_ref().unwrap();
+    for result in &results[1..] {
+      assert_eq!(result.as_ref().unwrap().as_slice(), first.as_slice(), "concurrent first init must yield one stable key");
+    }
+    // restart 兼容：进程缓存 key 必须与 Keychain 中持久化的生产条目一致
+    let entry = keyring::Entry::new(super::macos_keychain::TEST_KEYCHAIN_SERVICE, super::macos_keychain::TEST_KEYCHAIN_ACCOUNT).unwrap();
+    let persisted = entry.get_secret().expect("persisted master key must exist after initialization");
+    assert_eq!(persisted.as_slice(), first.as_slice(), "Keychain persisted key must equal process cache key");
+  }
+
+  #[test]
+  fn malformed_existing_keychain_entry_fails_closed_without_rotation() {
+    if !keychain_available() {
+      eprintln!("SKIP: macOS Keychain 当前环境不可访问（受限会话）；malformed 条目测试跳过");
+      return;
+    }
+    let service = format!("com.localcrm.desktop::test-malformed-{}", uuid::Uuid::new_v4());
+    let account = "test-account";
+    let entry = keyring::Entry::new(service.as_str(), account).unwrap();
+    // 预置一个长度错误的 malformed master key（15 字节，非 32）
+    entry.set_secret(&[0x11u8; 15]).unwrap();
+
+    // 必须 fail closed：报错且不静默删除/替换既有条目
+    let error = super::macos_keychain::load_or_create_master_key_for(&service, account).unwrap_err();
+    assert!(error.contains("malformed"), "expected malformed error, got: {error}");
+
+    // 既有条目必须原样保留（未被静默轮换）
+    let readback = entry.get_secret().unwrap();
+    assert_eq!(readback, vec![0x11u8; 15], "malformed entry must not be rotated/deleted");
+    let _ = entry.delete_credential();
+  }
+
+  #[tokio::test]
+  async fn keychain_integration_encrypted_sql_restart_readback_and_delete() {
+    if !keychain_available() {
+      eprintln!("SKIP: macOS Keychain 当前环境不可访问（受限会话）；加密链路由 AES-GCM 纯函数测试覆盖");
+      return;
+    }
+    let directory = std::env::temp_dir().join(format!("local-crm-macos-encrypted-credential-test-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&directory).unwrap();
+    let path = directory.join("credential.db");
+    sqlx::SqliteConnection::connect_with(&sqlx::sqlite::SqliteConnectOptions::new().filename(&path).create_if_missing(true)).await.unwrap().close().await.unwrap();
+    let first = EncryptedCredentialStore::new(path.clone());
+    first.save(ProviderCredentialInput { capability: TEXT_REASONING.into(), provider: "deepseek".into(), endpoint: "https://api.deepseek.com/v1".into(), model: "deepseek-chat".into(), api_key: "fixture-restart-secret".into() }).await.unwrap();
+    let bytes = std::fs::read(&path).unwrap();
+    assert!(!bytes.windows(b"fixture-restart-secret".len()).any(|window| window == b"fixture-restart-secret"));
+    let restarted = EncryptedCredentialStore::new(path.clone());
+    let loaded = restarted.load_runtime(TEXT_REASONING).await.unwrap();
+    assert_eq!(loaded.api_key.as_str(), "fixture-restart-secret");
+    restarted.delete(TEXT_REASONING).await.unwrap();
+    assert!(!restarted.status(TEXT_REASONING).await.unwrap().configured);
+    drop(loaded);
+    let _ = std::fs::remove_dir_all(directory);
+  }
 }

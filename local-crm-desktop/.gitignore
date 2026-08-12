@@ -29,3 +29,6 @@ claude-*.png
 enum-*.ps1
 .codex-*
 NEXT_TASK_*.md
+
+# Reasonix host state
+.reasonix/

@@ -292,6 +292,33 @@ describe('detectCrmField', () => {
     expect(detectCrmField('WECHAT')).toBe('wechat_id');
     expect(detectCrmField('Phone')).toBe('phone_number');
   });
+
+  it('容错：括号标注/全角空格/星号表头仍可识别', () => {
+    expect(detectCrmField('客户名称（必填）')).toBe('name');
+    expect(detectCrmField('客户名称(必填)')).toBe('name');
+    expect(detectCrmField('公司名称　')).toBe('name');
+    expect(detectCrmField('手机号*')).toBe('phone_number');
+    expect(detectCrmField('姓名【必填】')).toBe('name');
+  });
+
+  it('容错：英文表头可识别', () => {
+    expect(detectCrmField('Name')).toBe('name');
+    expect(detectCrmField('Company')).toBe('name');
+    expect(detectCrmField('Company Name')).toBe('name');
+    expect(detectCrmField('Customer Name')).toBe('name');
+    expect(detectCrmField('Mobile')).toBe('phone_number');
+    expect(detectCrmField('Phone Number')).toBe('phone_number');
+    expect(detectCrmField('Email')).toBe('email');
+    expect(detectCrmField('WeChat')).toBe('wechat_id');
+  });
+
+  it('容错：包含匹配按最长同义词优先，不误伤无关列', () => {
+    // “客户等级”既是客户等级的精确同义词，也包含“客户”，必须优先精确/更长同义词
+    expect(detectCrmField('客户等级')).toBe('customer_grade');
+    expect(detectCrmField('客户名称/公司名称')).toBe('name');
+    expect(detectCrmField('手机号码')).toBe('phone_number');
+    expect(detectCrmField('奇怪字段')).toBeNull();
+  });
 });
 
 describe('autoDetectFields', () => {

@@ -17,17 +17,29 @@ pub struct LegacyCredentialMigrationStatus {
 
 #[tauri::command]
 pub async fn inspect_legacy_provider_credentials(_app: AppHandle) -> Result<LegacyCredentialMigrationStatus, String> {
-  let store = WindowsCredentialStore;
-  let detected = store.read(TEXT_REASONING).map_err(|_| "legacy credential inspection failed".to_string())?.is_some()
-    || store.read(VISION_ANALYSIS).map_err(|_| "legacy credential inspection failed".to_string())?.is_some();
+  #[cfg(windows)]
+  let detected = {
+    let store = WindowsCredentialStore;
+    store.read(TEXT_REASONING).map_err(|_| "legacy credential inspection failed".to_string())?.is_some()
+      || store.read(VISION_ANALYSIS).map_err(|_| "legacy credential inspection failed".to_string())?.is_some()
+  };
+  #[cfg(not(windows))]
+  let detected = false;
   Ok(status(detected, None, if detected { "detected" } else { "not_detected" }))
 }
 
 #[tauri::command]
 pub async fn migrate_legacy_provider_credentials(app: AppHandle) -> Result<LegacyCredentialMigrationStatus, String> {
-  let windows = WindowsCredentialStore;
-  let text = windows.read(TEXT_REASONING).map_err(|_| "legacy credential migration read failed".to_string())?.map(Zeroizing::new);
-  let vision = windows.read(VISION_ANALYSIS).map_err(|_| "legacy credential migration read failed".to_string())?.map(Zeroizing::new);
+  #[cfg(windows)]
+  let legacy = {
+    let windows = WindowsCredentialStore;
+    let text = windows.read(TEXT_REASONING).map_err(|_| "legacy credential migration read failed".to_string())?.map(Zeroizing::new);
+    let vision = windows.read(VISION_ANALYSIS).map_err(|_| "legacy credential migration read failed".to_string())?.map(Zeroizing::new);
+    (text, vision)
+  };
+  #[cfg(not(windows))]
+  let legacy = (None, None);
+  let (text, vision) = legacy;
   if text.is_none() && vision.is_none() { return Ok(status(false, None, "not_detected")); }
 
   let database_path = app.path().app_data_dir().map_err(|_| "app data directory unavailable".to_string())?.join("personal-crm.db");
@@ -85,9 +97,12 @@ async fn migrate_values_to_encrypted_store(
 
 #[tauri::command]
 pub fn delete_legacy_provider_credentials() -> Result<LegacyCredentialMigrationStatus, String> {
-  let store = WindowsCredentialStore;
-  store.delete(TEXT_REASONING).map_err(|_| "legacy credential deletion failed".to_string())?;
-  store.delete(VISION_ANALYSIS).map_err(|_| "legacy credential deletion failed".to_string())?;
+  #[cfg(windows)]
+  {
+    let store = WindowsCredentialStore;
+    store.delete(TEXT_REASONING).map_err(|_| "legacy credential deletion failed".to_string())?;
+    store.delete(VISION_ANALYSIS).map_err(|_| "legacy credential deletion failed".to_string())?;
+  }
   Ok(status(false, Some("v2".into()), "legacy_deleted_by_user"))
 }
 
