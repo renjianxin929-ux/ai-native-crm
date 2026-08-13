@@ -1,19 +1,21 @@
 /**
  * V0.2A / W3-1 — Production Capability Execution Composition.
  *
- * 唯一的"真实生产可消费"组合点：把当前冻结的 13 个生产能力（7 个领域 manifest，
- * 含 Evidence 空 manifest）组合为：
+ * 唯一的"真实生产可消费"组合点：把冻结的 20 个生产能力（Wave1/Wave2 读 manifest
+ * 13 项 + W3-3 写/草稿/状态迁移 manifest 7 项；Evidence 空 manifest 贡献 0）组合为：
  *   - PRODUCTION_CAPABILITY_REGISTRY      —— A1 registry（确定性 / 不可变 / 可复用）
- *   - PRODUCTION_CAPABILITY_BINDING_REGISTRY —— executor_ref → 真实领域 adapter（13 项全绑定）
- *   - PRODUCTION_CAPABILITY_EXECUTION     —— 统一执行入口（Registry → A10 → Executor）
+ *   - PRODUCTION_CAPABILITY_BINDING_REGISTRY —— executor_ref → 真实领域 adapter（20 项全绑定）
+ *   - PRODUCTION_CAPABILITY_EXECUTION     —— 统一执行入口（Registry → Input → Scope → A10 → Executor / 确认交接）
  *
  * 约束（本分支）：
  * - 不创建巨大的导出可变 ALL_CAPABILITIES 数组；不手动复制定义；
  *   全部经 A1 createCapabilityRegistry(...manifests) 组合。
  * - Evidence 空 manifest 继续参与领域组合，贡献 0 个生产能力身份。
- * - 所有 13 个 executor_ref 都能如实绑定到现有领域 adapter（不改变领域语义、
+ * - 所有 20 个 executor_ref 都能如实绑定到现有领域 adapter（不改变领域语义、
  *   不为统一而伪造执行器）；绑定缺失即 EXECUTOR_NOT_BOUND（无 fallback）。
- * - 本文件是组合根：导入真实只读 adapter，但不含任何写/模型/网络语义。
+ * - 七个 W3-3 写绑定的执行器/确认交接适配器集中在 ./writeAdapters（复用现有
+ *   salesAgentTools 确认运行时与 Battle Card 产品执行器路径）；本文件保持
+ *   零写语义（引擎 A10-first 不变式由 engine.ts 保证）。
  */
 
 import { createCapabilityRegistry } from '../registry';
@@ -32,6 +34,10 @@ import { TASK_READ_MANIFEST } from '../task/manifest';
 import { BATTLE_CARD_READ_MANIFEST } from '../battleCard/manifest';
 import { EVIDENCE_READ_CAPABILITY_MANIFEST } from '../evidence/manifest';
 import { IMPORT_READ_CAPABILITY_MANIFEST } from '../import/manifest';
+import { CUSTOMER_WRITE_MANIFEST } from '../customer/writeManifest';
+import { FOLLOW_UP_WRITE_MANIFEST } from '../followUp/writeManifest';
+import { TASK_WRITE_MANIFEST } from '../task/writeManifest';
+import { BATTLE_CARD_WRITE_MANIFEST } from '../battleCard/writeManifest';
 
 import { getCustomerRead, readCustomerContextRead, searchCustomersRead } from '../customer/readAdapter';
 import { readCustomerTimeline, readCustomerVisits } from '../timeline/readAdapter';
@@ -39,6 +45,7 @@ import { createProductionFollowUpReadRepository } from '../followUp/production';
 import { readTasksByCustomer } from '../task/adapter';
 import { readBattleCardHistory, readCurrentBattleCard, readCustomerBattleContext } from '../battleCard/readAdapter';
 import { previewImportFile, validateImportMapping } from '../import/index';
+import { PRODUCTION_WRITE_BINDINGS } from './writeAdapters';
 
 import {
   CapabilityInputValidationError,
@@ -168,10 +175,11 @@ function validateBattleCardReadInput(input: unknown, scope: CapabilityInvocation
 }
 
 /* ------------------------------------------------------------------ */
-/* 生产组合：A1 registry（7 个领域 manifest，含 Evidence 空 manifest）    */
+/* 生产组合：A1 registry（11 个领域 manifest，含 Evidence 空 manifest）    */
 /* ------------------------------------------------------------------ */
 
-/** 生产注册表：13 个能力身份（Evidence 贡献 0）。构造期即完成全部校验与深冻结。 */
+/** 生产注册表：20 个能力身份（Wave1/Wave2 读 13 + W3-3 写 7；Evidence 贡献 0）。
+ *  构造期即完成全部校验与深冻结；W3-3 写 manifest 经 A1 扩展缝组合，绝不手动复制定义。 */
 export const PRODUCTION_CAPABILITY_REGISTRY = createCapabilityRegistry(
   CUSTOMER_CAPABILITY_MANIFEST,
   TIMELINE_READ_CAPABILITY_MANIFEST,
@@ -180,18 +188,25 @@ export const PRODUCTION_CAPABILITY_REGISTRY = createCapabilityRegistry(
   BATTLE_CARD_READ_MANIFEST,
   EVIDENCE_READ_CAPABILITY_MANIFEST,
   IMPORT_READ_CAPABILITY_MANIFEST,
+  CUSTOMER_WRITE_MANIFEST,
+  FOLLOW_UP_WRITE_MANIFEST,
+  TASK_WRITE_MANIFEST,
+  BATTLE_CARD_WRITE_MANIFEST,
 );
 
 /** 生产 Follow-up 读取边界（绑定 db.ts 真实只读路径 listFollowUps / listAllFollowUps）。 */
 const productionFollowUpRepository = createProductionFollowUpReadRepository();
 
 /* ------------------------------------------------------------------ */
-/* 生产执行器绑定：13 个 executor_ref ↔ 现有真实领域 adapter（全绑定）     */
+/* 生产执行器绑定：20 个 executor_ref ↔ 现有真实领域 adapter（全绑定）     */
+/*   - 13 个读/分析 adapter（下述冻结数组）                              */
+/*   - 7 个 W3-3 写 adapter（./writeAdapters：校验 + 确认交接 + 草稿 AUTO） */
 /* ------------------------------------------------------------------ */
 
 /**
  * 全部生产绑定。每个条目：精确 executor_ref 身份 + 确定性输入护栏 + 真实 adapter。
  * 绝无 fallback 执行器；绝不 eval / 动态 require / 反射。
+ * 写绑定（GAP-B/C/F）集中在 PRODUCTION_WRITE_BINDINGS，保持本数组读语义纯净。
  */
 export const PRODUCTION_CAPABILITY_BINDINGS: readonly CapabilityExecutorBinding[] = Object.freeze([
   // ── Customer ────────────────────────────────────────────────────────
@@ -352,16 +367,20 @@ export const PRODUCTION_CAPABILITY_BINDINGS: readonly CapabilityExecutorBinding[
     },
     execute: (validatedInput: unknown) => validateImportMapping(validatedInput as readonly FieldMapping[]),
   }),
+
+  // ── W3-3 生产写绑定（7 项；见 ./writeAdapters：输入护栏 + 确认交接 + 草稿 AUTO）──
+  ...PRODUCTION_WRITE_BINDINGS,
 ]);
 
-/** 生产绑定注册表：13 个 executor_ref 全绑定；重复绑定在构造期 fail closed。 */
+/** 生产绑定注册表：20 个 executor_ref 全绑定；重复绑定在构造期 fail closed。 */
 export const PRODUCTION_CAPABILITY_BINDING_REGISTRY = createCapabilityBindingRegistry(
   PRODUCTION_CAPABILITY_BINDINGS,
 );
 
 /**
  * 生产统一执行入口（唯一公开执行面）：
- * Registry → Input validation → Scope validation → A10 Authority → Executor。
+ * Registry → Input validation → Scope validation → A10 Authority
+ * → (ALLOW_AUTO: Executor) | (确认类: 现有确认机制交接，业务执行器调用数 = 0)。
  * 不存在可跳过 A10 的公开路径。
  */
 export const PRODUCTION_CAPABILITY_EXECUTION = createCapabilityExecutionEngine({
@@ -369,10 +388,10 @@ export const PRODUCTION_CAPABILITY_EXECUTION = createCapabilityExecutionEngine({
   bindings: PRODUCTION_CAPABILITY_BINDING_REGISTRY,
 });
 
-/** 生产能力身份集合（13 项；供调用方/测试断言，非可变中央数组）。 */
+/** 生产能力身份集合（20 项；供调用方/测试断言，非可变中央数组）。 */
 export const PRODUCTION_CAPABILITY_IDS: readonly string[] = Object.freeze(
   PRODUCTION_CAPABILITY_REGISTRY.list().map((definition: CapabilityDefinition) => definition.id),
 );
 
-/** 生产注册数量（当前冻结生产能力数量 = 13；Evidence 空 manifest 贡献 0）。 */
+/** 生产注册数量（当前冻结生产能力数量 = 20；Evidence 空 manifest 贡献 0）。 */
 export const PRODUCTION_CAPABILITY_COUNT: number = PRODUCTION_CAPABILITY_REGISTRY.size();

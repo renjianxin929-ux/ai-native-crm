@@ -14,7 +14,7 @@
  */
 
 import type { CapabilityExecutorRef } from '../types';
-import type { CapabilityInvocationScope } from './contract';
+import type { CapabilityConfirmationHandoff, CapabilityInvocationScope } from './contract';
 
 /**
  * 一个能力执行器绑定。
@@ -26,6 +26,11 @@ import type { CapabilityInvocationScope } from './contract';
  * - execute：真正执行能力。只会在 A10 决策为 ALLOW_AUTO 后被引擎调用。
  *   接收校验后输入 + 显式作用域；返回原始 Product 结果（引擎原样包裹）。
  *   执行器生效客户身份必须从 scope 派生，绝不从输入重读。
+ * - handoff（可选，GAP-F）：仅当 A10 决策为 REQUIRE_CONFIRMATION /
+ *   REQUIRE_STRONG_CONFIRMATION 时由引擎调用。职责是"把这次请求交接进现有
+ *   产品确认机制"（例如经现有 proposal 构造路径注册 canonical snapshot），
+ *   返回现有机制中的提案引用；绝不执行业务写、绝不调用确认后执行器。
+ *   缺失 = 无交接（确认类结果如实返回，不含 confirmation_handoff）。
  */
 export interface CapabilityExecutorBinding {
   readonly executor_ref: CapabilityExecutorRef;
@@ -34,6 +39,10 @@ export interface CapabilityExecutorBinding {
     validatedInput: unknown,
     scope: CapabilityInvocationScope,
   ) => unknown | Promise<unknown>;
+  readonly handoff?: (
+    validatedInput: unknown,
+    scope: CapabilityInvocationScope,
+  ) => CapabilityConfirmationHandoff | Promise<CapabilityConfirmationHandoff>;
 }
 
 /** 绑定注册表错误（构造期；稳定 code）。 */

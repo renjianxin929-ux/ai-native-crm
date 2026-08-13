@@ -94,12 +94,30 @@ export interface CapabilityExecutionSuccess extends CapabilityExecutionOutcomeBa
   readonly payload: unknown;
 }
 
+/**
+ * 确认交接元数据（GAP-F）：统一执行结果中保留的最小信息，让调用方知道——
+ * - 确认是必需的（由 outcome.status 表达）
+ * - 哪个 capability/请求正在等待确认（proposal_id，指向现有确认机制中的提案）
+ * - 哪个现有确认机制拥有后续（mechanism 身份字符串）
+ * 刻意不携带业务敏感负载（客户载荷 / 原始 notes / prompt / 模型输出 / secret）：
+ * 不把执行结果变成第二个提案存储；提案本体永远留在现有机制（如
+ * sessionWriteStateStore 的 canonical snapshot）中，这里只保留引用。
+ */
+export interface CapabilityConfirmationHandoff {
+  /** 现有确认机制身份（如 'salesAgentConfirmedWrite' / 'battleCardConfirmedWrite'）。 */
+  readonly mechanism: string;
+  /** 现有确认机制中的提案 ID（等待人工确认；经现有 getCanonicalProposal 可读回）。 */
+  readonly proposal_id: string;
+}
+
 /** A10 要求确认：不执行执行器，返回结构化确认结果。 */
 export interface CapabilityExecutionConfirmationRequired extends CapabilityExecutionOutcomeBase {
   readonly status: 'CONFIRMATION_REQUIRED';
   readonly authority_decision: AuthorityDecision;
   readonly executor_ref: CapabilityExecutorRef;
   readonly idempotency: CapabilityIdempotency;
+  /** GAP-F：当绑定声明了确认交接适配器时，携带现有确认机制的提案引用（无敏感负载）。 */
+  readonly confirmation_handoff?: CapabilityConfirmationHandoff;
 }
 
 /** A10 要求强确认：不执行执行器，返回结构化强确认结果。 */
@@ -108,6 +126,8 @@ export interface CapabilityExecutionStrongConfirmationRequired extends Capabilit
   readonly authority_decision: AuthorityDecision;
   readonly executor_ref: CapabilityExecutorRef;
   readonly idempotency: CapabilityIdempotency;
+  /** GAP-F：当绑定声明了确认交接适配器时，携带现有确认机制的提案引用（无敏感负载）。 */
+  readonly confirmation_handoff?: CapabilityConfirmationHandoff;
 }
 
 /** A10 拒绝自主执行：不执行执行器，返回结构化拒绝结果。 */

@@ -24,7 +24,11 @@
  * - 合成 fixture（fixture.*）只用于证明结果语义（写/删/拒/错误/校验/相干）；
  *   真实生产路径（customer / timeline / follow-up / task / battle-card / import）
  *   全部经 PRODUCTION_CAPABILITY_EXECUTION 走统一链并比对现有真实 adapter 输出。
- * - 不修改任何现有文件；只新增本测试与 capabilities/execution/** 模块。
+ * - W3-1 Closure 1 后，生产基线已按集成审计演进为 20 项：
+ *     原 Wave1/Wave2 READ/ANALYZE 13 项（行为不变）
+ *     + W3-3 冻结 WRITE/DRAFT 能力 7 项（按各自冻结 A10 矩阵）
+ *   本套件按分区断言：13 原读能力保持原语义；7 写能力使用 W3-3 冻结 A10 决策；
+ *   不把 AUTO 语义扩大到全部 20 项。
  */
 
 import { readFileSync } from 'node:fs';
@@ -35,6 +39,7 @@ import Database from 'better-sqlite3';
 
 import { createCapabilityRegistry, type CapabilityDefinition } from '../lib/capabilities';
 import type { CapabilityRegistry } from '../lib/capabilities/registry';
+import { evaluateAuthorityPolicy } from '../lib/capabilities/authority';
 import {
   CapabilityInputValidationError,
   createCapabilityBindingRegistry,
@@ -55,6 +60,49 @@ import {
 } from '../lib/capabilities/execution';
 
 import { EVIDENCE_READ_CAPABILITY_MANIFEST } from '../lib/capabilities/evidence/manifest';
+
+/* ------------------------------------------------------------------ */
+/* 生产身份分区常量（本套件的真实基线：13 原读 + 7 W3-3 写 = 20）           */
+/* ------------------------------------------------------------------ */
+
+/** 原 Wave1/Wave2 READ/ANALYZE 能力（13 项；生产注册表必须完整保留，行为不变）。 */
+const ORIGINAL_READ_ANALYZE_IDS: readonly string[] = Object.freeze([
+  'customer.search',
+  'customer.get',
+  'customer.context',
+  'timeline.customer.read',
+  'timeline.visit.read',
+  'follow_up.customer.read',
+  'follow_up.global.read',
+  'task.read_by_customer',
+  'battle_card.current.read',
+  'battle_card.history.read',
+  'battle_card.context.read',
+  'import.file.preview',
+  'import.mapping.validate',
+]);
+
+/** W3-3 冻结 WRITE/DRAFT 能力（7 项；各自 A10 决策来自冻结 manifest，见 WRITE_DRAFT_A10）。 */
+const WRITE_DRAFT_IDS: readonly string[] = Object.freeze([
+  'customer.next_follow_up_time.update',
+  'follow_up.create',
+  'task.create',
+  'battle_card.draft.create',
+  'battle_card.confirm',
+  'battle_card.hypothesis.status.update',
+  'battle_card.intelligence_import.confirm',
+]);
+
+/** W3-3 冻结 A10 决策矩阵（与 existingWriteCapabilityRegistration / Closure-1 套件同一真值）。 */
+const WRITE_DRAFT_A10: Readonly<Record<string, 'ALLOW_AUTO' | 'REQUIRE_CONFIRMATION' | 'REQUIRE_STRONG_CONFIRMATION' | 'DENY_AUTONOMOUS'>> = Object.freeze({
+  'follow_up.create': 'REQUIRE_CONFIRMATION',
+  'task.create': 'REQUIRE_CONFIRMATION',
+  'customer.next_follow_up_time.update': 'REQUIRE_CONFIRMATION',
+  'battle_card.draft.create': 'ALLOW_AUTO',
+  'battle_card.confirm': 'REQUIRE_CONFIRMATION',
+  'battle_card.hypothesis.status.update': 'REQUIRE_CONFIRMATION',
+  'battle_card.intelligence_import.confirm': 'REQUIRE_STRONG_CONFIRMATION',
+});
 
 import { getCustomerRead, readCustomerContextRead } from '../lib/capabilities/customer/readAdapter';
 import { readCustomerTimeline, readCustomerVisits } from '../lib/capabilities/timeline/readAdapter';
@@ -428,11 +476,12 @@ async function openMemoryDbWithCards(): Promise<SeededDb> {
 /* T1 — PRODUCTION REGISTRY COMPOSITION                                 */
 /* ------------------------------------------------------------------ */
 
-describe('T1 — PRODUCTION REGISTRY COMPOSITION: all frozen manifests compose; count = 13; Evidence contributes 0', () => {
-  it('composes all seven domain manifests through the frozen A1 extension seam', () => {
-    expect(PRODUCTION_CAPABILITY_COUNT).toBe(13);
-    expect(PRODUCTION_CAPABILITY_REGISTRY.size()).toBe(13);
+describe('T1 — PRODUCTION REGISTRY COMPOSITION: all frozen manifests compose; count = 20 (13 original + 7 W3-3); Evidence contributes 0', () => {
+  it('composes all frozen domain manifests: count = 20, exact identity set = 13 original + 7 W3-3', () => {
+    expect(PRODUCTION_CAPABILITY_COUNT).toBe(20);
+    expect(PRODUCTION_CAPABILITY_REGISTRY.size()).toBe(20);
     expect(PRODUCTION_CAPABILITY_IDS).toEqual([
+      // 原 Wave1/Wave2 READ/ANALYZE 13 项（注册顺序与 Wave-2 冻结基线一致）
       'customer.search',
       'customer.get',
       'customer.context',
@@ -446,8 +495,26 @@ describe('T1 — PRODUCTION REGISTRY COMPOSITION: all frozen manifests compose; 
       'battle_card.context.read',
       'import.file.preview',
       'import.mapping.validate',
+      // W3-3 冻结 WRITE/DRAFT 7 项（追加注册，注册顺序 = manifest 组合顺序）
+      'customer.next_follow_up_time.update',
+      'follow_up.create',
+      'task.create',
+      'battle_card.draft.create',
+      'battle_card.confirm',
+      'battle_card.hypothesis.status.update',
+      'battle_card.intelligence_import.confirm',
     ]);
-    expect(new Set(PRODUCTION_CAPABILITY_IDS).size).toBe(13);
+    expect(new Set(PRODUCTION_CAPABILITY_IDS).size).toBe(20);
+    // 原 13 身份必须完整保留（不是被替换，而是被扩展）
+    for (const id of ORIGINAL_READ_ANALYZE_IDS) {
+      expect(PRODUCTION_CAPABILITY_IDS).toContain(id);
+    }
+    // 恰好 7 个 W3-3 写/草稿身份（精确集合，不允许第 8 个）
+    expect(PRODUCTION_CAPABILITY_IDS.filter((id) => WRITE_DRAFT_IDS.includes(id)).sort()).toEqual([...WRITE_DRAFT_IDS].sort());
+    expect(PRODUCTION_CAPABILITY_IDS.filter((id) => WRITE_DRAFT_IDS.includes(id))).toHaveLength(7);
+    // 分区不重叠、无第 21 项
+    expect(ORIGINAL_READ_ANALYZE_IDS.some((id) => WRITE_DRAFT_IDS.includes(id))).toBe(false);
+    expect(PRODUCTION_CAPABILITY_IDS.length).toBe(20);
   });
 
   it('evidence empty manifest stays part of composition while contributing zero identities', () => {
@@ -464,8 +531,8 @@ describe('T1 — PRODUCTION REGISTRY COMPOSITION: all frozen manifests compose; 
     expect(Object.isFrozen(a)).toBe(true);
     expect(Object.isFrozen(a.audit_contract)).toBe(true);
     const listed = PRODUCTION_CAPABILITY_REGISTRY.list();
-    expect(listed).toHaveLength(13);
-    expect(PRODUCTION_CAPABILITY_REGISTRY.size()).toBe(13);
+    expect(listed).toHaveLength(20);
+    expect(PRODUCTION_CAPABILITY_REGISTRY.size()).toBe(20);
   });
 
   it('no giant mutable ALL_CAPABILITIES array is exported', () => {
@@ -483,7 +550,7 @@ describe('T1 — PRODUCTION REGISTRY COMPOSITION: all frozen manifests compose; 
 /* T2 — IDENTITY LOOKUP                                                 */
 /* ------------------------------------------------------------------ */
 
-describe('T2 — IDENTITY LOOKUP: all 13 identities resolve through the production registry; all executor_refs truthfully bound', () => {
+describe('T2 — IDENTITY LOOKUP: all 20 identities resolve through the production registry; all executor_refs truthfully bound', () => {
   it('every production identity resolves deterministically', () => {
     for (const id of PRODUCTION_CAPABILITY_IDS) {
       const definition = PRODUCTION_CAPABILITY_REGISTRY.get(id, '1.0.0');
@@ -492,7 +559,7 @@ describe('T2 — IDENTITY LOOKUP: all 13 identities resolve through the producti
     }
   });
 
-  it('all 13 executor_refs are truthfully bound to existing domain adapters (BOUND=13, UNBOUND=[])', () => {
+  it('all 20 executor_refs are truthfully bound to existing domain adapters (BOUND=20, UNBOUND=[])', () => {
     const unbound: string[] = [];
     for (const id of PRODUCTION_CAPABILITY_IDS) {
       const definition = PRODUCTION_CAPABILITY_REGISTRY.get(id, '1.0.0');
@@ -502,8 +569,14 @@ describe('T2 — IDENTITY LOOKUP: all 13 identities resolve through the producti
       expect(binding?.executor_ref).toBe(definition.executor_ref);
     }
     expect(unbound).toEqual([]);
-    expect(PRODUCTION_CAPABILITY_BINDINGS).toHaveLength(13);
-    expect(PRODUCTION_CAPABILITY_BINDING_REGISTRY.size()).toBe(13);
+    // 绑定数 = 注册表数 = 20（绑定与身份一一对应）
+    expect(PRODUCTION_CAPABILITY_BINDINGS).toHaveLength(20);
+    expect(PRODUCTION_CAPABILITY_BINDING_REGISTRY.size()).toBe(20);
+    // 七个 W3-3 写 executor_ref 全部为冻结身份
+    for (const id of WRITE_DRAFT_IDS) {
+      const definition = PRODUCTION_CAPABILITY_REGISTRY.get(id, '1.0.0');
+      expect(PRODUCTION_CAPABILITY_BINDING_REGISTRY.resolve(definition.executor_ref)).toBeDefined();
+    }
   });
 });
 
@@ -813,7 +886,7 @@ describe('T9 — NONE SCOPE: Import Preview/Validate do not require artificial c
 /* T10 — AUTHORITY AUTO                                                 */
 /* ------------------------------------------------------------------ */
 
-describe('T10 — AUTHORITY AUTO: current READ/ANALYZE capabilities run exactly once', () => {
+describe('T10 — AUTHORITY AUTO: original 13 READ/ANALYZE run exactly once; 7 W3-3 writes keep frozen A10', () => {
   it('synthetic READ with A10 ALLOW_AUTO executes exactly once per invocation', async () => {
     const harness = makeSyntheticHarness();
     const first = await harness.engine.invoke({
@@ -838,10 +911,25 @@ describe('T10 — AUTHORITY AUTO: current READ/ANALYZE capabilities run exactly 
     expect(harness.callsFor('fixture.executor.success')).toBe(2);
   });
 
-  it('all 13 production capabilities evaluate to ALLOW_AUTO (current READ/ANALYZE only)', async () => {
-    for (const id of PRODUCTION_CAPABILITY_IDS) {
+  it('original 13 READ/ANALYZE capabilities stay ALLOW_AUTO; the 7 W3-3 writes keep their frozen A10 matrix (AUTO is NOT broadened to 20)', () => {
+    // 原 13：READ/ANALYZE effect + A10 ALLOW_AUTO（Wave1/Wave2 冻结行为不变）
+    for (const id of ORIGINAL_READ_ANALYZE_IDS) {
       const definition = PRODUCTION_CAPABILITY_REGISTRY.get(id, '1.0.0');
       expect(['READ', 'ANALYZE']).toContain(definition.effect);
+      const decision = evaluateAuthorityPolicy(definition);
+      expect(decision.decision, id).toBe('ALLOW_AUTO');
+      expect(decision.reason_code, id).toBe('AUTO_ALLOWED');
+    }
+    // 新 7：各自的冻结 W3-3 A10 决策（REQUIRE_CONFIRMATION ×5 / ALLOW_AUTO ×1 / REQUIRE_STRONG_CONFIRMATION ×1）
+    for (const id of WRITE_DRAFT_IDS) {
+      const definition = PRODUCTION_CAPABILITY_REGISTRY.get(id, '1.0.0');
+      expect(evaluateAuthorityPolicy(definition).decision, id).toBe(WRITE_DRAFT_A10[id]);
+    }
+    // 分区完备：13 + 7 = 20；全部身份都落在两个冻结分区之一
+    const all = new Set(PRODUCTION_CAPABILITY_IDS);
+    expect(all.size).toBe(20);
+    for (const id of [...ORIGINAL_READ_ANALYZE_IDS, ...WRITE_DRAFT_IDS]) {
+      expect(all.has(id)).toBe(true);
     }
   });
 });
@@ -905,10 +993,22 @@ describe('T12 — STRONG CONFIRMATION: DELETE / BULK_WRITE never invoke the exec
     expect(harness.callsFor('fixture.executor.write.delete')).toBe(0);
   });
 
-  it('no production capability is a write/delete (current 13 are READ/ANALYZE only)', () => {
-    for (const id of PRODUCTION_CAPABILITY_IDS) {
-      const definition = PRODUCTION_CAPABILITY_REGISTRY.get(id, '1.0.0');
-      expect(['WRITE', 'BULK_WRITE', 'DELETE']).not.toContain(definition.effect);
+  it('the production write/draft surface is exactly the 7 frozen W3-3 capabilities; no DELETE, no Wave-4, no generic customer.update', () => {
+    const effects = Object.fromEntries(PRODUCTION_CAPABILITY_REGISTRY.list().map((d) => [d.id, d.effect]));
+    // 原 13 保持 READ/ANALYZE（写面没有从读能力上"偷渡"）
+    for (const id of ORIGINAL_READ_ANALYZE_IDS) {
+      expect(['READ', 'ANALYZE']).toContain(effects[id]);
+    }
+    // 写/草稿面 = 恰好 7 个 W3-3 身份（WRITE / DRAFT / BULK_WRITE；精确集合）
+    const writeDraft = Object.entries(effects)
+      .filter(([, effect]) => effect === 'WRITE' || effect === 'BULK_WRITE' || effect === 'DRAFT')
+      .map(([id]) => id);
+    expect(writeDraft.sort()).toEqual([...WRITE_DRAFT_IDS].sort());
+    expect(writeDraft).toHaveLength(7);
+    // 无 DELETE 效应；Wave-4 / 泛化写身份缺席
+    expect(Object.values(effects)).not.toContain('DELETE');
+    for (const forbidden of ['customer.create', 'customer.delete', 'visit.create', 'import.execute', 'customer.update']) {
+      expect(PRODUCTION_CAPABILITY_IDS).not.toContain(forbidden);
     }
   });
 });
@@ -1074,7 +1174,7 @@ describe('T16 — NO MODEL / NETWORK: execution framework introduces MODEL_CALLS
 /* T17 — ZERO BUSINESS WRITES                                           */
 /* ------------------------------------------------------------------ */
 
-describe('T17 — ZERO BUSINESS WRITES: current 13 capabilities introduce no CRM writes', () => {
+describe('T17 — ZERO BUSINESS WRITES IN CORE: engine/contract/binding/production composition files carry no CRM write tokens; write adapters stay isolated in ./writeAdapters', () => {
   it('static: execution layer sources contain no CRM write tokens', () => {
     const dir = resolve(process.cwd(), 'src/lib/capabilities/execution');
     const files = ['contract.ts', 'binding.ts', 'engine.ts', 'production.ts', 'index.ts'];
@@ -1708,12 +1808,13 @@ describe('T22 — CUSTOMER SCOPE / INPUT MISMATCH: scope=A + input-targeting B f
 /* T23 — ALL CUSTOMER CAPABILITY COHERENCE（由真实 manifest 推导）        */
 /* ------------------------------------------------------------------ */
 
-describe('T23 — ALL CUSTOMER CAPABILITY COHERENCE: every CUSTOMER-scoped production capability has a truthful coherence model', () => {
-  it('enumerates every CUSTOMER-scoped capability from the actual registry (not hard-coded assumptions)', () => {
+describe('T23 — ALL CUSTOMER CAPABILITY COHERENCE: every CUSTOMER-scoped production capability (16 = 9 original + 7 W3-3) has a truthful coherence model', () => {
+  it('enumerates every scoped capability from the actual registry (20 = 13 original + 7 W3-3; CUSTOMER=16 / GLOBAL=2 / NONE=2)', () => {
     const customerScoped = PRODUCTION_CAPABILITY_REGISTRY.list()
       .filter((d) => d.scope_requirement === 'CUSTOMER')
       .map((d) => d.id);
     expect(customerScoped).toEqual([
+      // 原 9 个 CUSTOMER 读能力（注册顺序不变）
       'customer.get',
       'customer.context',
       'timeline.customer.read',
@@ -1723,13 +1824,23 @@ describe('T23 — ALL CUSTOMER CAPABILITY COHERENCE: every CUSTOMER-scoped produ
       'battle_card.current.read',
       'battle_card.history.read',
       'battle_card.context.read',
+      // W3-3 7 个 CUSTOMER 写/草稿能力（全部 CUSTOMER 范围，禁止缺省全局写）
+      'customer.next_follow_up_time.update',
+      'follow_up.create',
+      'task.create',
+      'battle_card.draft.create',
+      'battle_card.confirm',
+      'battle_card.hypothesis.status.update',
+      'battle_card.intelligence_import.confirm',
     ]);
     const globalScoped = PRODUCTION_CAPABILITY_REGISTRY.list().filter((d) => d.scope_requirement === 'GLOBAL').map((d) => d.id);
     const noneScoped = PRODUCTION_CAPABILITY_REGISTRY.list().filter((d) => d.scope_requirement === 'NONE').map((d) => d.id);
     expect(globalScoped).toEqual(['customer.search', 'follow_up.global.read']);
     expect(noneScoped).toEqual(['import.file.preview', 'import.mapping.validate']);
-    expect(customerScoped.length + globalScoped.length + noneScoped.length).toBe(13);
-    expect(customerScoped.length).toBe(9);
+    expect(customerScoped.length + globalScoped.length + noneScoped.length).toBe(20);
+    expect(customerScoped.length).toBe(16);
+    // 7 个 W3-3 写全部 CUSTOMER 范围（W3-3 T17 的冻结语义在生产组合中保持）
+    expect(customerScoped.filter((id) => WRITE_DRAFT_IDS.includes(id)).sort()).toEqual([...WRITE_DRAFT_IDS].sort());
   });
 
   it('every CUSTOMER-scoped capability fails closed on scope=A / input-targeting=B per its own input contract', async () => {
@@ -1737,6 +1848,7 @@ describe('T23 — ALL CUSTOMER CAPABILITY COHERENCE: every CUSTOMER-scoped produ
     const context = contextFixture(snapshot);
     const dbStub: DatabaseLike = { execute: async () => ({ rowsAffected: 0 }), select: async () => [] };
     const adversarialInputs: Readonly<Record<string, unknown>> = {
+      // 原 9 个 CUSTOMER 读能力
       'customer.get': { snapshot, context, customer_id: 'customer-2' },
       'customer.context': { snapshot, context, customer_id: 'customer-2' },
       'timeline.customer.read': { customer_id: 'customer-2' },
@@ -1746,6 +1858,14 @@ describe('T23 — ALL CUSTOMER CAPABILITY COHERENCE: every CUSTOMER-scoped produ
       'battle_card.current.read': { db: dbStub, customer_id: 'customer-2' },
       'battle_card.history.read': { db: dbStub, customer_id: 'customer-2' },
       'battle_card.context.read': { db: dbStub, customer_id: 'customer-2' },
+      // W3-3 7 个 CUSTOMER 写/草稿能力（scope=A + 输入选择器=B → 输入层 fail-closed）
+      'customer.next_follow_up_time.update': { db: dbStub, next_follow_up_at: '2026-08-01T09:00:00.000Z', customer_id: 'customer-2' },
+      'follow_up.create': { title: 'x', customer_id: 'customer-2' },
+      'task.create': { title: 'x', customer_id: 'customer-2' },
+      'battle_card.draft.create': { db: dbStub, stage_code: 'NEW_LEAD', customer_id: 'customer-2' },
+      'battle_card.confirm': { db: dbStub, card_id: 'card-x', expected_version: 1, customer_id: 'customer-2' },
+      'battle_card.hypothesis.status.update': { db: dbStub, hypothesis_id: 'hyp-x', new_status: 'CONFIRMED', expected_version: '2026-01-01T00:00:00.000Z', customer_id: 'customer-2' },
+      'battle_card.intelligence_import.confirm': { db: dbStub, raw_content: 'x', customer_id: 'customer-2' },
     };
     for (const capabilityId of Object.keys(adversarialInputs)) {
       const outcome = await PRODUCTION_CAPABILITY_EXECUTION.invoke({
