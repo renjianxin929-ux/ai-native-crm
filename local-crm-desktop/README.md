@@ -1,134 +1,123 @@
-# 销售CRM 个人版 v0.4.0
+# AI Native CRM
 
-本地桌面CRM系统，基于 Tauri 2.x + React + TypeScript + SQLite，数据完全存储在本机。
+Local-first, agent-oriented CRM foundation for building AI-native sales workflows.
 
-## 支持平台
+AI Native CRM 是一个本地优先的实验性开源 CRM，
+目标不是简单在 CRM 旁边增加聊天框，
+而是逐步探索 Agent 成为主要 CRM 操作者的产品架构。
 
-- **Windows**（x64，WebView2）
-- **macOS**（Apple Silicon / Intel，WKWebView）
+V0.1 是基础版本。
 
-## v0.4.0 新特性
+## Current V0.1 Capabilities
 
-- **双模型 AI 架构**: DeepSeek 负责所有纯文本分析（通话/微信文本/跟进建议/每日总结），Qwen (DashScope) 负责多模态识别（截图/图片结构化提取）
-- **AI 草稿系统**: 所有 AI 结果首先生成草稿（`ai_drafts` 表），用户确认后才写入客户/跟进记录，AI 不能直接修改客户数据
-- **AI 助手页面**: `/assistant` 路由，Tab 式界面——截图识别、通话文本分析、音频识别（待接入）
-- **AI 设置独立配置**: DeepSeek 文本配置和 Qwen 多模态配置分别存储（`text_ai_config` / `multimodal_config`）
-- **置信度可视化**: confidence < 0.65 低置信度警告，AI 不能自动升级为 A 级客户（需人工确认）
-- **安全**: API Key 不输出到 console/日志/错误信息
+- **Customer / Contact / Context** — 客户、联系人、上下文管理
+- **Timeline / Interaction** — 跟进 / 拜访 / 互动时间线
+- **Follow-up** — 今日跟进与逾期分组
+- **Battle Card** — 客户作战卡片（`src-tauri` 权威层 + 前端页面）
+- **Evidence** — 作战卡片证据基础
+- **Excel Import** — Excel 客户导入
+- **Sales Agent** — 只读 Agent / 建议模式 Agent / 真实模型推理
+- **Provider configuration** — 用户自配 LLM Provider（DeepSeek 等 OpenAI-compatible API）
+- **Local SQLite** — 本地数据库持久化（`src-tauri/migrations/` 版本化 schema）
+- **Encrypted credentials** — Windows DPAPI / macOS Keychain 保护 Provider Key
 
-## 功能
+## Architecture
 
-- **客户管理**: 新增/编辑/删除客户，40+ 字段（含官网/行业/地区/联系人/邮箱等）
-- **客户列表**: 多条件筛选（等级/手机/官网/微信状态/意向度/约访/跟进时间）、排序、全文搜索
-- **今日跟进**: 逾期/今日/7天内/长期未触达分组，规则引擎推荐动作
-- **跟进记录**: 微信/电话/面访记录，自动更新客户等级和阶段
-- **数据导入**: Excel (.xlsx) / CSV 导入，自动字段映射，重复检测，失败导出 CSV
-- **AI 分析**: DeepSeek 文本分析 + Qwen 多模态识别，AI 草稿→人工确认→写入客户数据
-- **数据安全**: JSON 备份/恢复（含版本号和校验），二次确认防误操作
+```
+React / TypeScript
+        ↓
+Sales Agent / Product Logic
+        ↓
+Tauri Rust Host
+        ↓
+SQLite / Native OS Security
+```
 
-## 技术栈
+## Local-first
 
-| 层 | 技术 |
-|---|------|
-| 桌面框架 | Tauri 2.x (Rust) |
-| 前端 | React 19 + TypeScript + Vite 8 |
-| 数据库 | SQLite (@tauri-apps/plugin-sql) |
-| 测试 | Vitest 4.x (282 tests) |
-| Excel | SheetJS (xlsx) |
-| AI 文本 | DeepSeek API (OpenAI-compatible chat/completions) |
-| AI 多模态 | Qwen / DashScope (compatible-mode/v1) |
+用户 CRM 数据保存在本机（SQLite 单文件，位于应用数据目录）。
 
-## 快速开始
+AI Provider Key 使用系统安全能力保护：
+Windows 使用 DPAPI（Current User Scope），
+macOS 使用 Keychain（AES-256-GCM 主密钥存钥匙串）。
+
+本产品不是完全离线应用：真实模型调用需要网络连接。
+
+## Getting Started
 
 ```bash
 npm install
-npm test          # 运行完整测试套件
-npm run dev       # 启动开发服务器 + Tauri 窗口
+npm test          # 运行测试套件（Vitest）
+npm run dev       # 开发模式（Vite + Tauri）
 npm run build     # 前端构建
 npx tauri build   # 桌面安装包（按当前平台生成 NSIS/MSI 或 DMG）
 ```
 
-## 构建产物
+## AI Provider
 
-**Windows**
+在设置页配置 Provider API Key（例如 DeepSeek 的 OpenAI-compatible endpoint）。
 
-- `src-tauri/target/release/app.exe` — 可执行文件
-- `src-tauri/target/release/bundle/nsis/local-crm_0.4.0_x64-setup.exe` — NSIS 安装器
-- `src-tauri/target/release/bundle/msi/local-crm_0.4.0_x64_en-US.msi` — MSI 安装器
+Key 不随 Release 分发，按设备独立存储。
 
-**macOS**
+## Build
 
-- `src-tauri/target/release/bundle/dmg/local-crm_0.4.0_aarch64.dmg` — DMG 安装镜像（`npx tauri build` 自动按当前平台生成）
+### macOS（Apple Silicon）
 
-## 数据库
-
-- **位置**: 应用数据目录下的 `personal-crm.db`（设置页可查看实际路径）
-  - Windows: `%APPDATA%/com.localcrm.desktop/personal-crm.db`
-  - macOS: `~/Library/Application Support/com.localcrm.desktop/personal-crm.db`
-- **类型**: SQLite 单文件
-- **表**: customers, follow_up_records, visit_records, tasks, settings, ai_drafts
-- **迁移**: 自动检测缺失列并 ALTER TABLE ADD COLUMN
-
-## AI Provider Key 安全存储
-
-- Windows: DPAPI Current User Scope（`ai_provider_credentials` 表）
-- macOS: Keychain（AES-256-GCM 主密钥存钥匙串，密文存 `ai_provider_credentials` 表）
-- 页面不回显旧 Key，Key 不写入浏览器存储、不出现在日志
-- Provider Key 按设备独立存储，需要在每台设备上分别配置
-
-## 备份与恢复
-
-1. 打开设置页
-2. 导出备份：点击"导出备份"，下载 JSON 文件（含版本号、时间戳、所有数据）
-3. 恢复备份：点击"恢复备份"，选择 JSON 文件，确认警告后执行恢复
-
-## 项目结构
-
-```
-src/
-  lib/
-    types.ts               # 类型定义 + 中文标签映射 (v0.4.0: +双模型类型)
-    rules.ts               # 纯函数规则引擎
-    timeParser.ts           # 中文模糊时间解析
-    db.ts                  # SQLite 数据库抽象层 (v0.4.0: +ai_drafts CRUD)
-    importer.ts            # Excel/CSV 导入引擎
-    ai.ts                  # [deprecated] 旧 AI mock (v0.3.x 兼容)
-    textAIProvider.ts      # DeepSeek 文本 AI 适配层
-    multimodalProvider.ts  # Qwen 多模态 AI 适配层
-    aiDraft.ts             # AI 分析 Prompt + API 调用 + 草稿创建
-  pages/
-    TodayView.tsx           # 今日跟进首页
-    CustomerList.tsx        # 客户列表
-    CustomerDetail.tsx      # 客户详情 (v0.4.0: +AI草稿查看)
-    DataImportPage.tsx      # 数据导入
-    SettingsPage.tsx        # 设置 + 备份恢复
-    AISettingsPage.tsx      # AI 设置 (v0.4.0: 双模型独立配置)
-    AIAssistantPage.tsx     # AI 助手 (v0.4.0: 截图/通话/音频)
-  components/
-    CustomerForm.tsx        # 新增/编辑客户表单
-    FollowUpForm.tsx        # 新增跟进记录
-    VisitForm.tsx           # 新增面访记录
-src-tauri/
-  src/lib.rs               # Tauri 入口 + SQL 插件注册
+```bash
+npm install
+npx tauri build
 ```
 
-## 版本历史
+产物：
 
-- **v0.4.0** — 双模型 AI 架构 (DeepSeek 文本 + Qwen 多模态)、AI 草稿系统、AI 助手页面、置信度可视化
-- **v0.3.1** — 导入增强、客户列表筛选排序、今日跟进分组、跟进自动更新、备份恢复
-- **v0.3.0** — 9 个新客户字段、Excel 导入框架、AI 底座
-- **v0.2.0** — Excel/CSV 导入框架
-- **v0.1.2** — SQL ACL 权限修复
-- **v0.1.1** — 数据库持久化、规则引擎、备份
+- `src-tauri/target/release/bundle/macos/local-crm.app`
+- `src-tauri/target/release/bundle/dmg/local-crm_0.1.0_aarch64.dmg`
 
-## 当前限制
+### Windows（x64）
 
-- 语音输入依赖 Web Speech API，受运行平台 WebView 支持限制（macOS WKWebView 不支持该 API，页面会提示改用文字输入）
-- Battle Card 原文导入为单条粘贴（Markdown 风格文本）；暂不支持 Excel 批量导入 Battle Card
-- 无云同步/多用户/登录
-- 无自动备份（需手动导出 JSON）
-- AI 截图识别依赖 Qwen DashScope API（需阿里云账号）
+在 Windows 真机上执行（需要 WebView2）：
+
+```bash
+npm install
+npx tauri build
+```
+
+产物：
+
+- `src-tauri/target/release/bundle/nsis/local-crm_0.1.0_x64-setup.exe`
+- `src-tauri/target/release/bundle/msi/local-crm_0.1.0_x64_en-US.msi`
+
+## Database
+
+- 类型：SQLite 单文件
+- Windows: `%APPDATA%/com.localcrm.desktop/`
+- macOS: `~/Library/Application Support/com.localcrm.desktop/`
+- 迁移：`src-tauri/migrations/`（版本化 SQL）
+
+## Current Limitations
+
+- V0.1 仍属于 OSS Foundation，不是最终 Agent First 架构
+- macOS voice dictation 尚未完成原生实现
+- Excel batch Battle Card import 尚未实现
+- Windows/macOS 本地数据库默认不自动同步
+- Provider API Key 每台设备单独配置
+- macOS 当前 package 未 Apple notarized（首次打开如被拦截：右键应用 → 打开）
+
+## Roadmap
+
+V0.2:
+Capability Complete + External Reach + UI Ready
+
+V0.3:
+Agent First Foundation
+
+## Security
+
+- Local-first：CRM 数据保存在本机
+- OS credential protection：Windows DPAPI / macOS Keychain
+- Human-confirmed high-risk writes（AI 建议 → 人工确认后写入）
+- No bundled API keys
 
 ## License
 
-MIT
+尚未选择 License（仓库无 LICENSE 文件）。License 确定后再公开。
