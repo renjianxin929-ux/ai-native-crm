@@ -31,6 +31,7 @@ import type {
 import type { CapabilityBindingRegistry } from './binding';
 import {
   CapabilityInputValidationError,
+  type CapabilityConfirmationHandoff,
   type CapabilityExecutionErrorCode,
   type CapabilityExecutionObserver,
   type CapabilityExecutionOutcome,
@@ -178,11 +179,48 @@ export function createCapabilityExecutionEngine(
       idempotency: definition.idempotency,
     } as const;
 
-    if (decision.decision === 'REQUIRE_CONFIRMATION') {
-      return emitOutcome(freezeOutcome({ status: 'CONFIRMATION_REQUIRED', capability_id: definition.id, capability_version: definition.version, ...resolvedMeta }));
-    }
-    if (decision.decision === 'REQUIRE_STRONG_CONFIRMATION') {
-      return emitOutcome(freezeOutcome({ status: 'STRONG_CONFIRMATION_REQUIRED', capability_id: definition.id, capability_version: definition.version, ...resolvedMeta }));
+    /**
+     * GAP-F 确认交接尝试（仅确认/强确认分支调用）。
+     * 交接 = 把请求注册进现有产品确认机制（CONFIRMATION_HANDOFF_SIDE_EFFECT），
+     * 绝不执行业务写；失败 fail-closed：无提案注册、无业务执行，返回结构化错误。
+     * - 交接抛 CapabilityInputValidationError（如 by-ID 目标所有权不符）→ INVALID_INPUT
+     * - 其它交接失败 → EXECUTOR_ERROR（消息脱敏）
+     */
+    type HandoffAttempt =
+      | { readonly kind: 'ok'; readonly handoff?: CapabilityConfirmationHandoff }
+      | { readonly kind: 'failed'; readonly outcome: CapabilityExecutionOutcome };
+    const attemptHandoff = async (): Promise<HandoffAttempt> => {
+      if (binding.handoff === undefined) return { kind: 'ok' };
+      try {
+        return { kind: 'ok', handoff: await binding.handoff(validatedInput, invocation.scope) };
+      } catch (error) {
+        const isValidation = error instanceof CapabilityInputValidationError;
+        const message = error instanceof Error ? error.message : String(error);
+        return {
+          kind: 'failed',
+          outcome: emitOutcome(failure(
+            isValidation ? 'INVALID_INPUT' : 'EXECUTOR_ERROR',
+            invocation,
+            isValidation ? message : `Confirmation handoff failed: ${message}`,
+            { definition, decision },
+          )),
+        };
+      }
+    };
+
+    if (decision.decision === 'REQUIRE_CONFIRMATION' || decision.decision === 'REQUIRE_STRONG_CONFIRMATION') {
+      const attempt = await attemptHandoff();
+      if (attempt.kind === 'failed') return attempt.outcome;
+      const status = decision.decision === 'REQUIRE_CONFIRMATION'
+        ? ('CONFIRMATION_REQUIRED' as const)
+        : ('STRONG_CONFIRMATION_REQUIRED' as const);
+      return emitOutcome(freezeOutcome({
+        status,
+        capability_id: definition.id,
+        capability_version: definition.version,
+        ...resolvedMeta,
+        ...(attempt.handoff !== undefined ? { confirmation_handoff: attempt.handoff } : {}),
+      }));
     }
     if (decision.decision === 'DENY_AUTONOMOUS') {
       return emitOutcome(freezeOutcome({ status: 'AUTONOMY_DENIED', capability_id: definition.id, capability_version: definition.version, ...resolvedMeta }));
