@@ -51,15 +51,16 @@ AI Provider Key 使用系统安全能力保护。
 
 ## Getting Started
 
+产品代码位于 `local-crm-desktop/`，先进入该目录：
+
 ```bash
+cd local-crm-desktop
 npm install
 npm test          # 运行测试套件
 npm run dev       # 开发模式（Vite + Tauri）
 npm run build     # 前端构建
 npx tauri build   # 桌面安装包（按当前平台生成 NSIS/MSI 或 DMG）
 ```
-
-产品代码位于 `local-crm-desktop/`。
 
 ## AI Provider
 

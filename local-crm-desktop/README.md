@@ -82,7 +82,7 @@ npm install
 npx tauri build
 ```
 
-产物：
+产物（Windows 真机最终 Smoke 完成后随 v0.1.0 Release 发布）：
 
 - `src-tauri/target/release/bundle/nsis/local-crm_0.1.0_x64-setup.exe`
 - `src-tauri/target/release/bundle/msi/local-crm_0.1.0_x64_en-US.msi`

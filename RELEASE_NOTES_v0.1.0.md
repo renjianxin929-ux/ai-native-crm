@@ -70,6 +70,11 @@ v0.1.0-macos
 
 两个平台属于同一个产品版本。
 
+## License
+
+License 尚未确定（仓库无 LICENSE 文件）。
+仓库当前保持 Private，License 确定并完成发布检查后再转为 Public。
+
 ## Known Limitations
 
 - V0.1 仍属于 OSS Foundation，不是最终 Agent First 架构
