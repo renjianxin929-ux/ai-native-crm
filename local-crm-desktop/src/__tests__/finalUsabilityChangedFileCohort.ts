@@ -565,6 +565,36 @@ export const V0_1_RC_FULL_CHANGED_COHORT = [
 export const V0_1_RC_SRC_CHANGED_COHORT = V0_1_RC_FULL_CHANGED_COHORT
   .filter(file => file.startsWith('src/')) as readonly string[];
 
+/**
+ * V0.1 Final Real-App Golden Journey Fix（2026-08-13）：真人验收发现的三个
+ * release blocker 修复——A 命名客户 scope 解析（filterNormalization 名称动词
+ * 前缀剥离 + agentIntentEnvelope 分析分支携带 portfolio_filters + controller
+ * scope gate 前实体解析）、B 结构化模型输出契约（trusted_host extract_output
+ * 容忍 fenced JSON + envelope 携带 closed schema 字段规格注入 provider prompt +
+ * modelOutputSchemas 规格单源）、C 运行时 UI 状态五分类（runtimeMode 不再把
+ * schema invalid 误报为“模型不可用”）。守卫登记文件随之更新。
+ */
+export const V0_1_GOLDEN_JOURNEY_FIX_FULL_CHANGED_COHORT = [
+  'src-tauri/src/trusted_host.rs',
+  'src/lib/productionAi/modelContextEnvelope.ts',
+  'src/lib/productionAi/modelOutputSchemas.ts',
+  'src/lib/productionAi/productionReasoningPath.ts',
+  'src/lib/productionAi/runtimeMode.ts',
+  'src/lib/salesAgentTools/agentIntentEnvelope.ts',
+  'src/lib/salesAgentTools/filterNormalization.ts',
+  'src/lib/salesAgentTools/interactionController.ts',
+  'src/__tests__/goldenJourneyFix.focused.test.ts',
+  'src/__tests__/finalUsabilityChangedFileCohort.ts',
+  'src/__tests__/battleCard.dataFidelity.focused.test.ts',
+  'src/__tests__/transportEquivalenceE2ETruth.focused.test.ts',
+  'scripts/real_tauri_e2e.py',
+  'V0_1_FINAL_FIX_REPORT.md',
+] as const;
+
+/** src/ 前缀口径（readiness 守卫只收集 src/ 文件）。 */
+export const V0_1_GOLDEN_JOURNEY_FIX_SRC_CHANGED_COHORT = V0_1_GOLDEN_JOURNEY_FIX_FULL_CHANGED_COHORT
+  .filter(file => file.startsWith('src/')) as readonly string[];
+
 /** src/ + package.json（readiness 守卫的 src/+package.json+lock.yaml 口径）。 */
 export const V0_1_RC_SRC_PACKAGE_CHANGED_COHORT = V0_1_RC_FULL_CHANGED_COHORT
   .filter(file => file.startsWith('src/') || file === 'package.json') as readonly string[];
@@ -645,7 +675,9 @@ export function hasExactFinalUsabilityChangedFileSet(actualFiles: readonly strin
     || hasSameNormalizedFileSet(actualFiles, MAC_REAL_APP_CUSTOMER_DISCOVERY_FIX_SRC_CHANGED_COHORT)
     || hasSameNormalizedFileSet(actualFiles, V0_1_RC_FULL_CHANGED_COHORT)
     || hasSameNormalizedFileSet(actualFiles, V0_1_RC_SRC_CHANGED_COHORT)
-    || hasSameNormalizedFileSet(actualFiles, V0_1_RC_SRC_PACKAGE_CHANGED_COHORT);
+    || hasSameNormalizedFileSet(actualFiles, V0_1_RC_SRC_PACKAGE_CHANGED_COHORT)
+    || hasSameNormalizedFileSet(actualFiles, V0_1_GOLDEN_JOURNEY_FIX_FULL_CHANGED_COHORT)
+    || hasSameNormalizedFileSet(actualFiles, V0_1_GOLDEN_JOURNEY_FIX_SRC_CHANGED_COHORT);
 }
 
 export function hasExactFinalUsabilityTrackedChangedFileSet(actualFiles: readonly string[]): boolean {

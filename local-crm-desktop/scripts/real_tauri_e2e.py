@@ -429,6 +429,8 @@ def exact_db_oracle(
         assertions["zero_unexpected_db_mutation"] = not unexpected
         if number in {28, 33, 34, 44}:
             assertions["cancel_or_mismatch_zero_write"] = not changes
+        if number in {45, 46}:
+            assertions["golden_journey_zero_write"] = not changes
     return {
         "scenario_id": scenario_id,
         "execution_id": execution_id,
@@ -767,6 +769,7 @@ def run_independent_scenario(
         33: "CREATE_FOLLOW_UP_REQUEST", 34: "CREATE_FOLLOW_UP_REQUEST",
         **{item: "CAPTURE_REVIEW" for item in range(35, 42)},
         42: "CUSTOMER_SUMMARY", 43: "CREATE_FOLLOW_UP_REQUEST", 44: "CAPTURE_REVIEW",
+        45: "CUSTOMER_SUMMARY", 46: "CUSTOMER_SUMMARY",
     }
     prompts = {
         1: "广州区域客户", 2: "广州地区客户", 3: "广州市客户", 4: "列出广州客户并核对总数",
@@ -783,6 +786,7 @@ def run_independent_scenario(
         35: "粘贴文本并显式 Analyze text", 36: "选择真实图片但不自动 Analyze", 37: "显式 Analyze image", 38: "Accept 提取事实",
         39: "Reject 提取事实", 40: "Edit 并保存提取事实", 41: "Candidate 不得自动成为 ACTIVE", 42: "使用 Reviewed Fact 推理",
         43: "Capture Proposal 取消后再确认", 44: "Capture late response 取消后第二请求成功",
+        45: "总结一下广州ABC科技有限公司", 46: "总结客户现状",
     }
     original_prompt = prompts[number]
     prompt = start_scenario(number, original_prompt)
@@ -856,6 +860,31 @@ def run_independent_scenario(
             observations = {"real_result_visible": stage(page) == "result", "runtime_metadata_visible": page.locator('[data-testid="agent-runtime-mode-badge"]').count() > 0}
             model_mode = "REAL_MODEL"
         tools = [] if number in {15, 22} else ["get_customer_context", "get_customer_timeline"]
+    elif number in {45, 46}:
+        # Golden Journey Fix real-app chain:
+        #   45 = NEW SESSION + "总结一下广州ABC科技有限公司" → real SQLite search →
+        #        unique named customer (region NULL, production shape) → scope auto-established
+        #        → summary provider path → valid AI result.
+        #   46 = EXISTING SCOPE (bound to 广州ABC科技有限公司) + "总结客户现状" →
+        #        real production parser path → valid structured response.
+        if number == 45:
+            ready(page)
+            sequence = send(page, prompt, 26000)
+        else:
+            bind(page, "广州ABC科技有限公司")
+            sequence = send(page, prompt, 22000)
+        text = body(page)
+        observations = {
+            "real_result_visible": stage(page) == "result",
+            "runtime_metadata_visible": page.locator('[data-testid="agent-runtime-mode-badge"]').count() > 0,
+        }
+        if number == 45:
+            observations["scope_bound_to_named_customer"] = "广州ABC科技有限公司" in text
+            observations["no_scope_gate_block"] = "请先定位客户" not in text
+        else:
+            observations["scope_chip_visible"] = page.locator('[data-testid="agent-scope-chip"]').count() > 0
+        model_mode = "REAL_MODEL"
+        tools = ["search_customers", "get_customer_context", "get_customer_timeline"] if number == 45 else ["get_customer_context", "get_customer_timeline"]
     elif 23 <= number <= 34:
         bind(page)
         setup_prompt = prompt
@@ -1038,7 +1067,7 @@ def write_results(root: Path, results: list[dict[str, Any]]) -> None:
         "reused_execution_count": reused_execution_count,
         "manual_actual_override_count": 0,
         "fixed_intent_bypass_count": 0,
-        "all_pass": len(results) == 44 and independent_execution_count == 44 and reused_execution_count == 0 and all(item["pass_fail"] == "PASS" for item in results),
+        "all_pass": len(results) == 46 and independent_execution_count == 46 and reused_execution_count == 0 and all(item["pass_fail"] == "PASS" for item in results),
         "results": results,
     }, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     csv_path = root / "action-matrix-44-results.csv"
@@ -1219,7 +1248,7 @@ def run_independent_full(args: argparse.Namespace, evidence_root: Path) -> None:
         raise
     try:
         with _PlaywrightCompat() as playwright:
-            scenario_numbers = [args.scenario] if args.scenario is not None else list(range(1, 45))
+            scenario_numbers = [args.scenario] if args.scenario is not None else list(range(1, 47))
             for number in scenario_numbers:
                 if number == 1:
                     shared_video_paths["A"] = videos.start("A-portfolio-pagination-candidate-independent")
@@ -1373,7 +1402,7 @@ def main() -> None:
     parser.add_argument("--baseline-db")
     parser.add_argument("--full", action="store_true")
     parser.add_argument("--independent-full", action="store_true")
-    parser.add_argument("--scenario", type=int, choices=range(1, 45))
+    parser.add_argument("--scenario", type=int, choices=range(1, 47))
     parser.add_argument("--app-binary", default=str(Path(__file__).resolve().parents[1] / "src-tauri" / "target" / "release" / "app.exe"))
     parser.add_argument("--recon", action="store_true")
     parser.add_argument("--capture-smoke", action="store_true")

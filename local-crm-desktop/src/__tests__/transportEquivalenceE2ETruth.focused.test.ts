@@ -41,7 +41,7 @@ describe('transport equivalence and E2E truth closure', () => {
   });
 
   it('action-matrix-independent-44 restores a clean copied DB and launches a new Tauri process per scenario', () => {
-    expect(driver).toContain('scenario_numbers = [args.scenario] if args.scenario is not None else list(range(1, 45))');
+    expect(driver).toContain('scenario_numbers = [args.scenario] if args.scenario is not None else list(range(1, 47))');
     expect(driver).toContain('restore_isolated_e2e_database(baseline_db, live_e2e_db)');
     expect(driver).toContain('subprocess.Popen([str(app_binary)]');
     expect(driver).toContain('stop_process_tree(app)');

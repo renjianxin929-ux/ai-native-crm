@@ -2,6 +2,7 @@ import type { CRMCustomerFact, CRMInteractionFact, ContextSnapshot } from '../co
 import type { CustomerMemoryContext, CustomerMemoryItem } from '../customerMemory';
 import type { SalesAgentToolResult } from '../salesAgentTools/registry';
 import type { OutputSchemaId, ProductionCapabilityIntent } from './capabilityRoutingMatrix';
+import { outputSchemaSpecFor } from './modelOutputSchemas';
 
 export const MODEL_CONTEXT_LIMITS = {
   max_recent_interactions: 20,
@@ -58,6 +59,8 @@ export interface ModelContextEnvelope {
   readonly timezone: string;
   readonly safety_mode: 'human_review_required_no_crm_write';
   readonly requested_output_schema: OutputSchemaId;
+  /** Closed-schema field specification shown to the provider so its output shape matches the parser contract. */
+  readonly output_schema_spec: string;
   readonly truncated_fields: readonly string[];
 }
 
@@ -279,6 +282,7 @@ export function buildModelContextEnvelope(input: ModelContextEnvelopeInput): Mod
     timezone: input.timezone ?? 'Asia/Shanghai',
     safety_mode: 'human_review_required_no_crm_write' as const,
     requested_output_schema: input.output_schema,
+    output_schema_spec: outputSchemaSpecFor(input.output_schema),
     truncated_fields: [] as string[],
   };
 

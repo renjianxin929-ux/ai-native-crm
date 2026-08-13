@@ -491,6 +491,14 @@ export class SalesAgentInteractionController {
         return await this.runScoped(intentEnvelope, this.state.scoped_customer_id);
       }
 
+      // Golden Journey fix (BUG A): an analysis utterance that itself carries a
+      // named customer entity ("总结一下广州ABC科技有限公司") must resolve the
+      // entity BEFORE the scope gate. Unique/exact match auto-establishes scope;
+      // 0 or ambiguous candidates fall through to the normal clarification path.
+      if (!this.state.scoped_customer_id && intentEnvelope.mode === 'customer_analysis' && intentEnvelope.portfolio_filters.name_query) {
+        return await this.resolveAndMaybeContinue(intentEnvelope, false);
+      }
+
       if (!this.state.scoped_customer_id && intentEnvelope.mode === 'customer_analysis') {
         this.state = {
           ...this.state,

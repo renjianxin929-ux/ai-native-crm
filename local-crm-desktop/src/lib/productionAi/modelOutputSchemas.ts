@@ -281,3 +281,30 @@ export function validateModelOutputSchema(
   if (raw.requires_human_review !== true) errors.push('requires_human_review must be true');
   return finish(schema, raw, errors);
 }
+
+/**
+ * Closed-schema specifications injected into the provider system prompt so the
+ * provider contract and the parser contract describe the SAME shape. Must stay
+ * field-for-field consistent with the validators above (a focused test locks
+ * that parity). Validation itself remains strict and unchanged.
+ */
+export const OUTPUT_SCHEMA_SPECS: Readonly<Record<string, string>> = {
+  customer_summary_v1:
+    'exactly these fields and nothing else: customer_understanding (non-empty string), recent_changes (non-empty string), risks (array of strings, may be empty), opportunities (array of strings, may be empty), recommended_next_steps (array of 1-12 strings), evidence_refs (array of 1-40 strings; cite only evidence_ids provided in the evidence_map), uncertainty (array of strings, may be empty), speculative_claims (array of strings, may be empty), requires_human_review (boolean that must be exactly true).',
+  follow_up_draft_v1:
+    'exactly these fields and nothing else: draft_text (non-empty string), tone (non-empty string), objective (non-empty string), evidence_refs (array of 1-40 strings; cite only provided evidence_ids), unsupported_assumptions (array of strings, may be empty), requires_human_review (boolean that must be exactly true).',
+  risk_analysis_v1:
+    'exactly these fields and nothing else: risk_items (array of 1-20 objects, each with exactly: id (string), summary (non-empty string), severity (one of low, medium, high), inference_type (one of crm_fact, model_inference), evidence_refs (array of 1-40 strings)); severity (one of low, medium, high), reasoning_summary (non-empty string), evidence_refs (array of 1-40 strings; cite only provided evidence_ids), mitigation (array of strings, may be empty), uncertainty (array of strings, may be empty), requires_human_review (boolean that must be exactly true).',
+  next_action_v1:
+    'exactly these fields and nothing else: recommended_next_steps (array of 1-12 strings), reasoning_summary (non-empty string), evidence_refs (array of 1-40 strings; cite only provided evidence_ids), uncertainty (array of strings, may be empty), requires_human_review (boolean that must be exactly true).',
+  interaction_summary_v1:
+    'exactly these fields and nothing else: interaction_summary (non-empty string), key_points (array of 1-20 strings), evidence_refs (array of 1-40 strings; cite only provided evidence_ids), uncertainty (array of strings, may be empty), requires_human_review (boolean that must be exactly true).',
+  image_capture_analysis_v1:
+    'exactly these fields and nothing else: extracted_facts (array of 1-20 objects, each with exactly: fact_id (string), fact_type (one of extracted_text, visible_product_attribute, company_contact_information, visible_requirement, visible_objection, document_field, date_quantity_specification, manual_review_required), content (non-empty string), source_reference (string), confidence (number between 0 and 1)); source_reference (string), confidence (number between 0 and 1), evidence_regions (array of 1-20 strings), unsupported_assumptions (array of strings, may be empty), requires_fact_review (boolean that must be exactly true).',
+  complex_customer_compare_v1:
+    'exactly these fields and nothing else: comparison_summary (non-empty string), ranked_customers (array of 2-5 objects, each with exactly: customer_id (string from the provided customer_allowlist), rank (integer 1-5), rationale (non-empty string), evidence_refs (array of 1-40 strings)); evidence_refs (array of 1-40 strings; cite only provided evidence_ids), uncertainty (array of strings, may be empty), requires_human_review (boolean that must be exactly true).',
+} as const;
+
+export function outputSchemaSpecFor(schema: string): string {
+  return OUTPUT_SCHEMA_SPECS[schema] ?? '';
+}

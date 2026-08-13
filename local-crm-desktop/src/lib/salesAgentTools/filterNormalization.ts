@@ -118,6 +118,23 @@ function extractStage(message: string): string | undefined {
   return undefined;
 }
 
+/**
+ * Strip a leading analysis verb (总结/概括/分析/整理 …) from a whole-utterance
+ * company name so the extracted name_query is the bare entity name. The search
+ * tool matches against customers.name, and "总结一下广州ABC科技有限公司" must
+ * resolve to name_query "广州ABC科技有限公司" — not a LIKE pattern that can
+ * never match because of the verb prefix.
+ *
+ * The verb must be followed by an explicit complement ("一下"/"下") or a colon,
+ * so real company names that merely start with such characters
+ * ("分析测试技术有限公司") are never mutilated.
+ */
+function stripLeadingAnalysisPrefix(text: string): string {
+  return text
+    .replace(/^(?:请|麻烦)?\s*(?:帮我|给我)?\s*(?:总结|概括|分析|梳理|整理)\s*(?:(?:一下|下)|[:：])\s*(?:这个|该|这家)?\s*(?:客户|公司)?\s*[:：]?\s*/u, '')
+    .trim();
+}
+
 function extractQuotedOrMarkedName(message: string): string | null {
   // Cut trailing follow-on clauses ("，然后总结…") before name extraction
   const head = message.split(/[，,]?\s*然后/)[0]!.trim();
@@ -255,8 +272,11 @@ export function normalizeCustomerSearchFilters(message: string, nowIso?: string)
   if ((hasExplicitQuotedName || isDirectEntityLookup || wholeCompanyNameCandidate) && markedRaw) {
     // Quotation / direct-entity verb / whole-utterance-company-name is an explicit
     // entity boundary. Preserve the full company name even when it contains
-    // region/industry vocabulary (华南生物, 广州生物科技有限公司).
-    name_query = markedRaw;
+    // region/industry vocabulary (华南生物, 广州生物科技有限公司). A leading
+    // analysis verb ("总结一下…") is not part of the entity name and must be
+    // stripped, otherwise the LIKE match against customers.name can never hit.
+    name_query = wholeCompanyNameCandidate ? stripLeadingAnalysisPrefix(markedRaw) : markedRaw;
+    if (name_query.length < 2) name_query = undefined;
   } else if (!structural && markedRaw) {
     name_query = markedRaw;
   } else if (markedRaw && structural) {

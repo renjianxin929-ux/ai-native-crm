@@ -242,18 +242,21 @@ export function createAgentIntentEnvelope(
   }
 
   // 7-9. Customer analysis and draft. Specific phrases precede broad words.
+  // Each branch carries the normalized portfolio filters so a named customer
+  // entity embedded in the utterance ("总结一下广州ABC科技有限公司") can be
+  // resolved by the controller BEFORE the scope gate.
   if (hasFollowUpDraftMeaning(intentText)) {
-    return make({ intent: 'FOLLOW_UP_DRAFT', mode: 'customer_analysis', confidence: 0.98 });
+    return make({ intent: 'FOLLOW_UP_DRAFT', mode: 'customer_analysis', confidence: 0.98, portfolio_filters: search.filters, customer_reference: search.filters.name_query ?? null });
   }
   if (hasInteractionSummaryMeaning(intentText)) {
-    return make({ intent: 'INTERACTION_SUMMARY', mode: 'customer_analysis', confidence: 0.98 });
+    return make({ intent: 'INTERACTION_SUMMARY', mode: 'customer_analysis', confidence: 0.98, portfolio_filters: search.filters, customer_reference: search.filters.name_query ?? null });
   }
-  if (hasNextActionMeaning(intentText)) return make({ intent: 'NEXT_ACTION_PREPARATION', mode: 'customer_analysis', confidence: 0.97 });
-  if (hasRiskMeaning(intentText)) return make({ intent: 'CUSTOMER_RISK_ANALYSIS', mode: 'customer_analysis', confidence: 0.97 });
+  if (hasNextActionMeaning(intentText)) return make({ intent: 'NEXT_ACTION_PREPARATION', mode: 'customer_analysis', confidence: 0.97, portfolio_filters: search.filters, customer_reference: search.filters.name_query ?? null });
+  if (hasRiskMeaning(intentText)) return make({ intent: 'CUSTOMER_RISK_ANALYSIS', mode: 'customer_analysis', confidence: 0.97, portfolio_filters: search.filters, customer_reference: search.filters.name_query ?? null });
   if (hasCustomerSummaryMeaning(intentText) || search.is_scoped_analysis) {
-    return make({ intent: 'CUSTOMER_SUMMARY', mode: 'customer_analysis', confidence: 0.96 });
+    return make({ intent: 'CUSTOMER_SUMMARY', mode: 'customer_analysis', confidence: 0.96, portfolio_filters: search.filters, customer_reference: search.filters.name_query ?? null });
   }
-  if (/最近互动|沟通记录|时间线/.test(intentText)) return make({ intent: 'CUSTOMER_TIMELINE_REVIEW', mode: 'customer_analysis', confidence: 0.93 });
+  if (/最近互动|沟通记录|时间线/.test(intentText)) return make({ intent: 'CUSTOMER_TIMELINE_REVIEW', mode: 'customer_analysis', confidence: 0.93, portfolio_filters: search.filters, customer_reference: search.filters.name_query ?? null });
 
   return make({
     intent: 'SAFE_FALLBACK',

@@ -231,7 +231,7 @@ function finish(args: {
     tools_used: args.input.tool_trace.map(item => item.tool_id), evidence_count: args.evidence_refs.length,
     degraded: args.degraded, degradation_reason: args.degradation_reason, validation_status: args.validation_status,
     evidence_validation_status: args.evidence_validation_status, cancellation_status: args.cancellation_status,
-    requires_real_model: args.route.requires_real_model,
+    requires_real_model: args.route.requires_real_model, failure_category: args.failure_category,
   });
   const structured = args.blocked_message
     ? { ...args.structured, recommended_next_step: args.blocked_message }
