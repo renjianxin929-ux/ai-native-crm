@@ -587,12 +587,29 @@ export const V0_1_GOLDEN_JOURNEY_FIX_FULL_CHANGED_COHORT = [
   'src/__tests__/finalUsabilityChangedFileCohort.ts',
   'src/__tests__/battleCard.dataFidelity.focused.test.ts',
   'src/__tests__/transportEquivalenceE2ETruth.focused.test.ts',
+  'src/__tests__/deepseekLiveContract.focused.test.ts',
   'scripts/real_tauri_e2e.py',
   'V0_1_FINAL_FIX_REPORT.md',
 ] as const;
 
 /** src/ 前缀口径（readiness 守卫只收集 src/ 文件）。 */
 export const V0_1_GOLDEN_JOURNEY_FIX_SRC_CHANGED_COHORT = V0_1_GOLDEN_JOURNEY_FIX_FULL_CHANGED_COHORT
+  .filter(file => file.startsWith('src/')) as readonly string[];
+
+/**
+ * V0.1 Golden Journey Fix — live DeepSeek provider evidence increment
+ * (2026-08-13)：真实 provider contract 验证（探测 + env-guarded live 测试）
+ * 及其报告/守卫登记更新。上一提交（1799a48）已含其余 12 个文件。
+ */
+export const V0_1_GOLDEN_JOURNEY_FIX_LIVE_PROVIDER_EVIDENCE_FULL_CHANGED_COHORT = [
+  'V0_1_FINAL_FIX_REPORT.md',
+  'src/__tests__/finalUsabilityChangedFileCohort.ts',
+  'src/__tests__/battleCard.dataFidelity.focused.test.ts',
+  'src/__tests__/deepseekLiveContract.focused.test.ts',
+] as const;
+
+/** src/ 前缀口径。 */
+export const V0_1_GOLDEN_JOURNEY_FIX_LIVE_PROVIDER_EVIDENCE_SRC_CHANGED_COHORT = V0_1_GOLDEN_JOURNEY_FIX_LIVE_PROVIDER_EVIDENCE_FULL_CHANGED_COHORT
   .filter(file => file.startsWith('src/')) as readonly string[];
 
 /** src/ + package.json（readiness 守卫的 src/+package.json+lock.yaml 口径）。 */
@@ -677,7 +694,9 @@ export function hasExactFinalUsabilityChangedFileSet(actualFiles: readonly strin
     || hasSameNormalizedFileSet(actualFiles, V0_1_RC_SRC_CHANGED_COHORT)
     || hasSameNormalizedFileSet(actualFiles, V0_1_RC_SRC_PACKAGE_CHANGED_COHORT)
     || hasSameNormalizedFileSet(actualFiles, V0_1_GOLDEN_JOURNEY_FIX_FULL_CHANGED_COHORT)
-    || hasSameNormalizedFileSet(actualFiles, V0_1_GOLDEN_JOURNEY_FIX_SRC_CHANGED_COHORT);
+    || hasSameNormalizedFileSet(actualFiles, V0_1_GOLDEN_JOURNEY_FIX_SRC_CHANGED_COHORT)
+    || hasSameNormalizedFileSet(actualFiles, V0_1_GOLDEN_JOURNEY_FIX_LIVE_PROVIDER_EVIDENCE_FULL_CHANGED_COHORT)
+    || hasSameNormalizedFileSet(actualFiles, V0_1_GOLDEN_JOURNEY_FIX_LIVE_PROVIDER_EVIDENCE_SRC_CHANGED_COHORT);
 }
 
 export function hasExactFinalUsabilityTrackedChangedFileSet(actualFiles: readonly string[]): boolean {

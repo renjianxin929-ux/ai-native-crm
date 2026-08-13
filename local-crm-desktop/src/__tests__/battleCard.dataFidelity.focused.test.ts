@@ -7,7 +7,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-import { FRESH_PROFILE_SCHEMA_RUNTIME_REPAIR_FULL_CHANGED_COHORT, MAC_REAL_APP_CUSTOMER_DISCOVERY_FIX_FULL_CHANGED_COHORT, V0_1_RC_FULL_CHANGED_COHORT, V0_1_GOLDEN_JOURNEY_FIX_FULL_CHANGED_COHORT } from './finalUsabilityChangedFileCohort';
+import { FRESH_PROFILE_SCHEMA_RUNTIME_REPAIR_FULL_CHANGED_COHORT, MAC_REAL_APP_CUSTOMER_DISCOVERY_FIX_FULL_CHANGED_COHORT, V0_1_RC_FULL_CHANGED_COHORT, V0_1_GOLDEN_JOURNEY_FIX_FULL_CHANGED_COHORT, V0_1_GOLDEN_JOURNEY_FIX_LIVE_PROVIDER_EVIDENCE_FULL_CHANGED_COHORT } from './finalUsabilityChangedFileCohort';
 
 import { parseIntelligenceMaterial } from '../lib/battleCard/parser';
 import { createBattleCardRepositories } from '../lib/battleCard/repository';
@@ -249,6 +249,7 @@ describe('full changed cohort exact-set guard (P1-B)', () => {
       MAC_REAL_APP_CUSTOMER_DISCOVERY_FIX_FULL_CHANGED_COHORT,
       V0_1_RC_FULL_CHANGED_COHORT,
       V0_1_GOLDEN_JOURNEY_FIX_FULL_CHANGED_COHORT,
+      V0_1_GOLDEN_JOURNEY_FIX_LIVE_PROVIDER_EVIDENCE_FULL_CHANGED_COHORT,
     ];
     const matched = registered.find(cohort => {
       const expected = new Set(cohort);

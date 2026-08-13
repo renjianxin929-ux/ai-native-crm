@@ -46,6 +46,7 @@ Generated: 2026-08-13 · Branch: feature/battle-card-macos-v1 · Scope: V0.1 FIN
 12. `src/__tests__/transportEquivalenceE2ETruth.focused.test.ts` — 场景数 44→46 静态断言
 13. `scripts/real_tauri_e2e.py` — 新增 FAM-045/046 场景
 14. `V0_1_FINAL_FIX_REPORT.md` — 本报告
+15. `src/__tests__/deepseekLiveContract.focused.test.ts` — 真实 provider live contract 测试(env-guarded)
 
 ## TESTS
 
@@ -67,6 +68,14 @@ Generated: 2026-08-13 · Branch: feature/battle-card-macos-v1 · Scope: V0.1 FIN
 - FAM-006 / FAM-011(受影响链回归):**PASS**。
 
 Evidence root:/tmp/e2e-evidence-gj45、/tmp/e2e-evidence-gj46(E2E DB 已加入唯一"广州ABC科技有限公司")。
+
+## REAL_PROVIDER
+
+用户提供 DeepSeek 真实 key 后完成的真实 provider 验证(2026-08-13,key 仅存于进程环境变量,未写入任何文件/日志/git):
+
+- **真实 response shape 探测**:production 等价请求(api.deepseek.com/chat/completions,model=deepseek-chat,temperature=0,stream=false;system prompt = 修复后的 `Return only valid JSON matching this closed schema: {OUTPUT_SCHEMA_SPECS.customer_summary_v1}.` + 真实 envelope 形状 user payload)。真实返回:HTTP 200,`choices[0].message.content` 为**纯 JSON(pretty-printed,非 fenced)**;输出恰好 9 个字段、无多余字段、`requires_human_review=true`、`evidence_refs` 只引用提供的 `ev-1`、`recommended_next_steps` 3 条(1-12 内)——完全满足 exactKeys closed 校验。
+- **live contract 测试**:`src/__tests__/deepseekLiveContract.focused.test.ts`(env-guarded,无 `DEEPSEEK_LIVE_KEY` 时 skip)——真实 fetch → production 等价 prompt/envelope → 按 Rust `parse_provider_json_payload` 规则(fence 容忍、仅对象、fail-closed)解析 → `validateModelOutputSchema('customer_summary_v1')` = **valid(true),errors 空**。真实运行结果:1/1 PASS(2289ms)。
+- **结论**:BUG B 两个失败点均被真实证据闭环——①真实 DeepSeek 在拿到 closed schema 字段清单后输出与 parser contract 完全一致(spec 注入修复有效;旧 prompt 无字段清单时模型自由发挥正是真人观察到被拒的原因);②真实响应经 production 解析规则被 closed validator 接受("合法模型结果必须被接受"达成,strict validation 保持不变)。
 
 ## READY_FOR_HUMAN_SMOKE
 
