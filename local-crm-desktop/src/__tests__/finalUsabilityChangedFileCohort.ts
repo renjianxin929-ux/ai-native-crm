@@ -612,6 +612,21 @@ export const V0_1_GOLDEN_JOURNEY_FIX_LIVE_PROVIDER_EVIDENCE_FULL_CHANGED_COHORT 
 export const V0_1_GOLDEN_JOURNEY_FIX_LIVE_PROVIDER_EVIDENCE_SRC_CHANGED_COHORT = V0_1_GOLDEN_JOURNEY_FIX_LIVE_PROVIDER_EVIDENCE_FULL_CHANGED_COHORT
   .filter(file => file.startsWith('src/')) as readonly string[];
 
+/**
+ * V0.1 Golden Journey Fix — 重新打包 artifact manifest 更新(2026-08-13 11:46)。
+ * 仅更新 V0_1_RC_ARTIFACT_MANIFEST.md(新 HEAD 889ec11/SHA256/验证汇总);
+ * 打包产物 .app/.dmg 在 src-tauri/target/ 下,被 gitignore 排除,不进提交。
+ */
+export const V0_1_GOLDEN_JOURNEY_FIX_REPACK_MANIFEST_CHANGED_COHORT = [
+  'V0_1_RC_ARTIFACT_MANIFEST.md',
+  'src/__tests__/finalUsabilityChangedFileCohort.ts',
+  'src/__tests__/battleCard.dataFidelity.focused.test.ts',
+] as const;
+
+/** src/ 前缀口径。 */
+export const V0_1_GOLDEN_JOURNEY_FIX_REPACK_MANIFEST_SRC_CHANGED_COHORT = V0_1_GOLDEN_JOURNEY_FIX_REPACK_MANIFEST_CHANGED_COHORT
+  .filter(file => file.startsWith('src/')) as readonly string[];
+
 /** src/ + package.json（readiness 守卫的 src/+package.json+lock.yaml 口径）。 */
 export const V0_1_RC_SRC_PACKAGE_CHANGED_COHORT = V0_1_RC_FULL_CHANGED_COHORT
   .filter(file => file.startsWith('src/') || file === 'package.json') as readonly string[];
@@ -696,7 +711,9 @@ export function hasExactFinalUsabilityChangedFileSet(actualFiles: readonly strin
     || hasSameNormalizedFileSet(actualFiles, V0_1_GOLDEN_JOURNEY_FIX_FULL_CHANGED_COHORT)
     || hasSameNormalizedFileSet(actualFiles, V0_1_GOLDEN_JOURNEY_FIX_SRC_CHANGED_COHORT)
     || hasSameNormalizedFileSet(actualFiles, V0_1_GOLDEN_JOURNEY_FIX_LIVE_PROVIDER_EVIDENCE_FULL_CHANGED_COHORT)
-    || hasSameNormalizedFileSet(actualFiles, V0_1_GOLDEN_JOURNEY_FIX_LIVE_PROVIDER_EVIDENCE_SRC_CHANGED_COHORT);
+    || hasSameNormalizedFileSet(actualFiles, V0_1_GOLDEN_JOURNEY_FIX_LIVE_PROVIDER_EVIDENCE_SRC_CHANGED_COHORT)
+    || hasSameNormalizedFileSet(actualFiles, V0_1_GOLDEN_JOURNEY_FIX_REPACK_MANIFEST_CHANGED_COHORT)
+    || hasSameNormalizedFileSet(actualFiles, V0_1_GOLDEN_JOURNEY_FIX_REPACK_MANIFEST_SRC_CHANGED_COHORT);
 }
 
 export function hasExactFinalUsabilityTrackedChangedFileSet(actualFiles: readonly string[]): boolean {
