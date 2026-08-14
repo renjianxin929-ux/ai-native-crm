@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import { createCustomer, updateCustomer, createTask } from '../lib/db';
-import { getDefaultCustomerGrade, applyWechatPassed, applyIntentRule, calculateNextFollowUpAt } from '../lib/rules';
+import { updateCustomer, createTask } from '../lib/db';
+import { applyWechatPassed, applyIntentRule } from '../lib/rules';
 import { parseRoughTime } from '../lib/timeParser';
+import { createCustomerWithProductRules } from '../lib/customerCreate';
 import { WECHAT_SEARCH_LABELS, WECHAT_ADD_LABELS, INTENT_LABELS, PHONE_FEEDBACK_LABELS } from '../lib/types';
-import type { Customer, WechatSearchStatus, WechatAddStatus, IntentLevel, PhoneFeedback } from '../lib/types';
+import type { Customer, WechatSearchStatus, WechatAddStatus, IntentLevel, PhoneFeedback, ContactMethod } from '../lib/types';
 
 interface Props {
   customer?: Customer;
@@ -41,7 +42,7 @@ export default function CustomerForm({ customer, onClose, onSaved }: Props) {
     if (!name.trim()) return;
     setSaving(true);
 
-    // 解析模糊时间
+    // 解析模糊时间（编辑模式仍需；新增模式的完整产品语义在共享服务中执行）
     let parsedReminder: string | null = null;
     let parseStatus = 'NOT_PARSED';
     let parseNote: string | null = null;
@@ -51,15 +52,6 @@ export default function CustomerForm({ customer, onClose, onSaved }: Props) {
       parseStatus = result.status;
       parseNote = result.note;
     }
-
-    // 计算初始等级
-    const grade = getDefaultCustomerGrade({
-      wechat_search_status: wechatSearchStatus || null,
-      is_key_decision_maker: !!isKeyDm,
-    });
-
-    // 计算初始跟进时间
-    const nextFollowUpAt = calculateNextFollowUpAt(grade);
 
     if (isEdit && customer) {
       // ── 编辑模式 ──
@@ -141,83 +133,33 @@ export default function CustomerForm({ customer, onClose, onSaved }: Props) {
       }
     } else {
       // ── 新增模式 ──
+      // 完整产品语义复用共享服务（createCustomerWithProductRules = 时间解析 →
+      // 初始等级 → 跟进时间 → db.createCustomer → 后置产品规则），
+      // 与 W4-1 Agent 确认后执行路径为同一实现（单一真源）。
       const id = uuidv4();
-      const now = new Date().toISOString();
-
-      await createCustomer(
-        id, name,
-        contactMethod || null,
-        wechatId || null,
-        phoneNumber || null,
-        (wechatSearchStatus || null) as WechatSearchStatus | null,
-        isKeyDm,
-        grade,
-        wechatAddStatus,
-        intentLevel,
-        phoneFeedback || null,
-        roughVisitTime || null,
-        parsedReminder,
-        parseStatus,
-        parseNote,
-        nextFollowUpAt,
-        notes || null,
-        website || null,
-        region || null,
-        industry || null,
-        contactPerson || null,
-        email || null,
-        address || null,
-        pitchAngle || null,
-        qualificationReason || null,
-        source || null,
-      );
-
-      // 新增后触发规则
-      // Rule 2: 微信通过 → 创建首次沟通任务，不升级
-      if (wechatAddStatus === 'PASSED') {
-        const dummyCustomer: Customer = {
-          id, name, customer_grade: grade, stage: 'NEW_LEAD',
-          contact_method: (contactMethod || null) as Customer['contact_method'],
-          wechat_id: wechatId || null,
-          phone_number: phoneNumber || null,
-          wechat_search_status: (wechatSearchStatus || null) as WechatSearchStatus | null,
-          is_key_decision_maker: isKeyDm,
-          wechat_add_status: 'NOT_ADDED' as WechatAddStatus,
-          has_replied: 0, intent_level: intentLevel as IntentLevel,
-          phone_feedback: (phoneFeedback || null) as PhoneFeedback | null,
-          can_schedule_visit: 0, visit_scheduled_at: null,
-          rough_visit_time_text: roughVisitTime || null,
-          parsed_visit_reminder_at: parsedReminder,
-          time_parse_status: parseStatus as Customer['time_parse_status'],
-          time_parse_note: parseNote,
-          next_follow_up_at: nextFollowUpAt, last_contacted_at: null,
-          last_feedback_type: 'UNKNOWN', next_action: null,
-          no_show_count: 0, lost_reason: null,
-          payment_status: 'NOT_STARTED', deal_amount: null,
-          paid_at: null, closed_at: null, notes: notes || null,
-          website: website || null, region: region || null, industry: industry || null,
-          contact_person: contactPerson || null, email: email || null, address: address || null,
-          pitch_angle: pitchAngle || null, qualification_reason: qualificationReason || null, source: source || null,
-          created_at: now, updated_at: now,
-        };
-        const { customer: afterPass, tasks: wxTasks } = applyWechatPassed(dummyCustomer);
-        await updateCustomer(id, { stage: afterPass.stage, next_follow_up_at: afterPass.next_follow_up_at });
-        for (const t of wxTasks) {
-          await createTask(t);
-        }
-      }
-
-      // Rule 3: 意向 → 可升级 A
-      if (intentLevel === 'HIGH' || phoneFeedback === 'CAN_MEET' || phoneFeedback === 'INTERESTED') {
-        const current = await (await import('../lib/db')).getCustomer(id);
-        if (current) {
-          const { customer: afterIntent } = applyIntentRule(current, {
-            intent_level: intentLevel !== 'UNKNOWN' ? intentLevel : null,
-            phone_feedback: phoneFeedback || null,
-          });
-          await updateCustomer(id, afterIntent);
-        }
-      }
+      await createCustomerWithProductRules({
+        id,
+        name,
+        wechat_id: wechatId || null,
+        phone_number: phoneNumber || null,
+        contact_method: (contactMethod || null) as ContactMethod | null,
+        wechat_search_status: (wechatSearchStatus || null) as WechatSearchStatus | null,
+        is_key_decision_maker: isKeyDm as 0 | 1,
+        wechat_add_status: wechatAddStatus as WechatAddStatus,
+        intent_level: intentLevel as IntentLevel,
+        phone_feedback: (phoneFeedback || null) as PhoneFeedback | null,
+        rough_visit_time_text: roughVisitTime || null,
+        notes: notes || null,
+        website: website || null,
+        region: region || null,
+        industry: industry || null,
+        contact_person: contactPerson || null,
+        email: email || null,
+        address: address || null,
+        pitch_angle: pitchAngle || null,
+        qualification_reason: qualificationReason || null,
+        source: source || null,
+      });
     }
 
     setSaving(false);

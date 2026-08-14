@@ -5,6 +5,7 @@ import type { SafeWriteBoundary } from './agentSession';
 import type { FollowUpRecord, Task } from '../types';
 import { SALES_AGENT_APP_CLOCK, type AppClock } from './appClock';
 import { createBattleCardWriteExecutor } from '../battleCard/agentTools';
+import { createCustomerWithProductRules, type CustomerCreateInput } from '../customerCreate';
 
 export interface ApprovedCrmWriteRepository { createFollowUp(record: FollowUpRecord): Promise<void>; createTask(task: Task): Promise<void>; updateCustomer(id: string, values: Record<string, unknown>): Promise<void>; }
 
@@ -51,6 +52,18 @@ async function executeOne(proposal: AgentWriteProposal, repository: ApprovedCrmW
       if (proposal.tool_id === 'create_task') {
         const task: Task = { id: uuid(), customer_id: proposal.customer_id, title: String(values.title), due_at: typeof values.due_at === 'string' ? values.due_at : null, status: typeof values.status === 'string' ? values.status as Task['status'] : 'OPEN', priority: 'MEDIUM', source: 'MANUAL', created_at: now, updated_at: now };
         await repository.createTask(task); return { entity_id: task.id, fields: ['title', 'due_at', 'status'] };
+      }
+      // W4-1 customer.create：确认后走真实产品"新增客户"语义
+      // （共享产品服务 createCustomerWithProductRules = CustomerForm create-mode：
+      // 时间解析 → 初始等级 → 跟进时间 → 插入 → 后置产品规则）。
+      // proposed_values 只含人工表单 20 字段（allowedFields['create_customer'] 白名单，
+      // 经 canonical proposal hash 复核，不可被确认侧篡改）。
+      if (proposal.tool_id === 'create_customer') {
+        const outcome = await createCustomerWithProductRules({
+          id: proposal.customer_id,
+          ...(proposal.proposed_values as Readonly<Record<string, unknown>>),
+        } as unknown as CustomerCreateInput);
+        return { entity_id: outcome.customer_id, fields: Object.keys(proposal.proposed_values) };
       }
       if (proposal.tool_id === 'update_next_follow_up_time' || proposal.tool_id === 'update_customer_basic_fields') {
         await repository.updateCustomer(proposal.customer_id, values); return { entity_id: proposal.customer_id, fields: Object.keys(values) };

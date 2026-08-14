@@ -12,7 +12,7 @@
  *   T15 并发同能力同范围可区分              T16 event_id 唯一性保持
  *   T17 无原始输入事件                      T18 无原始输出事件
  *   T19 无原始错误消息/堆栈事件             T20 A1 audit_contract 可解析
- *   T21 20/20 生产基础不变                  T22 确认写安全不变
+ *   T21 20+1 生产基础不变                  T22 确认写安全不变
  *   T23 强确认写安全不变                    T24 AUTO 草稿行为不变
  *   T25 客户范围相干不变                    T26 GLOBAL/NONE 不受影响
  *   T27 观察失败不双执行                    T28 无 V0.3 运行时
@@ -236,7 +236,7 @@ function makeSyntheticHarness(): SyntheticHarness {
   return { engine, emitter, callsFor: (ref) => counters.get(ref) ?? 0 };
 }
 
-/** 生产引擎 + 内存发射器（真实 20 能力全路径）。 */
+/** 生产引擎 + 内存发射器（真实 21 能力全路径）。 */
 function makeProductionHarness(): { engine: CapabilityExecutionEngine; emitter: InMemoryObservationEmitter } {
   const emitter = createInMemoryObservationEmitter();
   const bridge = createObservationBridge(emitter);
@@ -1008,15 +1008,15 @@ describe('T20 — A1 AUDIT CONTRACT RESOLVABLE: event identity resolves the exac
 });
 
 /* ================================================================== */
-/* T21 — ORIGINAL 20 CAPABILITY FOUNDATION UNCHANGED                   */
+/* T21 — ORIGINAL 20 FOUNDATION UNCHANGED + W4-1 customer.create       */
 /* ================================================================== */
 
-describe('T21 — ORIGINAL 20 FOUNDATION UNCHANGED: registry=20, bindings=20, unbound=0', () => {
-  it('production registry/bindings remain exactly 20 with zero unbound', () => {
-    expect(PRODUCTION_CAPABILITY_COUNT).toBe(20);
-    expect(PRODUCTION_CAPABILITY_REGISTRY.size()).toBe(20);
-    expect(PRODUCTION_CAPABILITY_BINDINGS).toHaveLength(20);
-    expect(PRODUCTION_CAPABILITY_BINDING_REGISTRY.size()).toBe(20);
+describe('T21 — ORIGINAL 20 FOUNDATION UNCHANGED + W4-1 customer.create: registry=21, bindings=21, unbound=0', () => {
+  it('production registry/bindings remain exactly 21 with zero unbound', () => {
+    expect(PRODUCTION_CAPABILITY_COUNT).toBe(21);
+    expect(PRODUCTION_CAPABILITY_REGISTRY.size()).toBe(21);
+    expect(PRODUCTION_CAPABILITY_BINDINGS).toHaveLength(21);
+    expect(PRODUCTION_CAPABILITY_BINDING_REGISTRY.size()).toBe(21);
     const unbound = PRODUCTION_CAPABILITY_IDS.filter((id) => {
       const definition = PRODUCTION_CAPABILITY_REGISTRY.get(id, '1.0.0');
       return PRODUCTION_CAPABILITY_BINDING_REGISTRY.resolve(definition.executor_ref) === undefined;
@@ -1036,6 +1036,7 @@ describe('T22/T23 — CONFIRMATION WRITE SAFETY UNCHANGED: confirmation-required
       { capability_id: 'follow_up.create', input: { title: 'x' } },
       { capability_id: 'task.create', input: { title: 'x' } },
       { capability_id: 'customer.next_follow_up_time.update', input: { db: { execute: async () => ({ rowsAffected: 0 }), select: async () => [{ next_follow_up_at: null }] }, next_follow_up_at: '2026-08-01T00:00:00.000Z' } },
+      { capability_id: 'customer.create', input: { name: 'x' } },
     ];
     for (const testCase of cases) {
       const outcome = await engine.invoke({ capability_id: testCase.capability_id, capability_version: '1.0.0', input: testCase.input, scope: { customer_id: 'customer-1' } });
@@ -1235,18 +1236,18 @@ describe('T28 — NO V0.3 RUNTIME: no planner / tool-selection / agent loop intr
 });
 
 /* ================================================================== */
-/* T29 — NO WAVE 4                                                     */
+/* T29 — NO WAVE-4 LEAKAGE                                             */
 /* ================================================================== */
 
-describe('T29 — NO WAVE 4: capability count remains exactly 20; no Wave-4 identities', () => {
-  it('registry contains exactly the 20 frozen capabilities and none of the Wave-4 identities', () => {
+describe('T29 — NO WAVE-4 LEAKAGE: customer.create registered; customer.delete / visit.create / import.execute remain absent (count=21)', () => {
+  it('registry contains exactly the 21 frozen capabilities; customer.create is the only Wave-4 identity', () => {
     const ids = PRODUCTION_CAPABILITY_REGISTRY.list().map((d) => d.id);
-    expect(ids).toHaveLength(20);
-    expect(ids).not.toContain('customer.create');
+    expect(ids).toHaveLength(21);
+    expect(ids).toContain('customer.create');
     expect(ids).not.toContain('customer.delete');
     expect(ids).not.toContain('visit.create');
     expect(ids).not.toContain('import.execute');
-    expect(PRODUCTION_CAPABILITY_COUNT).toBe(20);
+    expect(PRODUCTION_CAPABILITY_COUNT).toBe(21);
   });
 });
 
@@ -1408,6 +1409,8 @@ function inputFor(id: string): unknown {
       return { title: 'x' };
     case 'task.create':
       return { title: 'x' };
+    case 'customer.create':
+      return { name: '生命周期客户' };
     case 'customer.next_follow_up_time.update':
       return { db: stubDb(), next_follow_up_at: '2026-08-01T00:00:00.000Z' };
     case 'battle_card.draft.create':

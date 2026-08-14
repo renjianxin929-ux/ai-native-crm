@@ -253,10 +253,10 @@ function invoke(engine: { invoke: (invocation: CapabilityInvocation) => Promise<
 /* T1 — PRODUCTION REGISTRY 20                                          */
 /* ------------------------------------------------------------------ */
 
-describe('T1 — PRODUCTION REGISTRY 20: production registry contains exactly all frozen 20 capabilities', () => {
-  it('registry count is 20 and IDs match the frozen set (13 read + 7 write)', () => {
-    expect(PRODUCTION_CAPABILITY_COUNT).toBe(20);
-    expect(PRODUCTION_CAPABILITY_REGISTRY.size()).toBe(20);
+describe('T1 — PRODUCTION REGISTRY 21: production registry contains exactly all frozen 21 capabilities', () => {
+  it('registry count is 21 and IDs match the frozen set (13 read + 7 W3-3 write + 1 W4-1 customer.create)', () => {
+    expect(PRODUCTION_CAPABILITY_COUNT).toBe(21);
+    expect(PRODUCTION_CAPABILITY_REGISTRY.size()).toBe(21);
     expect(PRODUCTION_CAPABILITY_IDS).toEqual([
       // Wave1/Wave2 读 13
       'customer.search',
@@ -280,6 +280,8 @@ describe('T1 — PRODUCTION REGISTRY 20: production registry contains exactly al
       'battle_card.confirm',
       'battle_card.hypothesis.status.update',
       'battle_card.intelligence_import.confirm',
+      // W4-1 新增 1（唯一新身份；customer.create）
+      'customer.create',
     ]);
   });
 
@@ -292,6 +294,7 @@ describe('T1 — PRODUCTION REGISTRY 20: production registry contains exactly al
       'battle_card.confirm',
       'battle_card.hypothesis.status.update',
       'battle_card.intelligence_import.confirm',
+      'customer.create',
     ]) {
       const definition = PRODUCTION_CAPABILITY_REGISTRY.get(id, '1.0.0');
       expect(definition.id).toBe(id);
@@ -308,7 +311,7 @@ describe('T2 — ZERO DUPLICATES: no duplicate id+version in the production regi
   it('all identity keys are unique', () => {
     const keys = PRODUCTION_CAPABILITY_REGISTRY.list().map((d) => `${d.id}@${d.version}`);
     expect(new Set(keys).size).toBe(keys.length);
-    expect(keys.length).toBe(20);
+    expect(keys.length).toBe(21);
   });
 });
 
@@ -316,10 +319,10 @@ describe('T2 — ZERO DUPLICATES: no duplicate id+version in the production regi
 /* T3 — PRODUCTION BINDINGS 20                                          */
 /* ------------------------------------------------------------------ */
 
-describe('T3 — PRODUCTION BINDINGS 20: all 20 executor_ref values resolve', () => {
-  it('binding count is 20 and every registered executor_ref resolves exactly once', () => {
-    expect(PRODUCTION_CAPABILITY_BINDINGS).toHaveLength(20);
-    expect(PRODUCTION_CAPABILITY_BINDING_REGISTRY.size()).toBe(20);
+describe('T3 — PRODUCTION BINDINGS 21: all 21 executor_ref values resolve', () => {
+  it('binding count is 21 and every registered executor_ref resolves exactly once', () => {
+    expect(PRODUCTION_CAPABILITY_BINDINGS).toHaveLength(21);
+    expect(PRODUCTION_CAPABILITY_BINDING_REGISTRY.size()).toBe(21);
     for (const definition of PRODUCTION_CAPABILITY_REGISTRY.list()) {
       const binding = PRODUCTION_CAPABILITY_BINDING_REGISTRY.resolve(definition.executor_ref);
       expect(binding, `executor_ref ${definition.executor_ref} of ${definition.id} must be bound`).toBeDefined();
@@ -327,11 +330,12 @@ describe('T3 — PRODUCTION BINDINGS 20: all 20 executor_ref values resolve', ()
     }
   });
 
-  it('the seven W3-3 write bindings are the frozen executor_ref identities', () => {
+  it('the eight write bindings are the frozen executor_ref identities', () => {
     expect(PRODUCTION_WRITE_BINDINGS.map((b) => b.executor_ref)).toEqual([
       'salesAgentWriteTool:create_follow_up_record',
       'salesAgentWriteTool:create_task',
       'salesAgentWriteTool:update_next_follow_up_time',
+      'salesAgentWriteTool:create_customer',
       'battleCard:generateStageCardDraft',
       'battleCard:confirmStageCard',
       'battleCard:updateHypothesisStatus',
@@ -360,19 +364,20 @@ describe('T4 — ZERO UNBOUND: no declared production capability is unbound', ()
 /* T5 — WRITE AUTHORITY MATRIX                                          */
 /* ------------------------------------------------------------------ */
 
-describe('T5 — WRITE AUTHORITY MATRIX: all 7 W3-3 definitions produce their frozen A10 decisions', () => {
+describe('T5 — WRITE AUTHORITY MATRIX: all 8 write definitions produce their frozen A10 decisions', () => {
   const EXPECTED: Readonly<Record<string, { effect: string; risk: string; authority: string; requiresConfirmation: boolean; decision: string; reason: string }>> = {
     // A10 楼层 6（requires_confirmation=true）先于 POLICY_CONTROLLED 分支 → EXPLICIT_CONFIRMATION_REQUIRED。
     'follow_up.create': { effect: 'WRITE', risk: 'LOW', authority: 'POLICY_CONTROLLED', requiresConfirmation: true, decision: 'REQUIRE_CONFIRMATION', reason: 'EXPLICIT_CONFIRMATION_REQUIRED' },
     'task.create': { effect: 'WRITE', risk: 'LOW', authority: 'POLICY_CONTROLLED', requiresConfirmation: true, decision: 'REQUIRE_CONFIRMATION', reason: 'EXPLICIT_CONFIRMATION_REQUIRED' },
     'customer.next_follow_up_time.update': { effect: 'WRITE', risk: 'MEDIUM', authority: 'CONFIRM', requiresConfirmation: true, decision: 'REQUIRE_CONFIRMATION', reason: 'EXPLICIT_CONFIRMATION_REQUIRED' },
+    'customer.create': { effect: 'WRITE', risk: 'MEDIUM', authority: 'POLICY_CONTROLLED', requiresConfirmation: true, decision: 'REQUIRE_CONFIRMATION', reason: 'EXPLICIT_CONFIRMATION_REQUIRED' },
     'battle_card.draft.create': { effect: 'DRAFT', risk: 'LOW', authority: 'AUTO', requiresConfirmation: false, decision: 'ALLOW_AUTO', reason: 'AUTO_ALLOWED' },
     'battle_card.confirm': { effect: 'WRITE', risk: 'HIGH', authority: 'CONFIRM', requiresConfirmation: true, decision: 'REQUIRE_CONFIRMATION', reason: 'EXPLICIT_CONFIRMATION_REQUIRED' },
     'battle_card.hypothesis.status.update': { effect: 'WRITE', risk: 'MEDIUM', authority: 'CONFIRM', requiresConfirmation: true, decision: 'REQUIRE_CONFIRMATION', reason: 'EXPLICIT_CONFIRMATION_REQUIRED' },
     'battle_card.intelligence_import.confirm': { effect: 'BULK_WRITE', risk: 'HIGH', authority: 'STRONG_CONFIRM', requiresConfirmation: true, decision: 'REQUIRE_STRONG_CONFIRMATION', reason: 'DESTRUCTIVE_EFFECT_REQUIRES_STRONG_CONTROL' },
   };
 
-  it('A10 decisions and frozen metadata match the W3-3 manifests', () => {
+  it('A10 decisions and frozen metadata match the W3-3/W4-1 manifests', () => {
     for (const [id, expected] of Object.entries(EXPECTED)) {
       const definition = PRODUCTION_CAPABILITY_REGISTRY.get(id, '1.0.0');
       expect(definition.effect).toBe(expected.effect);
@@ -386,7 +391,7 @@ describe('T5 — WRITE AUTHORITY MATRIX: all 7 W3-3 definitions produce their fr
     }
   });
 
-  it('only battle_card.draft.create is AUTO among the seven writes', () => {
+  it('only battle_card.draft.create is AUTO among the eight writes', () => {
     const auto = PRODUCTION_WRITE_BINDINGS
       .map((b) => PRODUCTION_CAPABILITY_REGISTRY.list().find((d) => d.executor_ref === b.executor_ref))
       .filter((d): d is CapabilityDefinition => d !== undefined)
@@ -410,6 +415,7 @@ describe('T6/T7 — CONFIRMATION WRITES DO NOT EXECUTE: business executor call c
         { capability_id: 'follow_up.create', capability_version: '1.0.0', input: { title: '跟进' }, scope: { customer_id: 'dg-a-jm' } },
         { capability_id: 'task.create', capability_version: '1.0.0', input: { title: '准备报价' }, scope: { customer_id: 'dg-a-jm' } },
         { capability_id: 'customer.next_follow_up_time.update', capability_version: '1.0.0', input: { db: salesFixture.db, next_follow_up_at: '2026-08-10T09:00:00.000Z' }, scope: { customer_id: 'dg-a-jm' } },
+        { capability_id: 'customer.create', capability_version: '1.0.0', input: { name: '新客户' }, scope: {} },
         { capability_id: 'battle_card.confirm', capability_version: '1.0.0', input: { db: bc.db, card_id: 'card-cust-a-NEW_LEAD-v2', expected_version: 2 }, scope: { customer_id: 'cust-a' } },
         { capability_id: 'battle_card.hypothesis.status.update', capability_version: '1.0.0', input: { db: bc.db, hypothesis_id: 'hyp-a-1', new_status: 'CONFIRMED', expected_version: BC_NOW }, scope: { customer_id: 'cust-a' } },
       ];
@@ -745,6 +751,11 @@ describe('T15 — INPUT VALIDATORS: invalid write input fails before business ex
         { capability_id: 'task.create', capability_version: '1.0.0', input: { title: 'x', status: 'DONE' }, scope: { customer_id: 'dg-a-jm' } }, // 冻结语义仅 OPEN（status 字段拒绝）
         { capability_id: 'customer.next_follow_up_time.update', capability_version: '1.0.0', input: { db: salesFixture.db, next_follow_up_at: '' }, scope: { customer_id: 'dg-a-jm' } },
         { capability_id: 'customer.next_follow_up_time.update', capability_version: '1.0.0', input: { next_follow_up_at: '2026-08-01T00:00:00.000Z' }, scope: { customer_id: 'dg-a-jm' } }, // 缺 db
+        { capability_id: 'customer.create', capability_version: '1.0.0', input: {}, scope: {} }, // 缺 name
+        { capability_id: 'customer.create', capability_version: '1.0.0', input: { name: '' }, scope: {} }, // 空 name
+        { capability_id: 'customer.create', capability_version: '1.0.0', input: { name: 'x', stage: 'PAID' }, scope: {} }, // 系统字段拒绝
+        { capability_id: 'customer.create', capability_version: '1.0.0', input: { name: 'x', intent_level: 'BOGUS' }, scope: {} }, // 错误枚举
+        { capability_id: 'customer.create', capability_version: '1.0.0', input: { name: 'x', is_key_decision_maker: 2 }, scope: {} }, // 错误表示
         { capability_id: 'battle_card.draft.create', capability_version: '1.0.0', input: { db: bc.db, stage_code: 'NOT_A_STAGE' }, scope: { customer_id: 'cust-a' } },
         { capability_id: 'battle_card.confirm', capability_version: '1.0.0', input: { db: bc.db, card_id: 'card-cust-a-NEW_LEAD-v2', expected_version: '2' }, scope: { customer_id: 'cust-a' } },
         { capability_id: 'battle_card.hypothesis.status.update', capability_version: '1.0.0', input: { db: bc.db, hypothesis_id: 'hyp-a-1', new_status: 'BOGUS', expected_version: BC_NOW }, scope: { customer_id: 'cust-a' } },
@@ -853,6 +864,8 @@ describe('T18 — CUSTOMER SCOPE / INPUT MISMATCH: scope=A + input selector=B fa
         { capability_id: 'follow_up.create', capability_version: '1.0.0', input: { title: 'x', customer_id: 'other-customer' }, scope: { customer_id: 'dg-a-jm' } },
         { capability_id: 'task.create', capability_version: '1.0.0', input: { title: 'x', customerId: 'other-customer' }, scope: { customer_id: 'dg-a-jm' } },
         { capability_id: 'customer.next_follow_up_time.update', capability_version: '1.0.0', input: { db: salesFixture.db, next_follow_up_at: '2026-08-01T00:00:00.000Z', customer_id: 'other-customer' }, scope: { customer_id: 'dg-a-jm' } },
+        { capability_id: 'customer.create', capability_version: '1.0.0', input: { name: 'x', customer_id: 'other-customer' }, scope: {} }, // 目标身份注入拒绝
+        { capability_id: 'customer.create', capability_version: '1.0.0', input: { name: 'x', customerId: 'other-customer' }, scope: {} }, // 目标身份注入拒绝（别名）
         { capability_id: 'battle_card.draft.create', capability_version: '1.0.0', input: { db: bc.db, stage_code: 'NEW_LEAD', customer_id: 'cust-b' }, scope: { customer_id: 'cust-a' } },
         { capability_id: 'battle_card.confirm', capability_version: '1.0.0', input: { db: bc.db, card_id: 'card-cust-a-NEW_LEAD-v2', expected_version: 2, customer_id: 'cust-b' }, scope: { customer_id: 'cust-a' } },
         { capability_id: 'battle_card.hypothesis.status.update', capability_version: '1.0.0', input: { db: bc.db, hypothesis_id: 'hyp-a-1', new_status: 'CONFIRMED', expected_version: BC_NOW, customer_id: 'cust-b' }, scope: { customer_id: 'cust-a' } },
@@ -937,6 +950,7 @@ describe('T20 — CONFIRMATION HANDOFF EXISTS: every confirmation-required write
         { capability_id: 'follow_up.create', capability_version: '1.0.0', input: { title: 'x' }, scope: { customer_id: 'dg-a-jm' } },
         { capability_id: 'task.create', capability_version: '1.0.0', input: { title: 'x' }, scope: { customer_id: 'dg-a-jm' } },
         { capability_id: 'customer.next_follow_up_time.update', capability_version: '1.0.0', input: { db: salesFixture.db, next_follow_up_at: '2026-08-01T00:00:00.000Z' }, scope: { customer_id: 'dg-a-jm' } },
+        { capability_id: 'customer.create', capability_version: '1.0.0', input: { name: 'x' }, scope: {} },
         { capability_id: 'battle_card.confirm', capability_version: '1.0.0', input: { db: bc.db, card_id: 'card-cust-a-NEW_LEAD-v2', expected_version: 2 }, scope: { customer_id: 'cust-a' } },
         { capability_id: 'battle_card.hypothesis.status.update', capability_version: '1.0.0', input: { db: bc.db, hypothesis_id: 'hyp-a-1', new_status: 'CONFIRMED', expected_version: BC_NOW }, scope: { customer_id: 'cust-a' } },
         { capability_id: 'battle_card.intelligence_import.confirm', capability_version: '1.0.0', input: { db: bc.db, raw_content: 'x' }, scope: { customer_id: 'cust-a' } },
@@ -966,6 +980,7 @@ describe('T21 — CONFIRMATION HANDOFF DOES NOT BYPASS HUMAN: handoff registers 
     const bc = await openMemoryDbWithCards();
     try {
       const counts = {
+        customers: await salesFixture.db.select<{ id: string }>('SELECT id FROM customers'),
         followUps: await salesFixture.db.select<{ id: string }>('SELECT id FROM follow_up_records WHERE customer_id = ?', ['dg-a-jm']),
         tasks: await salesFixture.db.select<{ id: string }>('SELECT id FROM tasks WHERE customer_id = ?', ['dg-a-jm']),
         cards: await bc.db.select<{ id: string }>('SELECT id FROM customer_stage_cards WHERE customer_id = ?', ['cust-a']),
@@ -976,6 +991,7 @@ describe('T21 — CONFIRMATION HANDOFF DOES NOT BYPASS HUMAN: handoff registers 
         { capability_id: 'follow_up.create', capability_version: '1.0.0', input: { title: 'x' }, scope: { customer_id: 'dg-a-jm' } },
         { capability_id: 'task.create', capability_version: '1.0.0', input: { title: 'x' }, scope: { customer_id: 'dg-a-jm' } },
         { capability_id: 'customer.next_follow_up_time.update', capability_version: '1.0.0', input: { db: salesFixture.db, next_follow_up_at: '2026-08-01T00:00:00.000Z' }, scope: { customer_id: 'dg-a-jm' } },
+        { capability_id: 'customer.create', capability_version: '1.0.0', input: { name: 'x' }, scope: {} },
         { capability_id: 'battle_card.confirm', capability_version: '1.0.0', input: { db: bc.db, card_id: 'card-cust-a-NEW_LEAD-v2', expected_version: 2 }, scope: { customer_id: 'cust-a' } },
         { capability_id: 'battle_card.hypothesis.status.update', capability_version: '1.0.0', input: { db: bc.db, hypothesis_id: 'hyp-a-1', new_status: 'CONFIRMED', expected_version: BC_NOW }, scope: { customer_id: 'cust-a' } },
         { capability_id: 'battle_card.intelligence_import.confirm', capability_version: '1.0.0', input: { db: bc.db, raw_content: 'x' }, scope: { customer_id: 'cust-a' } },
@@ -983,6 +999,7 @@ describe('T21 — CONFIRMATION HANDOFF DOES NOT BYPASS HUMAN: handoff registers 
       for (const invocation of cases) {
         await PRODUCTION_CAPABILITY_EXECUTION.invoke(invocation);
       }
+      expect(await salesFixture.db.select<{ id: string }>('SELECT id FROM customers')).toHaveLength(counts.customers.length);
       expect(await salesFixture.db.select<{ id: string }>('SELECT id FROM follow_up_records WHERE customer_id = ?', ['dg-a-jm'])).toHaveLength(counts.followUps.length);
       expect(await salesFixture.db.select<{ id: string }>('SELECT id FROM tasks WHERE customer_id = ?', ['dg-a-jm'])).toHaveLength(counts.tasks.length);
       expect(await bc.db.select<{ id: string }>('SELECT id FROM customer_stage_cards WHERE customer_id = ?', ['cust-a'])).toHaveLength(counts.cards.length);
@@ -1088,15 +1105,15 @@ describe('T23 — OBSERVATION WIRING: Closure 2 wires W3-2 through one bridge wh
 /* T24 — NO WAVE 4                                                      */
 /* ------------------------------------------------------------------ */
 
-describe('T24 — NO WAVE 4: customer.create/delete, visit.create, import.execute remain absent', () => {
-  it('registry contains exactly 20 capabilities and none of the Wave-4 identities', () => {
+describe('T24 — NO WAVE-4 LEAKAGE: customer.create registered; customer.delete / visit.create / import.execute / customer.update remain absent', () => {
+  it('registry contains exactly 21 capabilities; customer.create is the only new Wave-4 identity', () => {
     const ids = PRODUCTION_CAPABILITY_REGISTRY.list().map((d) => d.id);
-    expect(ids).not.toContain('customer.create');
+    expect(ids).toContain('customer.create');
     expect(ids).not.toContain('customer.delete');
     expect(ids).not.toContain('visit.create');
     expect(ids).not.toContain('import.execute');
     expect(ids).not.toContain('customer.update');
-    expect(ids.length).toBe(20);
+    expect(ids.length).toBe(21);
   });
 });
 
