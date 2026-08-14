@@ -17,6 +17,15 @@
  * - 写类能力在确认/强确认/拒绝决策下绝不进入执行器（executor 调用数 = 0）。
  * - 幂等元数据只被保留/暴露在结果中，W3-1 不实现幂等执行与重放保护
  *   （现有 confirmedWrite 的 nonce/replay 体系保持独立、不被本层触碰）。
+ *
+ * ── Closure 2：调用关联身份（invocation_id）─────────────────────────────
+ * - 一次进入统一执行的调用 → 恰好一个 invocation_id（由执行边界在入口生成并
+ *   拥有；调用方不能经业务输入覆盖）。同一调用的全部生命周期观察事件与终态
+ *   结果共享同一个 invocation_id（W3-2 生命周期关联）。
+ * - invocation_id 只标识"一次被尝试的调用"：不充当幂等键 / 确认 nonce /
+ *   提案 id / 重放 token（这些身份各自独立，禁止复用）。
+ * - 前置授权失败（CAPABILITY_NOT_FOUND / INVALID_INPUT / INVALID_SCOPE /
+ *   EXECUTOR_NOT_BOUND）同样携带 invocation_id（身份在注册表查找前已存在）。
  */
 
 import type { AuthorityDecision } from '../authority/types';
@@ -24,6 +33,7 @@ import type {
   CapabilityExecutorRef,
   CapabilityId,
   CapabilityIdempotency,
+  CapabilityScopeRequirement,
   CapabilityVersion,
 } from '../types';
 
@@ -78,6 +88,12 @@ export type CapabilityExecutionErrorCode =
 
 /** 所有结果共享的基础元数据。 */
 interface CapabilityExecutionOutcomeBase {
+  /**
+   * 调用关联身份（Closure 2）：标识"一次被尝试的 Capability 调用"。
+   * 由统一执行边界在入口生成并拥有；同一调用的全部生命周期事件与终态结果
+   * 共享该值。只用于生命周期关联，绝不充当幂等键 / 确认 nonce / 重放 token。
+   */
+  readonly invocation_id: string;
   readonly status: CapabilityExecutionStatus;
   readonly capability_id: CapabilityId;
   readonly capability_version: CapabilityVersion;
@@ -176,20 +192,45 @@ export class CapabilityInputValidationError extends Error {
 }
 
 /**
- * 观察集成缝（W3-2 Observation/Audit 未来的挂载点）。
- * 本层不实现 W3-2 事件契约、不持久化、不审计；只暴露最小事件缺口：
- * 权威决策后 / 执行前 / 结果后。observer 为可选，缺省时零开销。
+ * 观察集成缝（W3-2 Observation/Audit 的挂载点；Closure 2 已通过
+ * observationBridge.ts 挂载真实 W3-2 事件生成）。
+ *
+ * 语义（本层实现，见 engine.ts）：
+ * - INVOCATION_STARTED：定义解析成功后（executor_ref / scope_requirement 已知）
+ *   发出；CAPABILITY_NOT_FOUND 路径无定义、不发此事件（无真实执行器身份）。
+ * - AUTHORITY_DECIDED：A10 决策产出后发出。
+ * - BEFORE_EXECUTION：ALLOW_AUTO 执行器调用前发出（W3-2 无对应词汇，桥忽略）。
+ * - OUTCOME：每个调用恰好一个终态事件（始终发出）。
+ *
+ * 事件携带结构字段（capability 身份 / 显式 scope / 定义解析后的 executor_ref /
+ * scope_requirement / A10 决策 / 终态结果）+ invocation_id；绝不携带业务载荷。
+ * 观察失败（observer/emitter 抛错）在引擎接缝处被包含：绝不影响业务结果、
+ * 绝不触发业务执行器重试、绝不伪装成第二次执行（见 engine.ts 语义）。
  */
+export type CapabilityExecutionObservationPhase =
+  | 'INVOCATION_STARTED'
+  | 'AUTHORITY_DECIDED'
+  | 'BEFORE_EXECUTION'
+  | 'OUTCOME';
+
+/** 观察事件（全部字段只读；scope 恒为入口作用域原样，不做改写）。 */
 export interface CapabilityExecutionObservationEvent {
-  readonly phase: 'AUTHORITY_DECIDED' | 'BEFORE_EXECUTION' | 'OUTCOME';
+  readonly phase: CapabilityExecutionObservationPhase;
+  /** 调用关联身份：与终态结果共享；同一调用的全部事件精确保留。 */
+  readonly invocation_id: string;
   readonly capability_id: CapabilityId;
   readonly capability_version: CapabilityVersion;
-  readonly authority_decision?: AuthorityDecision;
+  /** 显式调用作用域（入口原样；CUSTOMER 能力由引擎 scope 门控保证非空）。 */
+  readonly scope: CapabilityInvocationScope;
+  /** 定义声明的执行器引用（定义解析后可用；CAPABILITY_NOT_FOUND 路径缺失）。 */
   readonly executor_ref?: CapabilityExecutorRef;
+  /** 定义声明的 scope_requirement（定义解析后可用；桥据此派生事件 scope 字段）。 */
+  readonly scope_requirement?: CapabilityScopeRequirement;
+  readonly authority_decision?: AuthorityDecision;
   readonly outcome?: CapabilityExecutionOutcome;
 }
 
-/** 最小观察器（全部可选；W3-2 可在此挂载，不导入 W3-2 文件）。 */
+/** 最小观察器（全部可选；W3-2 桥经此挂载，观察失败被引擎包含）。 */
 export interface CapabilityExecutionObserver {
   readonly observe?: (event: CapabilityExecutionObservationEvent) => void;
 }

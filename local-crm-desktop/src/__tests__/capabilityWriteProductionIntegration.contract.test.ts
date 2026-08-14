@@ -1052,23 +1052,35 @@ describe('T22 — EXISTING CONFIRMED RUNTIME REUSED: no second confirmation stor
 });
 
 /* ------------------------------------------------------------------ */
-/* T23 — NO OBSERVATION WIRING                                          */
+/* T23 — OBSERVATION WIRING (Closure 2)                                 */
 /* ------------------------------------------------------------------ */
 
-describe('T23 — NO OBSERVATION WIRING: Closure 1 does not implement W3-2 integration', () => {
-  it('execution layer sources do not import observation/** and do not add invocation_id', () => {
+describe('T23 — OBSERVATION WIRING: Closure 2 wires W3-2 through one bridge while write adapters stay observation-free', () => {
+  it('write adapters do not import observation/** and do not carry invocation_id (write semantics untouched)', () => {
     const files = [
-      'src/lib/capabilities/execution/contract.ts',
-      'src/lib/capabilities/execution/binding.ts',
-      'src/lib/capabilities/execution/engine.ts',
-      'src/lib/capabilities/execution/production.ts',
       'src/lib/capabilities/execution/writeAdapters.ts',
+      'src/lib/capabilities/execution/binding.ts',
     ];
     for (const file of files) {
       const source = readFileSync(resolve(process.cwd(), file), 'utf8');
       expect(source, `${file} must not import observation`).not.toMatch(/from ['"]\.\.\/\.\.\/observation|from ['"]\.\.\/observation/);
       expect(source, `${file} must not reference invocation_id`).not.toMatch(/invocation_id/);
     }
+  });
+
+  it('Closure 2: engine/contract carry invocation_id and production composes the observation bridge (W3-2 event generation, no persistence)', () => {
+    const engineSource = readFileSync(resolve(process.cwd(), 'src/lib/capabilities/execution/engine.ts'), 'utf8');
+    const contractSource = readFileSync(resolve(process.cwd(), 'src/lib/capabilities/execution/contract.ts'), 'utf8');
+    const productionSource = readFileSync(resolve(process.cwd(), 'src/lib/capabilities/execution/production.ts'), 'utf8');
+    const bridgeSource = readFileSync(resolve(process.cwd(), 'src/lib/capabilities/execution/observationBridge.ts'), 'utf8');
+    expect(engineSource).toMatch(/invocation_id/);
+    expect(contractSource).toMatch(/invocation_id/);
+    expect(productionSource).toMatch(/createObservationBridge/);
+    expect(bridgeSource).toMatch(/from '\.\.\/observation'/);
+    // 桥是执行层内唯一的 W3-2 集成点：engine 本身不得 import W3-2。
+    expect(engineSource).not.toMatch(/from ['"]\.\.\/\.\.\/observation|from ['"]\.\.\/observation/);
+    // W3-2 冻结文件未被修改（桥只消费，不改契约）。
+    expect(bridgeSource).not.toMatch(/ObservationEventType\s*=|OBSERVATION_EVENT_TYPES\s*=/);
   });
 });
 
