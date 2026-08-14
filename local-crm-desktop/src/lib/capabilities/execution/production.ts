@@ -26,7 +26,6 @@ import type { ContextSnapshot } from '../../context/types';
 import type { CustomerMemoryContext } from '../../customerMemory';
 import type { LoadedReadOnlyAgentSnapshot } from '../../readOnlySnapshotLoaderReadiness';
 import type { SearchCustomersToolInput } from '../../salesAgentTools/executeSearchCustomersTool';
-
 import { CUSTOMER_CAPABILITY_MANIFEST } from '../customer/manifest';
 import { TIMELINE_READ_CAPABILITY_MANIFEST } from '../timeline/manifest';
 import { FOLLOW_UP_READ_MANIFEST } from '../followUp/manifest';
@@ -49,13 +48,16 @@ import { PRODUCTION_WRITE_BINDINGS } from './writeAdapters';
 
 import {
   CapabilityInputValidationError,
+  type CapabilityExecutionObserver,
   type CapabilityInvocationScope,
 } from './contract';
 import {
   createCapabilityBindingRegistry,
   type CapabilityExecutorBinding,
 } from './binding';
-import { createCapabilityExecutionEngine } from './engine';
+import { createCapabilityExecutionEngine, type CapabilityExecutionEngine } from './engine';
+import { createObservationBridge } from './observationBridge';
+import { createNoopObservationEmitter } from '../observation';
 
 /* ------------------------------------------------------------------ */
 /* 共享校验护栏（确定性、fail-closed、无副作用）                          */
@@ -382,11 +384,33 @@ export const PRODUCTION_CAPABILITY_BINDING_REGISTRY = createCapabilityBindingReg
  * Registry → Input validation → Scope validation → A10 Authority
  * → (ALLOW_AUTO: Executor) | (确认类: 现有确认机制交接，业务执行器调用数 = 0)。
  * 不存在可跳过 A10 的公开路径。
+ *
+ * Closure 2：生产执行挂载真实观察桥（W3-2 事件生成语义 + no-op emitter 校验丢弃）。
+ * - 一次进入统一执行 → 恰好一个 invocation_id，结果与全部生命周期事件共享；
+ * - 事件生成由 W3-1 拥有，W3-2 保持被动；事件只含结构字段（零业务载荷）；
+ * - AUDIT_PERSISTENCE=false：no-op emitter 只校验+丢弃，不做任何持久化。
  */
-export const PRODUCTION_CAPABILITY_EXECUTION = createCapabilityExecutionEngine({
-  registry: PRODUCTION_CAPABILITY_REGISTRY,
-  bindings: PRODUCTION_CAPABILITY_BINDING_REGISTRY,
-});
+export function createProductionCapabilityExecution(
+  observer?: CapabilityExecutionObserver,
+): CapabilityExecutionEngine {
+  return createCapabilityExecutionEngine({
+    registry: PRODUCTION_CAPABILITY_REGISTRY,
+    bindings: PRODUCTION_CAPABILITY_BINDING_REGISTRY,
+    ...(observer !== undefined ? { observer } : {}),
+  });
+}
+
+/**
+ * 生产观察桥（W3-2 no-op emitter）：
+ * 事件生成语义（真实校验+规范化+丢弃）；绝不持久化、不落库、不写文件。
+ * 未来持久化 Audit 属于独立分支，不得以本桥替代。
+ */
+export const PRODUCTION_OBSERVATION_BRIDGE = createObservationBridge(createNoopObservationEmitter());
+
+/** 生产统一执行入口（挂载观察桥：真实生命周期事件生成，零持久化）。 */
+export const PRODUCTION_CAPABILITY_EXECUTION: CapabilityExecutionEngine = createProductionCapabilityExecution(
+  PRODUCTION_OBSERVATION_BRIDGE.observer,
+);
 
 /** 生产能力身份集合（20 项；供调用方/测试断言，非可变中央数组）。 */
 export const PRODUCTION_CAPABILITY_IDS: readonly string[] = Object.freeze(

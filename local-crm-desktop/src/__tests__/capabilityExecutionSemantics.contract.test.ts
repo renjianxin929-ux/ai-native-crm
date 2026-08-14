@@ -1590,8 +1590,8 @@ describe('INTEGRATION — representative real product chains through the unified
 /* OBSERVATION SEAM                                                     */
 /* ------------------------------------------------------------------ */
 
-describe('OBSERVATION — minimal W3-2 handoff seam', () => {
-  it('observer receives AUTHORITY_DECIDED → BEFORE_EXECUTION → OUTCOME in order for a successful run', async () => {
+describe('OBSERVATION — W3-1 → W3-2 lifecycle seam (Closure 2)', () => {
+  it('observer receives INVOCATION_STARTED → AUTHORITY_DECIDED → BEFORE_EXECUTION → OUTCOME in order for a successful run', async () => {
     const phases: string[] = [];
     const harness = makeSyntheticHarness();
     const engine = createCapabilityExecutionEngine({
@@ -1605,13 +1605,14 @@ describe('OBSERVATION — minimal W3-2 handoff seam', () => {
     });
     await engine.invoke({ capability_id: 'fixture.executor.success', capability_version: '1.0.0', input: { x: 1 }, scope: {} });
     expect(phases).toEqual([
+      'INVOCATION_STARTED:fixture.executor.success',
       'AUTHORITY_DECIDED:fixture.executor.success',
       'BEFORE_EXECUTION:fixture.executor.success',
       'OUTCOME:fixture.executor.success',
     ]);
   });
 
-  it('observer receives AUTHORITY_DECIDED + OUTCOME but no BEFORE_EXECUTION when confirmation is required', async () => {
+  it('observer receives INVOCATION_STARTED + AUTHORITY_DECIDED + OUTCOME but no BEFORE_EXECUTION when confirmation is required', async () => {
     const phases: string[] = [];
     const harness = makeSyntheticHarness();
     const engine = createCapabilityExecutionEngine({
@@ -1624,7 +1625,26 @@ describe('OBSERVATION — minimal W3-2 handoff seam', () => {
       },
     });
     await engine.invoke({ capability_id: 'fixture.write.confirm', capability_version: '1.0.0', input: {}, scope: {} });
-    expect(phases).toEqual(['AUTHORITY_DECIDED', 'OUTCOME']);
+    expect(phases).toEqual(['INVOCATION_STARTED', 'AUTHORITY_DECIDED', 'OUTCOME']);
+  });
+
+  it('every observer event shares the invocation_id exposed by the outcome (one invocation → one identity)', async () => {
+    const phases: Array<{ phase: string; invocation_id: string }> = [];
+    const harness = makeSyntheticHarness();
+    const engine = createCapabilityExecutionEngine({
+      registry: harness.registry,
+      bindings: harness.bindings,
+      generateInvocationId: () => 'inv-seam-1',
+      observer: {
+        observe: (event) => {
+          phases.push({ phase: event.phase, invocation_id: event.invocation_id });
+        },
+      },
+    });
+    const outcome = await engine.invoke({ capability_id: 'fixture.executor.success', capability_version: '1.0.0', input: { x: 1 }, scope: {} });
+    expect(outcome.invocation_id).toBe('inv-seam-1');
+    expect(phases.every((p) => p.invocation_id === 'inv-seam-1')).toBe(true);
+    expect(phases).toHaveLength(4);
   });
 });
 

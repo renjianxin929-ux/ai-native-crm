@@ -3,19 +3,26 @@
  *
  * 唯一职责：把一次显式选定的 CapabilityInvocation 走完统一语义链：
  *
- *   1. Registry lookup     — A1 registry.get(id, version)；失败 → CAPABILITY_NOT_FOUND
- *   2. Executor binding    — executor_ref → 精确绑定；缺失 → EXECUTOR_NOT_BOUND（无 fallback）
- *   3. Input validation    — 绑定层确定性输入护栏；失败 → INVALID_INPUT（执行器调用数 = 0）
- *   4. Scope validation    — definition.scope_requirement 强制；失败 → INVALID_SCOPE
- *   5. Authority decision  — A10 evaluateAuthorityPolicy（本层绝不自行解释策略）
- *   6. Execute             — 仅 ALLOW_AUTO 才调用执行器；确认/强确认/拒绝 → 结构化结果
- *   7. Unified result/error— SUCCESS 原样保留 Product payload；错误脱敏分类
- *   8. Observation seam    — AUTHORITY_DECIDED / BEFORE_EXECUTION / OUTCOME 最小事件
+ *   1. Invocation identity — 入口生成恰好一个 invocation_id（执行边界拥有；
+ *      调用方不可经输入覆盖；同一调用的结果与全部生命周期事件共享）
+ *   2. Registry lookup     — A1 registry.get(id, version)；失败 → CAPABILITY_NOT_FOUND
+ *   3. Executor binding    — executor_ref → 精确绑定；缺失 → EXECUTOR_NOT_BOUND（无 fallback）
+ *   4. Input validation    — 绑定层确定性输入护栏；失败 → INVALID_INPUT（执行器调用数 = 0）
+ *   5. Scope validation    — definition.scope_requirement 强制；失败 → INVALID_SCOPE
+ *   6. Authority decision  — A10 evaluateAuthorityPolicy（本层绝不自行解释策略）
+ *   7. Execute             — 仅 ALLOW_AUTO 才调用执行器；确认/强确认/拒绝 → 结构化结果
+ *   8. Unified result/error— SUCCESS 原样保留 Product payload；错误脱敏分类
+ *   9. Observation seam    — INVOCATION_STARTED / AUTHORITY_DECIDED / BEFORE_EXECUTION /
+ *                            OUTCOME 生命周期事件（经 observationBridge 挂载 W3-2）
  *
  * 安全不变式：
  * - 唯一统一执行入口是 invoke()：它总是先评估 A10，不存在可跳过 A10 的公开路径。
  * - 确认类 / 拒绝类决策下执行器绝不运行（executor 调用数 = 0）。
  * - 执行器错误被捕获并映射为 EXECUTOR_ERROR，绝不伪装成 SUCCESS。
+ * - 一次进入统一执行 → 恰好一个 invocation_id；结果与事件共享；事件生成只使用
+ *   真实结构字段（不携带业务载荷）。
+ * - 观察失败（observer/emitter 抛错）在接缝处被包含：业务结果原样返回、执行器
+ *   绝不因观察失败被重试、绝无"观察失败 = 第二次执行成功"的误报。
  * - 本模块不 import 任何 DB / 网络 / Provider / 模型 / 确认写入运行时。
  */
 
@@ -26,13 +33,16 @@ import type {
   CapabilityDefinition,
   CapabilityExecutorRef,
   CapabilityId,
+  CapabilityScopeRequirement,
   CapabilityVersion,
 } from '../types';
 import type { CapabilityBindingRegistry } from './binding';
+import { createInvocationId, type InvocationIdGenerator } from './invocationId';
 import {
   CapabilityInputValidationError,
   type CapabilityConfirmationHandoff,
   type CapabilityExecutionErrorCode,
+  type CapabilityExecutionObservationEvent,
   type CapabilityExecutionObserver,
   type CapabilityExecutionOutcome,
   type CapabilityInvocation,
@@ -69,10 +79,12 @@ function failure(
   errorCode: CapabilityExecutionErrorCode,
   identity: { capability_id: CapabilityId; capability_version: CapabilityVersion },
   message: string,
+  invocationId: string,
   resolved?: { definition: CapabilityDefinition; decision?: AuthorityDecision; executor_ref?: CapabilityExecutorRef },
 ): CapabilityExecutionOutcome {
   return freezeOutcome({
     status: 'EXECUTION_ERROR' as const,
+    invocation_id: invocationId,
     capability_id: identity.capability_id,
     capability_version: identity.capability_version,
     error_code: errorCode,
@@ -115,6 +127,11 @@ export interface CapabilityExecutionEngineOptions {
   /** A10 评估器（默认 evaluateAuthorityPolicy；注入仅用于测试计数，不得绕开语义）。 */
   readonly evaluate?: (definition: CapabilityDefinition) => AuthorityDecision;
   readonly observer?: CapabilityExecutionObserver;
+  /**
+   * invocation_id 生成器（Closure 2）。生产默认 createInvocationId（随机 UUID v4）；
+   * 测试注入确定性生成器。调用方业务输入无法覆盖生产身份（T2）。
+   */
+  readonly generateInvocationId?: InvocationIdGenerator;
 }
 
 export function createCapabilityExecutionEngine(
@@ -122,36 +139,77 @@ export function createCapabilityExecutionEngine(
 ): CapabilityExecutionEngine {
   const evaluate = options.evaluate ?? evaluateAuthorityPolicy;
   const observe = options.observer?.observe;
+  const generateInvocationId = options.generateInvocationId ?? createInvocationId;
 
-  /** 终态统一出口：每个 invocation 恰好发出一个 OUTCOME 观察事件。 */
-  const emitOutcome = (outcome: CapabilityExecutionOutcome): CapabilityExecutionOutcome => {
-    observe?.({
-      phase: 'OUTCOME',
-      capability_id: outcome.capability_id,
-      capability_version: outcome.capability_version,
-      ...(outcome.authority_decision ? { authority_decision: outcome.authority_decision } : {}),
-      ...(outcome.executor_ref ? { executor_ref: outcome.executor_ref } : {}),
-      outcome,
-    });
-    return outcome;
+  /**
+   * 观察失败语义（OBSERVATION_FAILURE_*）：
+   * 观察/发射失败（bridge 构造错误、emitter 拒绝等）在接缝处被包含——
+   * 绝不改变业务结果、绝不中止业务执行、绝不触发业务执行器重试。
+   * 观察是"事件生成语义"旁路，与未来持久化 Audit 分离；本分支不实现持久化。
+   */
+  const safeObserve = (event: CapabilityExecutionObservationEvent): void => {
+    if (observe === undefined) return;
+    try {
+      observe(event);
+    } catch {
+      // 包含观察异常：结果真值永远来自业务路径（见上方语义注释）。
+    }
   };
 
   async function invoke(invocation: CapabilityInvocation): Promise<CapabilityExecutionOutcome> {
+    // 0. 一次统一执行入口 → 恰好一个 invocation_id（执行边界拥有；调用方不可覆盖）。
+    const invocationId = generateInvocationId();
+
+    // 定义解析后填充（OUTCOME 事件需要真实 scope_requirement / executor_ref
+    // 供桥派生事件结构字段；前置授权失败的结果语义保持 Closure-1 冻结不变）。
+    let resolvedScopeRequirement: CapabilityScopeRequirement | undefined;
+    let resolvedExecutorRef: CapabilityExecutorRef | undefined;
+
+    /** 终态统一出口：每个 invocation 恰好发出一个 OUTCOME 观察事件（scope 为入口原样）。 */
+    const emitOutcome = (outcome: CapabilityExecutionOutcome): CapabilityExecutionOutcome => {
+      safeObserve({
+        phase: 'OUTCOME',
+        invocation_id: invocationId,
+        capability_id: outcome.capability_id,
+        capability_version: outcome.capability_version,
+        scope: invocation.scope,
+        ...(resolvedScopeRequirement !== undefined ? { scope_requirement: resolvedScopeRequirement } : {}),
+        ...(resolvedExecutorRef !== undefined ? { executor_ref: resolvedExecutorRef } : {}),
+        ...(outcome.authority_decision ? { authority_decision: outcome.authority_decision } : {}),
+        outcome,
+      });
+      return outcome;
+    };
+
     // 1. Registry lookup（fail closed）
     let definition: CapabilityDefinition;
     try {
       definition = options.registry.get(invocation.capability_id, invocation.capability_version);
     } catch {
-      return emitOutcome(failure('CAPABILITY_NOT_FOUND', invocation, 'Capability identity is not registered.'));
+      return emitOutcome(failure('CAPABILITY_NOT_FOUND', invocation, 'Capability identity is not registered.', invocationId));
     }
+    resolvedScopeRequirement = definition.scope_requirement;
+    resolvedExecutorRef = definition.executor_ref;
 
-    // 2. Executor binding（精确 executor_ref；缺失即 fail closed，绝无 fallback）
+    // 2. 生命周期观察：INVOCATION_STARTED（定义解析成功后发出；executor_ref /
+    //    scope_requirement 此时为真实定义值；CAPABILITY_NOT_FOUND 无定义、不发）。
+    safeObserve({
+      phase: 'INVOCATION_STARTED',
+      invocation_id: invocationId,
+      capability_id: definition.id,
+      capability_version: definition.version,
+      scope: invocation.scope,
+      executor_ref: definition.executor_ref,
+      scope_requirement: definition.scope_requirement,
+    });
+
+    // 3. Executor binding（精确 executor_ref；缺失即 fail closed，绝无 fallback）
     const binding = options.bindings.resolve(definition.executor_ref);
     if (binding === undefined) {
-      return emitOutcome(failure('EXECUTOR_NOT_BOUND', invocation, `No executor binding is registered for executor_ref ${JSON.stringify(definition.executor_ref)}.`, { definition }));
+      return emitOutcome(failure('EXECUTOR_NOT_BOUND', invocation, `No executor binding is registered for executor_ref ${JSON.stringify(definition.executor_ref)}.`, invocationId, { definition }));
     }
 
-    // 3. Input validation（执行前 fail closed；执行器调用数保持 0）
+    // 4. Input validation（执行前 fail closed；执行器调用数保持 0）
     //    传入显式 scope：CUSTOMER 能力的绑定在此强制 SCOPE↔INPUT 客户相干性。
     let validatedInput: unknown;
     try {
@@ -160,18 +218,18 @@ export function createCapabilityExecutionEngine(
       const message = error instanceof CapabilityInputValidationError
         ? error.message
         : 'Invocation input failed validation.';
-      return emitOutcome(failure('INVALID_INPUT', invocation, message, { definition }));
+      return emitOutcome(failure('INVALID_INPUT', invocation, message, invocationId, { definition }));
     }
 
-    // 4. Scope validation（fail closed；无全局/首个客户回退）
+    // 5. Scope validation（fail closed；无全局/首个客户回退）
     const scopeError = scopeValidationMessage(definition, invocation.scope);
     if (scopeError !== null) {
-      return emitOutcome(failure('INVALID_SCOPE', invocation, scopeError, { definition }));
+      return emitOutcome(failure('INVALID_SCOPE', invocation, scopeError, invocationId, { definition }));
     }
 
-    // 5. Authority decision（A10 唯一权威；本层不重解释）
+    // 6. Authority decision（A10 唯一权威；本层不重解释）
     const decision = evaluate(definition);
-    observe?.({ phase: 'AUTHORITY_DECIDED', capability_id: definition.id, capability_version: definition.version, authority_decision: decision, executor_ref: definition.executor_ref });
+    safeObserve({ phase: 'AUTHORITY_DECIDED', invocation_id: invocationId, capability_id: definition.id, capability_version: definition.version, scope: invocation.scope, executor_ref: definition.executor_ref, scope_requirement: definition.scope_requirement, authority_decision: decision });
 
     const resolvedMeta = {
       authority_decision: decision,
@@ -202,6 +260,7 @@ export function createCapabilityExecutionEngine(
             isValidation ? 'INVALID_INPUT' : 'EXECUTOR_ERROR',
             invocation,
             isValidation ? message : `Confirmation handoff failed: ${message}`,
+            invocationId,
             { definition, decision },
           )),
         };
@@ -216,6 +275,7 @@ export function createCapabilityExecutionEngine(
         : ('STRONG_CONFIRMATION_REQUIRED' as const);
       return emitOutcome(freezeOutcome({
         status,
+        invocation_id: invocationId,
         capability_id: definition.id,
         capability_version: definition.version,
         ...resolvedMeta,
@@ -223,16 +283,17 @@ export function createCapabilityExecutionEngine(
       }));
     }
     if (decision.decision === 'DENY_AUTONOMOUS') {
-      return emitOutcome(freezeOutcome({ status: 'AUTONOMY_DENIED', capability_id: definition.id, capability_version: definition.version, ...resolvedMeta }));
+      return emitOutcome(freezeOutcome({ status: 'AUTONOMY_DENIED', invocation_id: invocationId, capability_id: definition.id, capability_version: definition.version, ...resolvedMeta }));
     }
     // decision.decision === 'ALLOW_AUTO'
 
-    // 6. Execute（仅 ALLOW_AUTO 到达此处）
-    observe?.({ phase: 'BEFORE_EXECUTION', capability_id: definition.id, capability_version: definition.version, authority_decision: decision, executor_ref: definition.executor_ref });
+    // 7. Execute（仅 ALLOW_AUTO 到达此处）
+    safeObserve({ phase: 'BEFORE_EXECUTION', invocation_id: invocationId, capability_id: definition.id, capability_version: definition.version, scope: invocation.scope, executor_ref: definition.executor_ref, scope_requirement: definition.scope_requirement, authority_decision: decision });
     try {
       const payload = await binding.execute(validatedInput, invocation.scope);
       return emitOutcome(freezeOutcome({
         status: 'SUCCESS',
+        invocation_id: invocationId,
         capability_id: definition.id,
         capability_version: definition.version,
         authority_decision: decision,
@@ -242,7 +303,7 @@ export function createCapabilityExecutionEngine(
       }));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      return emitOutcome(failure('EXECUTOR_ERROR', invocation, `Executor '${definition.executor_ref}' failed: ${message}`, { definition, decision }));
+      return emitOutcome(failure('EXECUTOR_ERROR', invocation, `Executor '${definition.executor_ref}' failed: ${message}`, invocationId, { definition, decision }));
     }
   }
 
