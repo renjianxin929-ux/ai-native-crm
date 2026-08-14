@@ -1,8 +1,10 @@
 /**
- * V0.2A / W3-1 Closure 1 — Production Write Adapters（生产写绑定 + 确认交接适配器）。
+ * V0.2A / W3-1 Closure 1 (+ W4-1 customer.create) — Production Write Adapters
+ * （生产写绑定 + 确认交接适配器）。
  *
- * 本模块是 GAP-B / GAP-C / GAP-F 的执行侧实现：为七个 W3-3 冻结写能力提供
- * 真实、权威优先、确认安全的 W3-1 生产绑定：
+ * 本模块是 GAP-B / GAP-C / GAP-F 的执行侧实现：为 W3-3 七个冻结写能力提供
+ * 真实、权威优先、确认安全的 W3-1 生产绑定，并为 W4-1 customer.create 提供
+ * 唯一新增生产写绑定（scope=NONE / A10 REQUIRE_CONFIRMATION / 现有确认运行时）：
  *
  *   - executor_ref 精确绑定到已审计的现有 Product 写执行器身份；
  *   - validateInput 是确定性输入护栏（fail-closed，执行前）——绝不 `input: unknown`
@@ -33,7 +35,14 @@
  */
 
 import type { DatabaseLike } from '../../db';
-import type { CustomerStage } from '../../types';
+import type {
+  ContactMethod,
+  CustomerStage,
+  IntentLevel,
+  PhoneFeedback,
+  WechatAddStatus,
+  WechatSearchStatus,
+} from '../../types';
 import type { CapabilityExecutorBinding } from './binding';
 import {
   CapabilityInputValidationError,
@@ -43,6 +52,7 @@ import {
 import { buildWriteProposal, parseFactVerificationsRuntime, MAX_CANONICAL_PROPOSAL_ENVELOPE_BYTES, type FactVerificationItem } from '../../salesAgentTools/confirmedWrite';
 import { registerCanonicalProposal } from '../../salesAgentTools/sessionWriteStateStore';
 import { SALES_AGENT_APP_CLOCK } from '../../salesAgentTools/appClock';
+import { v4 as uuidv4 } from 'uuid';
 import { createBattleCardAgentTools } from '../../battleCard/agentTools';
 import type { ConfirmImportDecisions } from '../../battleCard/importService';
 import type { HypothesisStatus } from '../../battleCard/types';
@@ -325,6 +335,180 @@ const customerNextFollowUpTimeUpdateBinding: CapabilityExecutorBinding = {
 };
 
 /* ------------------------------------------------------------------ */
+/* 3.5) customer.create — salesAgentWriteTool:create_customer          */
+/*      （W4-1：唯一新增生产能力；scope=NONE；A10 REQUIRE_CONFIRMATION）   */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 人工"新增客户"表单的 20 个用户可编辑字段（与 CustomerForm 白名单一致；
+ * 与 confirmedWrite.allowedFields['create_customer'] 同一集合）。
+ * 刻意不包含：id / 时间戳 / stage / grade / 支付 / 战斗卡 / 调度等系统字段，
+ * 也绝不包含 customer_id / customerId 目标身份（scope=NONE，无既有客户）。
+ */
+export const CUSTOMER_CREATE_INPUT_KEYS: readonly string[] = Object.freeze([
+  'name',
+  'wechat_id',
+  'phone_number',
+  'contact_method',
+  'wechat_search_status',
+  'is_key_decision_maker',
+  'wechat_add_status',
+  'intent_level',
+  'phone_feedback',
+  'rough_visit_time_text',
+  'notes',
+  'website',
+  'region',
+  'industry',
+  'contact_person',
+  'email',
+  'address',
+  'pitch_angle',
+  'qualification_reason',
+  'source',
+]);
+
+const CONTACT_METHODS = ['WECHAT', 'PHONE', 'WECHAT_AND_PHONE'] as const;
+const WECHAT_SEARCH_STATUSES = ['FOUND', 'NOT_FOUND', 'ABNORMAL', 'UNCERTAIN'] as const;
+const WECHAT_ADD_STATUSES = ['NOT_ADDED', 'ADDED', 'PASSED', 'REJECTED', 'NO_RESPONSE'] as const;
+const INTENT_LEVELS = ['HIGH', 'MEDIUM', 'LOW', 'NONE', 'UNKNOWN'] as const;
+const PHONE_FEEDBACKS = ['NOT_NEEDED', 'CAN_LEARN', 'INTERESTED', 'CAN_MEET', 'NO_ANSWER', 'INVALID_NUMBER', 'UNKNOWN'] as const;
+
+/**
+ * 规范化的 customer.create 输入（校验后；默认值已按产品语义应用）：
+ * - 空串/未提供 → 产品默认（wechat_add_status=NOT_ADDED、intent_level=UNKNOWN、
+ *   is_key_decision_maker=0、其余可空字段 null）；
+ * - 该对象原样进入 canonical proposal 的 proposed_values（人工确认所见即所得）。
+ */
+export interface CustomerCreateInput {
+  readonly name: string;
+  readonly wechat_id: string | null;
+  readonly phone_number: string | null;
+  readonly contact_method: ContactMethod | null;
+  readonly wechat_search_status: WechatSearchStatus | null;
+  readonly is_key_decision_maker: 0 | 1;
+  readonly wechat_add_status: WechatAddStatus;
+  readonly intent_level: IntentLevel;
+  readonly phone_feedback: PhoneFeedback | null;
+  readonly rough_visit_time_text: string | null;
+  readonly notes: string | null;
+  readonly website: string | null;
+  readonly region: string | null;
+  readonly industry: string | null;
+  readonly contact_person: string | null;
+  readonly email: string | null;
+  readonly address: string | null;
+  readonly pitch_angle: string | null;
+  readonly qualification_reason: string | null;
+  readonly source: string | null;
+}
+
+/** 可选产品字符串字段：undefined/null/'' → null（与 CustomerForm `value || null` 一致）；其余按原样、有界。 */
+function optionalProductString(value: unknown, field: string): string | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'string') {
+    throw new CapabilityInputValidationError(`${field} must be a string when present.`);
+  }
+  if (value.length > MAX_STRING_LENGTH) {
+    throw new CapabilityInputValidationError(`${field} exceeds max length ${MAX_STRING_LENGTH}.`);
+  }
+  if (value === '') return null;
+  return value;
+}
+
+/** 可选枚举字段：undefined/null/'' → 默认（可空字段默认 null；产品默认枚举走 defaultValue）。 */
+function optionalProductEnum<T extends string>(
+  value: unknown,
+  allowed: readonly T[],
+  field: string,
+  defaultValue: T | null,
+): T | null {
+  if (value === undefined || value === null || value === '') return defaultValue;
+  if (typeof value !== 'string' || !(allowed as readonly string[]).includes(value)) {
+    throw new CapabilityInputValidationError(`${field} must be one of: ${allowed.join(', ')}.`);
+  }
+  return value as T;
+}
+
+const customerCreateBinding: CapabilityExecutorBinding = {
+  executor_ref: 'salesAgentWriteTool:create_customer',
+  validateInput: (input: unknown, scope: CapabilityInvocationScope): CustomerCreateInput => {
+    if (!isPlainObject(input)) {
+      throw new CapabilityInputValidationError('customer.create requires an object input with the customer form fields.');
+    }
+    const record = input as Record<string, unknown>;
+    rejectUnknownFields(record, 'customer.create', CUSTOMER_CREATE_INPUT_KEYS);
+    // scope=NONE：绝不接受调用方 scope 内的客户身份注入（无 fallback、无"当前客户"）。
+    void scope;
+    const name = requireString(record.name, 'customer.create name');
+    const wechat_id = optionalProductString(record.wechat_id, 'customer.create wechat_id');
+    const phone_number = optionalProductString(record.phone_number, 'customer.create phone_number');
+    const contact_method = optionalProductEnum(record.contact_method, CONTACT_METHODS, 'customer.create contact_method', null);
+    const wechat_search_status = optionalProductEnum(record.wechat_search_status, WECHAT_SEARCH_STATUSES, 'customer.create wechat_search_status', null);
+    const rawKeyDm = record.is_key_decision_maker;
+    if (rawKeyDm !== undefined && rawKeyDm !== 0 && rawKeyDm !== 1) {
+      throw new CapabilityInputValidationError('customer.create is_key_decision_maker must be 0 or 1.');
+    }
+    const is_key_decision_maker: 0 | 1 = rawKeyDm === undefined ? 0 : (rawKeyDm as 0 | 1);
+    const wechat_add_status = optionalProductEnum(record.wechat_add_status, WECHAT_ADD_STATUSES, 'customer.create wechat_add_status', 'NOT_ADDED') ?? 'NOT_ADDED';
+    const intent_level = optionalProductEnum(record.intent_level, INTENT_LEVELS, 'customer.create intent_level', 'UNKNOWN') ?? 'UNKNOWN';
+    const phone_feedback = optionalProductEnum(record.phone_feedback, PHONE_FEEDBACKS, 'customer.create phone_feedback', null);
+    const rough_visit_time_text = optionalProductString(record.rough_visit_time_text, 'customer.create rough_visit_time_text');
+    const notes = optionalProductString(record.notes, 'customer.create notes');
+    const website = optionalProductString(record.website, 'customer.create website');
+    const region = optionalProductString(record.region, 'customer.create region');
+    const industry = optionalProductString(record.industry, 'customer.create industry');
+    const contact_person = optionalProductString(record.contact_person, 'customer.create contact_person');
+    const email = optionalProductString(record.email, 'customer.create email');
+    const address = optionalProductString(record.address, 'customer.create address');
+    const pitch_angle = optionalProductString(record.pitch_angle, 'customer.create pitch_angle');
+    const qualification_reason = optionalProductString(record.qualification_reason, 'customer.create qualification_reason');
+    const source = optionalProductString(record.source, 'customer.create source');
+    return {
+      name,
+      wechat_id,
+      phone_number,
+      contact_method,
+      wechat_search_status,
+      is_key_decision_maker,
+      wechat_add_status,
+      intent_level,
+      phone_feedback,
+      rough_visit_time_text,
+      notes,
+      website,
+      region,
+      industry,
+      contact_person,
+      email,
+      address,
+      pitch_angle,
+      qualification_reason,
+      source,
+    };
+  },
+  handoff: (validatedInput: unknown): CapabilityConfirmationHandoff => {
+    const input = validatedInput as CustomerCreateInput;
+    // 创建前客户不存在：客户 id 在交接时生成（与 CustomerForm 提交时生成 id 一致），
+    // 成为提案 customer_id 与确认后真实持久化的客户身份（§16 生成 id = 实际身份）。
+    const newCustomerId = uuidv4();
+    const proposal = registerCanonicalProposal(buildWriteProposal({
+      customer_id: newCustomerId,
+      message: '创建客户',
+      evidence_refs: [],
+      created_at: now(),
+      tool_id: 'create_customer',
+      // proposed_values = 规范化后的 20 个人工表单字段（含产品默认值）——
+      // 人工确认所见即所得，绝不携带系统/规则/领域字段。
+      proposed_values: { ...input },
+      reason: 'W4-1 统一执行确认交接（现有 confirmed-write 提案路径）。确认后将按现有产品"新增客户"语义创建客户：初始等级与跟进时间由产品规则计算；微信通过/意向度等字段按产品规则可能触发后续状态与任务。',
+    }));
+    return { mechanism: SALES_AGENT_CONFIRMATION_MECHANISM, proposal_id: proposal.proposal_id };
+  },
+  execute: () => refuseBusinessExecutor('customer.create'),
+};
+
+/* ------------------------------------------------------------------ */
 /* 4) battle_card.draft.create — battleCard:generateStageCardDraft      */
 /*    （唯一 AUTO 写；execute 调用真实产品草稿执行器）                     */
 /* ------------------------------------------------------------------ */
@@ -570,13 +754,14 @@ const battleCardIntelligenceImportConfirmBinding: CapabilityExecutorBinding = {
 };
 
 /* ------------------------------------------------------------------ */
-/* 生产写绑定集合（7 项；供 production.ts 组合；冻结数组）                 */
+/* 生产写绑定集合（8 项；W3-3 七项 + W4-1 customer.create；供 production.ts 组合；冻结数组） */
 /* ------------------------------------------------------------------ */
 
 export const PRODUCTION_WRITE_BINDINGS: readonly CapabilityExecutorBinding[] = Object.freeze([
   Object.freeze(followUpCreateBinding),
   Object.freeze(taskCreateBinding),
   Object.freeze(customerNextFollowUpTimeUpdateBinding),
+  Object.freeze(customerCreateBinding),
   Object.freeze(battleCardDraftCreateBinding),
   Object.freeze(battleCardConfirmBinding),
   Object.freeze(battleCardHypothesisStatusUpdateBinding),

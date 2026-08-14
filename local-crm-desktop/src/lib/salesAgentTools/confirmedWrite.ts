@@ -1,4 +1,4 @@
-export const AGENT_WRITE_TOOL_IDS = ['create_follow_up_record', 'create_visit_record', 'create_task', 'update_task', 'update_task_status', 'update_next_follow_up_time', 'update_customer_basic_fields', 'update_contact_basic_fields', 'confirm_battle_intelligence_import', 'confirm_stage_card', 'update_hypothesis_status'] as const;
+export const AGENT_WRITE_TOOL_IDS = ['create_follow_up_record', 'create_visit_record', 'create_customer', 'create_task', 'update_task', 'update_task_status', 'update_next_follow_up_time', 'update_customer_basic_fields', 'update_contact_basic_fields', 'confirm_battle_intelligence_import', 'confirm_stage_card', 'update_hypothesis_status'] as const;
 export type AgentWriteToolId = typeof AGENT_WRITE_TOOL_IDS[number];
 
 // ── Fact Verifications 闭合运行时 Schema（唯一权威结构校验）──
@@ -535,6 +535,9 @@ const consumed = new Set<string>();
 let proposalSequence = 0;
 const allowedFields: Readonly<Record<AgentWriteToolId, readonly string[]>> = Object.freeze({
   create_follow_up_record: ['title', 'feedback_notes', 'next_follow_up_at'], create_visit_record: ['title', 'visit_notes', 'visited_at'], create_task: ['title', 'due_at', 'status'], update_task: ['title', 'due_at'], update_task_status: ['status'], update_next_follow_up_time: ['next_follow_up_at'], update_customer_basic_fields: ['name', 'industry', 'address', 'phone'], update_contact_basic_fields: ['name', 'phone', 'email', 'position'],
+  // W4-1 customer.create：仅人工"新增客户"表单的 20 个用户可编辑字段（与
+  // CustomerForm 白名单一致；系统/规则/领域字段一律拒绝，见 create_customer 分支）。
+  create_customer: ['name', 'wechat_id', 'phone_number', 'contact_method', 'wechat_search_status', 'is_key_decision_maker', 'wechat_add_status', 'intent_level', 'phone_feedback', 'rough_visit_time_text', 'notes', 'website', 'region', 'industry', 'contact_person', 'email', 'address', 'pitch_angle', 'qualification_reason', 'source'],
   // Battle Card V1 写工具（全部经 Proposal/Confirm/Replay 边界）
   confirm_battle_intelligence_import: ['raw_content', 'source_system', 'source_label', 'customer_id', 'keep_fact_ids', 'keep_hypothesis_ids', 'fact_overrides', 'fact_verifications', 'expected_version', 'idempotency_key'],
   confirm_stage_card: ['card_id', 'expected_version', 'idempotency_key'],
