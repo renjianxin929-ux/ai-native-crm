@@ -40,9 +40,11 @@ export type FactApplicability = 'GLOBAL' | 'PARTIAL' | 'CONDITIONAL' | 'UNSUPPOR
 export type FactCategory = 'COMPANY' | 'PRODUCT' | 'CHANNEL' | 'MARKET' | 'CERTIFICATION' | 'OPERATION' | 'OTHER';
 
 /** 证据引用：复用现有 Evidence 引用风格（CUSTOMER/FOLLOW_UP_RECORD/VISIT_RECORD/TASK）或导入内来源引用。
- *  IMPORT_SOURCE：权威 Import Source Evidence（Rust/TS 权威层自动生成，绑定字节跨距与哈希）。 */
+ *  IMPORT_SOURCE：权威 Import Source Evidence（Rust/TS 权威层自动生成，绑定字节跨距与哈希）。
+ *  EVIDENCE（B1）：引用一等 Evidence 实体（src/lib/evidence），由 evidence_id 指向 evidence 表。
+ *  Battle Card 引用 Evidence，而非自建一套重复 Evidence 系统。 */
 export interface FactEvidenceRef {
-  readonly evidence_type?: 'CUSTOMER' | 'FOLLOW_UP_RECORD' | 'VISIT_RECORD' | 'TASK' | 'IMPORT_SOURCE';
+  readonly evidence_type?: 'CUSTOMER' | 'FOLLOW_UP_RECORD' | 'VISIT_RECORD' | 'TASK' | 'IMPORT_SOURCE' | 'EVIDENCE';
   readonly evidence_id?: string;
   /** 指向 intelligence_imports 内的来源段落标识（如章节名 + 行号）。 */
   readonly import_ref?: string;

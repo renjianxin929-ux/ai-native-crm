@@ -2,6 +2,7 @@ import type { Customer, FollowUpRecord, VisitRecord, Task, AIDraft, AIDraftInput
 import { ensureLeadWorkbenchSchema } from './leadWorkbench/db';
 import { ensureCustomerMemorySchema } from './customerMemory/migration';
 import { ensureBattleCardSchema } from './battleCard/schema';
+import { ensureEvidenceSchema } from './evidence/schema';
 import { v4 as uuidv4 } from 'uuid';
 
 // 数据库抽象层 - 包装 @tauri-apps/plugin-sql
@@ -77,6 +78,7 @@ export async function initializeDatabaseSchema(db: DatabaseLike): Promise<void> 
   await ensureLeadWorkbenchSchema(db);
   await ensureCustomerMemorySchema(db);
   await ensureBattleCardSchema(db);
+  await ensureEvidenceSchema(db);
 }
 
 /**
@@ -541,6 +543,8 @@ export async function deleteCustomer(id: string): Promise<void> {
   await db.execute('DELETE FROM customer_hypotheses WHERE customer_id = ?', [id]);
   await db.execute('DELETE FROM reviewed_facts WHERE customer_id = ?', [id]);
   await db.execute('DELETE FROM intelligence_imports WHERE customer_id = ?', [id]);
+  // First-Class Evidence（B1）与客户同生命周期
+  await db.execute('DELETE FROM evidence WHERE customer_id = ?', [id]);
   await db.execute('DELETE FROM customers WHERE id = ?', [id]);
 }
 
