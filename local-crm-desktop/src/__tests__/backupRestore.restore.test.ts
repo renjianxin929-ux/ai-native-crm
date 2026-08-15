@@ -129,10 +129,11 @@ describe('restoreBackupPayloadWithDb', () => {
 
     await restoreBackupPayloadWithDb(db, createCompletePayload());
 
-    expect(db.statements.slice(0, 12)).toEqual(
+    const tableCount = getRestoreTableOrder().length;
+    expect(db.statements.slice(0, tableCount)).toEqual(
       getRestoreDeleteOrder().map((table) => `DELETE FROM ${table}`),
     );
-    expect(db.statements.slice(12, 24).map((sql) => sql.match(/^INSERT OR REPLACE INTO (\w+)/)?.[1])).toEqual(
+    expect(db.statements.slice(tableCount, tableCount * 2).map((sql) => sql.match(/^INSERT OR REPLACE INTO (\w+)/)?.[1])).toEqual(
       getRestoreTableOrder(),
     );
     expect(db.statements).not.toContain('BEGIN');

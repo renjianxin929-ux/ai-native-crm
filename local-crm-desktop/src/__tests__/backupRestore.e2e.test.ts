@@ -11,6 +11,7 @@ import {
   type FullBackupPayload,
 } from '../lib/backupRestore';
 import { ensureBaseSchema, type DatabaseLike } from '../lib/db';
+import { ensureEvidenceSchema } from '../lib/evidence';
 import { insertLeadCaptureEvent, listLeadCaptureEventsByWorkItemId } from '../lib/leadWorkbench/captureEvents';
 import {
   getCollectedLeadById,
@@ -61,6 +62,7 @@ async function createReadyDb(): Promise<SqliteTestDb> {
   const db = createSqliteDb();
   await ensureBaseSchema(db);
   await ensureLeadWorkbenchSchema(db);
+  await ensureEvidenceSchema(db);
   return db;
 }
 
@@ -363,6 +365,27 @@ async function seedCompleteDailyData(db: DatabaseLike) {
       0.86,
       '2026-06-16T01:20:00.000Z',
       null,
+    ],
+  );
+  await db.execute(
+    `INSERT INTO evidence (
+      id, customer_id, source_type, source_url, source_title, source_ref,
+      captured_at, summary, excerpt, content_hash, status, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      'evidence-e2e',
+      syncResult.targetCustomerId,
+      'URL',
+      'https://backup-restore.example.com/mx-market',
+      'Official site',
+      null,
+      '2026-06-16T01:25:00.000Z',
+      'Official website now contains a Mexico market page.',
+      'Mexico market page is live.',
+      'e2e-content-hash',
+      'ACTIVE',
+      '2026-06-16T01:25:00.000Z',
+      '2026-06-16T01:25:00.000Z',
     ],
   );
 

@@ -19,6 +19,7 @@ const expectedBackupTables = [
   'tasks',
   'settings',
   'ai_drafts',
+  'evidence',
   'lead_import_batches',
   'lead_import_rows',
   'lead_work_items',
@@ -149,6 +150,7 @@ describe('backup restore payload normalization', () => {
     expect(normalized.isLegacy).toBe(true);
     expect(normalized.tables.settings).toEqual([]);
     expect(normalized.tables.ai_drafts).toEqual([]);
+    expect(normalized.tables.evidence).toEqual([]);
     expect(normalized.tables.lead_import_batches).toEqual([]);
     expect(normalized.tables.lead_import_rows).toEqual([]);
     expect(normalized.tables.lead_work_items).toEqual([]);
@@ -158,6 +160,7 @@ describe('backup restore payload normalization', () => {
     expect(normalized.missingTables).toEqual([
       'settings',
       'ai_drafts',
+      'evidence',
       'lead_import_batches',
       'lead_import_rows',
       'lead_work_items',
@@ -251,6 +254,7 @@ describe('backup restore payload normalization', () => {
     expect(getRestoreTableOrder()).toEqual([
       'settings',
       'customers',
+      'evidence',
       'follow_up_records',
       'visit_records',
       'tasks',
@@ -274,6 +278,7 @@ describe('backup restore payload normalization', () => {
       'tasks',
       'visit_records',
       'follow_up_records',
+      'evidence',
       'customers',
       'settings',
     ]);

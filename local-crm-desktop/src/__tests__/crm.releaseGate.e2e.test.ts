@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { buildFullBackupPayload, restoreBackupPayloadWithDb } from '../lib/backupRestore';
 import { createDraftFromCallAnalysis } from '../lib/aiDraft';
 import { ensureBaseSchema, ensureCustomerSchema, type DatabaseLike } from '../lib/db';
+import { ensureEvidenceSchema } from '../lib/evidence';
 import { insertLeadCaptureEvent, listLeadCaptureEventsByWorkItemId } from '../lib/leadWorkbench/captureEvents';
 import {
   getCollectedLeadById,
@@ -324,6 +325,7 @@ async function initializeReleaseGateDb(db: DatabaseLike): Promise<void> {
   await ensureBaseSchema(db);
   await ensureCustomerSchema(db);
   await ensureLeadWorkbenchSchema(db);
+  await ensureEvidenceSchema(db);
 }
 
 function createSparse80Rows(round: number) {

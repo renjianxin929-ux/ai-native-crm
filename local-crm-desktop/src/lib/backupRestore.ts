@@ -7,6 +7,7 @@ export const BACKUP_TABLES = [
   'tasks',
   'settings',
   'ai_drafts',
+  'evidence',
   'lead_import_batches',
   'lead_import_rows',
   'lead_work_items',
@@ -164,6 +165,7 @@ export function getRestoreTableOrder(): BackupTableName[] {
   return [
     'settings',
     'customers',
+    'evidence',
     'follow_up_records',
     'visit_records',
     'tasks',
