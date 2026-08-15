@@ -670,6 +670,74 @@ const customerProfileUpdateBinding: CapabilityExecutorBinding = {
 };
 
 /* ------------------------------------------------------------------ */
+/* 3.7) customer.delete — salesAgentWriteTool:delete_customer          */
+/*      （W4-4：唯一新增生产能力；scope=CUSTOMER；A10 REQUIRE_STRONG_CONFIRMATION） */
+/* ------------------------------------------------------------------ */
+
+/** 校验后的 customer.delete 输入：只含执行句柄 db（客户身份只来自 invocation.scope）。 */
+export interface CustomerDeleteInput {
+  readonly db: DatabaseLike;
+}
+
+/** 输入允许键 = 执行句柄 db + 防御性客户选择字段（经相干校验后拒绝/放行）。 */
+const CUSTOMER_DELETE_INPUT_KEYS: readonly string[] = Object.freeze([
+  'db',
+  ...CUSTOMER_SELECTOR_KEYS,
+]);
+
+const customerDeleteBinding: CapabilityExecutorBinding = {
+  executor_ref: 'salesAgentWriteTool:delete_customer',
+  validateInput: (input: unknown, scope: CapabilityInvocationScope): CustomerDeleteInput => {
+    if (!isPlainObject(input)) {
+      throw new CapabilityInputValidationError('customer.delete requires an object input with a db handle.');
+    }
+    assertCustomerSelectorCoherent(input, scope);
+    const record = input as Record<string, unknown>;
+    // 原型污染键显式 fail closed（与 profile.update 同款；纵深防御）。
+    for (const key of FORBIDDEN_PROTOTYPE_KEYS) {
+      if (Object.prototype.hasOwnProperty.call(record, key)) {
+        throw new CapabilityInputValidationError(`customer.delete rejects forbidden key '${key}'.`);
+      }
+    }
+    rejectUnknownFields(record, 'customer.delete', CUSTOMER_DELETE_INPUT_KEYS);
+    if (!isDatabaseLike(record.db)) {
+      throw new CapabilityInputValidationError('customer.delete requires a DatabaseLike db handle (to read the bounded display summary for the proposal).');
+    }
+    return { db: record.db as DatabaseLike };
+  },
+  handoff: async (validatedInput: unknown, scope: CapabilityInvocationScope): Promise<CapabilityConfirmationHandoff> => {
+    const input = validatedInput as CustomerDeleteInput;
+    const customerId = requireCustomerScope(scope);
+    // 未知客户 → 交接前 fail closed（truthful failure，零写入，绝不删除另一个客户）。
+    // 只读 name 作为 bounded 展示摘要（不序列化整行客户快照、不扩大 PII）。
+    const rows = await input.db.select<{ name: string }>(
+      'SELECT name FROM customers WHERE id = ?',
+      [customerId],
+    );
+    if (rows.length === 0) {
+      throw new CapabilityInputValidationError(`customer.delete scope customer does not exist: ${customerId}`);
+    }
+    const displayName = typeof rows[0]?.name === 'string' ? rows[0].name : '';
+    const proposal = registerCanonicalProposal(buildWriteProposal({
+      customer_id: customerId,
+      message: '删除客户',
+      evidence_refs: [`customer:${customerId}`],
+      created_at: now(),
+      tool_id: 'delete_customer',
+      operation: 'delete',
+      reversible: false,
+      // current_values 携带 bounded 展示摘要（仅 name）：人工确认所见即"将被永久删除的客户"。
+      current_values: { customer_name: displayName },
+      // 硬删除后无剩余字段（proposed_values 合法为空）。
+      proposed_values: {},
+      reason: 'W4-4 统一执行确认交接（现有 confirmed-write 提案路径）。这是硬删除（不可逆）：确认后将按现有产品"删除客户"同一路径（db.deleteCustomer）永久删除该客户及其 follow_up_records / visit_records / tasks / customer_stage_cards / customer_hypotheses / reviewed_facts / intelligence_imports 级联记录；产品无回收站/回滚/tombstone。',
+    }));
+    return { mechanism: SALES_AGENT_CONFIRMATION_MECHANISM, proposal_id: proposal.proposal_id };
+  },
+  execute: () => refuseBusinessExecutor('customer.delete'),
+};
+
+/* ------------------------------------------------------------------ */
 /* 4) battle_card.draft.create — battleCard:generateStageCardDraft      */
 /*    （唯一 AUTO 写；execute 调用真实产品草稿执行器）                     */
 /* ------------------------------------------------------------------ */
@@ -915,8 +983,8 @@ const battleCardIntelligenceImportConfirmBinding: CapabilityExecutorBinding = {
 };
 
 /* ------------------------------------------------------------------ */
-/* 生产写绑定集合（9 项；W3-3 七项 + W4-1 customer.create + W4-2        */
-/* customer.profile.update；供 production.ts 组合；冻结数组）            */
+/* 生产写绑定集合（10 项；W3-3 七项 + W4-1 customer.create + W4-2      */
+/* customer.profile.update + W4-4 customer.delete；供 production.ts 组合；冻结数组） */
 /* ------------------------------------------------------------------ */
 
 export const PRODUCTION_WRITE_BINDINGS: readonly CapabilityExecutorBinding[] = Object.freeze([
@@ -925,6 +993,7 @@ export const PRODUCTION_WRITE_BINDINGS: readonly CapabilityExecutorBinding[] = O
   Object.freeze(customerNextFollowUpTimeUpdateBinding),
   Object.freeze(customerCreateBinding),
   Object.freeze(customerProfileUpdateBinding),
+  Object.freeze(customerDeleteBinding),
   Object.freeze(battleCardDraftCreateBinding),
   Object.freeze(battleCardConfirmBinding),
   Object.freeze(battleCardHypothesisStatusUpdateBinding),

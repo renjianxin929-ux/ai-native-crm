@@ -1,4 +1,4 @@
-export const AGENT_WRITE_TOOL_IDS = ['create_follow_up_record', 'create_visit_record', 'create_customer', 'create_task', 'update_task', 'update_task_status', 'update_next_follow_up_time', 'update_customer_profile', 'update_customer_basic_fields', 'update_contact_basic_fields', 'confirm_battle_intelligence_import', 'confirm_stage_card', 'update_hypothesis_status'] as const;
+export const AGENT_WRITE_TOOL_IDS = ['create_follow_up_record', 'create_visit_record', 'create_customer', 'create_task', 'update_task', 'update_task_status', 'update_next_follow_up_time', 'update_customer_profile', 'update_customer_basic_fields', 'update_contact_basic_fields', 'confirm_battle_intelligence_import', 'confirm_stage_card', 'update_hypothesis_status', 'delete_customer'] as const;
 export type AgentWriteToolId = typeof AGENT_WRITE_TOOL_IDS[number];
 
 // ── Fact Verifications 闭合运行时 Schema（唯一权威结构校验）──
@@ -524,7 +524,7 @@ export interface GroupedWriteOperation {
 export interface AgentWriteProposal {
   readonly proposal_id: string; readonly proposal_hash: string; readonly tool_id: AgentWriteToolId;
   readonly customer_id: string; readonly entity_type: 'customer' | 'contact' | 'follow_up' | 'visit' | 'task'; readonly entity_id?: string;
-  readonly operation: 'create' | 'update'; readonly current_values: Readonly<Record<string, unknown>>; readonly proposed_values: Readonly<Record<string, unknown>>;
+  readonly operation: 'create' | 'update' | 'delete'; readonly current_values: Readonly<Record<string, unknown>>; readonly proposed_values: Readonly<Record<string, unknown>>;
   readonly reason: string; readonly evidence_refs: readonly string[]; readonly reversible: boolean; readonly nonce?: string; readonly created_at: string;
   readonly status: 'awaiting_confirmation'; readonly executable: false; readonly requires_confirmation: true;
   readonly grouped_operations?: readonly GroupedWriteOperation[];
@@ -549,13 +549,20 @@ const allowedFields: Readonly<Record<AgentWriteToolId, readonly string[]>> = Obj
   confirm_battle_intelligence_import: ['raw_content', 'source_system', 'source_label', 'customer_id', 'keep_fact_ids', 'keep_hypothesis_ids', 'fact_overrides', 'fact_verifications', 'expected_version', 'idempotency_key'],
   confirm_stage_card: ['card_id', 'expected_version', 'idempotency_key'],
   update_hypothesis_status: ['hypothesis_id', 'new_status', 'reason', 'expected_version', 'idempotency_key'],
+  // W4-4 customer.delete：硬删除无 proposed 字段（删除后无剩余字段；current_values
+  // 携带被删除客户的 bounded 展示摘要）。空白名单 = 任何 proposed 字段都 fail closed。
+  delete_customer: [],
 });
 
 export function validateAgentWriteProposal(proposal: AgentWriteProposal): void {
   if (!AGENT_WRITE_TOOL_IDS.includes(proposal.tool_id) || !proposal.customer_id.trim() || !proposal.proposal_id.trim() || !proposal.proposal_hash.trim() || (proposal.nonce !== undefined && !proposal.nonce.trim())) throw new Error('Write proposal identity is invalid.');
   if (proposal.status !== 'awaiting_confirmation' || proposal.executable !== false || !proposal.reason.trim()) throw new Error('Write proposal must remain awaiting exact confirmation.');
   const fields = Object.keys(proposal.proposed_values);
-  if (fields.length === 0 || fields.some(field => !allowedFields[proposal.tool_id].includes(field))) throw new Error('Write proposal includes a forbidden field.');
+  // W4-4 customer.delete：硬删除的 proposed_values 合法为空（删除后无剩余字段）；
+  // 其它写工具仍必须携带至少一个白名单字段。空白名单 delete_customer 使任何
+  // 被走私进来的 proposed 字段都 fail closed（fields.some 命中空数组 → 拒绝）。
+  const isHardDelete = proposal.tool_id === 'delete_customer' && proposal.operation === 'delete';
+  if ((!isHardDelete && fields.length === 0) || fields.some(field => !allowedFields[proposal.tool_id].includes(field))) throw new Error('Write proposal includes a forbidden field.');
   // Confirm 执行前 fail-closed：fact_verifications 必须通过闭合运行时 Schema（与 Proposal 构造时同一版本）
   if (proposal.tool_id === 'confirm_battle_intelligence_import' && proposal.proposed_values.fact_verifications !== undefined) {
     parseFactVerificationsRuntime(proposal.proposed_values.fact_verifications);
@@ -604,6 +611,10 @@ export interface BuildWriteProposalInput {
   readonly proposed_values?: Readonly<Record<string, unknown>>;
   readonly reason?: string;
   readonly grouped_operations?: readonly GroupedWriteOperation[];
+  /** 显式操作语义（默认 create/update 由 tool_id 派生）；W4-4 delete 必须显式声明。 */
+  readonly operation?: AgentWriteProposal['operation'];
+  /** 可回滚声明（默认 true）；W4-4 硬删除必须显式 false。 */
+  readonly reversible?: boolean;
 }
 
 /** Offline parsing is deliberately bounded and owned by the session layer, never React. */
@@ -615,7 +626,7 @@ export function buildWriteProposal(input: BuildWriteProposalInput): AgentWritePr
         : 'create_follow_up_record');
 
   let proposed_values: Readonly<Record<string, unknown>>;
-  if (input.proposed_values) {
+  if (input.proposed_values !== undefined) {
     // 闭合运行时 Schema：构造时即 canonical 化（非法载荷在 Proposal 注册前被拒绝）
     if (tool_id === 'confirm_battle_intelligence_import' && input.proposed_values.fact_verifications !== undefined) {
       const canonical = parseFactVerificationsRuntime(input.proposed_values.fact_verifications);
@@ -642,6 +653,8 @@ export function buildWriteProposal(input: BuildWriteProposalInput): AgentWritePr
   }
 
   const nonce = `proposal:${input.customer_id}:${tool_id}:${input.created_at}:${++proposalSequence}`;
+  const operation: AgentWriteProposal['operation'] = input.operation ?? (tool_id.startsWith('create') ? 'create' : 'update');
+  const reversible = input.reversible ?? true;
   const proposal: AgentWriteProposal = {
     proposal_id: `proposal-${input.created_at}-${proposalSequence}`,
     proposal_hash: '',
@@ -649,12 +662,12 @@ export function buildWriteProposal(input: BuildWriteProposalInput): AgentWritePr
     customer_id: input.customer_id,
     entity_type: tool_id === 'create_task' ? 'task' : tool_id === 'create_follow_up_record' ? 'follow_up' : 'customer',
     ...(tool_id === 'update_next_follow_up_time' ? { entity_id: input.customer_id } : {}),
-    operation: tool_id.startsWith('create') ? 'create' : 'update',
+    operation,
     current_values,
     proposed_values,
     reason: input.reason ?? '用户本次明确指令',
     evidence_refs: input.evidence_refs,
-    reversible: true,
+    reversible,
     nonce,
     created_at: input.created_at,
     status: 'awaiting_confirmation',
