@@ -253,10 +253,10 @@ function invoke(engine: { invoke: (invocation: CapabilityInvocation) => Promise<
 /* T1 — PRODUCTION REGISTRY 20                                          */
 /* ------------------------------------------------------------------ */
 
-describe('T1 — PRODUCTION REGISTRY 21: production registry contains exactly all frozen 21 capabilities', () => {
-  it('registry count is 21 and IDs match the frozen set (13 read + 7 W3-3 write + 1 W4-1 customer.create)', () => {
-    expect(PRODUCTION_CAPABILITY_COUNT).toBe(21);
-    expect(PRODUCTION_CAPABILITY_REGISTRY.size()).toBe(21);
+describe('T1 — PRODUCTION REGISTRY 22: production registry contains exactly all frozen 22 capabilities', () => {
+  it('registry count is 22 and IDs match the frozen set (13 read + 7 W3-3 write + 1 W4-1 customer.create + 1 W4-2 customer.profile.update)', () => {
+    expect(PRODUCTION_CAPABILITY_COUNT).toBe(22);
+    expect(PRODUCTION_CAPABILITY_REGISTRY.size()).toBe(22);
     expect(PRODUCTION_CAPABILITY_IDS).toEqual([
       // Wave1/Wave2 读 13
       'customer.search',
@@ -282,10 +282,12 @@ describe('T1 — PRODUCTION REGISTRY 21: production registry contains exactly al
       'battle_card.intelligence_import.confirm',
       // W4-1 新增 1（唯一新身份；customer.create）
       'customer.create',
+      // W4-2 新增 1（唯一新身份；customer.profile.update）
+      'customer.profile.update',
     ]);
   });
 
-  it('every frozen W3-3 write identity resolves with the frozen version 1.0.0', () => {
+  it('every frozen W3-3 write identity + W4-1 + W4-2 resolves with the frozen version 1.0.0', () => {
     for (const id of [
       'follow_up.create',
       'task.create',
@@ -295,6 +297,7 @@ describe('T1 — PRODUCTION REGISTRY 21: production registry contains exactly al
       'battle_card.hypothesis.status.update',
       'battle_card.intelligence_import.confirm',
       'customer.create',
+      'customer.profile.update',
     ]) {
       const definition = PRODUCTION_CAPABILITY_REGISTRY.get(id, '1.0.0');
       expect(definition.id).toBe(id);
@@ -311,7 +314,7 @@ describe('T2 — ZERO DUPLICATES: no duplicate id+version in the production regi
   it('all identity keys are unique', () => {
     const keys = PRODUCTION_CAPABILITY_REGISTRY.list().map((d) => `${d.id}@${d.version}`);
     expect(new Set(keys).size).toBe(keys.length);
-    expect(keys.length).toBe(21);
+    expect(keys.length).toBe(22);
   });
 });
 
@@ -319,10 +322,10 @@ describe('T2 — ZERO DUPLICATES: no duplicate id+version in the production regi
 /* T3 — PRODUCTION BINDINGS 20                                          */
 /* ------------------------------------------------------------------ */
 
-describe('T3 — PRODUCTION BINDINGS 21: all 21 executor_ref values resolve', () => {
-  it('binding count is 21 and every registered executor_ref resolves exactly once', () => {
-    expect(PRODUCTION_CAPABILITY_BINDINGS).toHaveLength(21);
-    expect(PRODUCTION_CAPABILITY_BINDING_REGISTRY.size()).toBe(21);
+describe('T3 — PRODUCTION BINDINGS 22: all 22 executor_ref values resolve', () => {
+  it('binding count is 22 and every registered executor_ref resolves exactly once', () => {
+    expect(PRODUCTION_CAPABILITY_BINDINGS).toHaveLength(22);
+    expect(PRODUCTION_CAPABILITY_BINDING_REGISTRY.size()).toBe(22);
     for (const definition of PRODUCTION_CAPABILITY_REGISTRY.list()) {
       const binding = PRODUCTION_CAPABILITY_BINDING_REGISTRY.resolve(definition.executor_ref);
       expect(binding, `executor_ref ${definition.executor_ref} of ${definition.id} must be bound`).toBeDefined();
@@ -330,12 +333,13 @@ describe('T3 — PRODUCTION BINDINGS 21: all 21 executor_ref values resolve', ()
     }
   });
 
-  it('the eight write bindings are the frozen executor_ref identities', () => {
+  it('the nine write bindings are the frozen executor_ref identities', () => {
     expect(PRODUCTION_WRITE_BINDINGS.map((b) => b.executor_ref)).toEqual([
       'salesAgentWriteTool:create_follow_up_record',
       'salesAgentWriteTool:create_task',
       'salesAgentWriteTool:update_next_follow_up_time',
       'salesAgentWriteTool:create_customer',
+      'salesAgentWriteTool:update_customer_profile',
       'battleCard:generateStageCardDraft',
       'battleCard:confirmStageCard',
       'battleCard:updateHypothesisStatus',
@@ -1105,15 +1109,16 @@ describe('T23 — OBSERVATION WIRING: Closure 2 wires W3-2 through one bridge wh
 /* T24 — NO WAVE 4                                                      */
 /* ------------------------------------------------------------------ */
 
-describe('T24 — NO WAVE-4 LEAKAGE: customer.create registered; customer.delete / visit.create / import.execute / customer.update remain absent', () => {
-  it('registry contains exactly 21 capabilities; customer.create is the only new Wave-4 identity', () => {
+describe('T24 — NO WAVE-4 LEAKAGE: customer.create + customer.profile.update registered; customer.delete / visit.create / import.execute / customer.update remain absent', () => {
+  it('registry contains exactly 22 capabilities; customer.create and customer.profile.update are the only Wave-4 identities', () => {
     const ids = PRODUCTION_CAPABILITY_REGISTRY.list().map((d) => d.id);
     expect(ids).toContain('customer.create');
+    expect(ids).toContain('customer.profile.update');
     expect(ids).not.toContain('customer.delete');
     expect(ids).not.toContain('visit.create');
     expect(ids).not.toContain('import.execute');
     expect(ids).not.toContain('customer.update');
-    expect(ids.length).toBe(21);
+    expect(ids.length).toBe(22);
   });
 });
 
