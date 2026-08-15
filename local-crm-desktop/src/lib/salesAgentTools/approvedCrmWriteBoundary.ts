@@ -7,6 +7,7 @@ import { SALES_AGENT_APP_CLOCK, type AppClock } from './appClock';
 import { createBattleCardWriteExecutor } from '../battleCard/agentTools';
 import { createCustomerWithProductRules, type CustomerCreateInput } from '../customerCreate';
 import { updateCustomerProfile } from '../customerProfileUpdate';
+import { createVisitWithProductRules, type VisitCreateInput } from '../visitCreate';
 
 export interface ApprovedCrmWriteRepository { createFollowUp(record: FollowUpRecord): Promise<void>; createTask(task: Task): Promise<void>; updateCustomer(id: string, values: Record<string, unknown>): Promise<void>; }
 
@@ -85,6 +86,22 @@ async function executeOne(proposal: AgentWriteProposal, repository: ApprovedCrmW
       if (proposal.tool_id === 'delete_customer') {
         await deleteCustomer(proposal.customer_id);
         return { entity_id: proposal.customer_id, fields: [] };
+      }
+      // W4-3 visit.create：确认后走真实产品"新增面访记录"语义
+      // （共享产品服务 createVisitWithProductRules = VisitForm create-mode +
+      // CustomerDetail.handleVisitSaved：存在性校验 → 可选面访结论规则更新客户
+      // （只取 customer，丢弃 tasks）→ db.createVisit 插入 → { visit_id }）。
+      // proposed_values 只含 7 个面访白名单字段（allowedFields['create_visit_record']
+      // 白名单，经 canonical proposal hash 复核，不可被确认侧篡改）；共享服务在
+      // 运行时再次闭合白名单 + 枚举（纵深防御第 3 层），绝不把 proposed_values
+      // 广度透传给 db.createVisit 之外的任意表。
+      if (proposal.tool_id === 'create_visit_record') {
+        const outcome = await createVisitWithProductRules({
+          id: uuid(),
+          customer_id: proposal.customer_id,
+          ...(proposal.proposed_values as Readonly<Record<string, unknown>>),
+        } as unknown as VisitCreateInput);
+        return { entity_id: outcome.visit_id, fields: Object.keys(proposal.proposed_values) };
       }
       if (proposal.tool_id === 'update_next_follow_up_time' || proposal.tool_id === 'update_customer_basic_fields') {
         await repository.updateCustomer(proposal.customer_id, values); return { entity_id: proposal.customer_id, fields: Object.keys(values) };

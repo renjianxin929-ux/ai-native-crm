@@ -1,11 +1,15 @@
 /**
- * V0.2A / W3-1 Closure 1 (+ W4-1 customer.create + W4-2 customer.profile.update)
+ * V0.2A / W3-1 Closure 1 (+ W4-1 customer.create + W4-2 customer.profile.update
+ * + W4-4 customer.delete + W4-3 visit.create)
  * — Production Write Adapters（生产写绑定 + 确认交接适配器）。
  *
  * 本模块是 GAP-B / GAP-C / GAP-F 的执行侧实现：为 W3-3 七个冻结写能力提供
  * 真实、权威优先、确认安全的 W3-1 生产绑定，为 W4-1 customer.create 提供
- * scope=NONE 的新增生产写绑定，并为 W4-2 customer.profile.update 提供
- * scope=CUSTOMER 的窄资料更新生产写绑定（A10 REQUIRE_CONFIRMATION / 现有确认运行时）：
+ * scope=NONE 的新增生产写绑定，为 W4-2 customer.profile.update 提供
+ * scope=CUSTOMER 的窄资料更新生产写绑定（A10 REQUIRE_CONFIRMATION / 现有确认运行时），
+ * 为 W4-4 customer.delete 提供 scope=CUSTOMER 的破坏性删除写绑定
+ * （A10 REQUIRE_STRONG_CONFIRMATION），并为 W4-3 visit.create 提供
+ * scope=CUSTOMER 的面访创建写绑定（A10 REQUIRE_CONFIRMATION）：
  *
  *   - executor_ref 精确绑定到已审计的现有 Product 写执行器身份；
  *   - validateInput 是确定性输入护栏（fail-closed，执行前）——绝不 `input: unknown`
@@ -41,6 +45,7 @@ import type {
   CustomerStage,
   IntentLevel,
   PhoneFeedback,
+  VisitOutcome,
   WechatAddStatus,
   WechatSearchStatus,
 } from '../../types';
@@ -54,6 +59,7 @@ import { buildWriteProposal, parseFactVerificationsRuntime, MAX_CANONICAL_PROPOS
 import { registerCanonicalProposal } from '../../salesAgentTools/sessionWriteStateStore';
 import { SALES_AGENT_APP_CLOCK } from '../../salesAgentTools/appClock';
 import { CUSTOMER_PROFILE_UPDATE_KEYS } from '../../customerProfileUpdate';
+import { VISIT_CREATE_INPUT_KEYS, VISIT_NEXT_ACTIONS, VISIT_OUTCOMES } from '../../visitCreate';
 import { v4 as uuidv4 } from 'uuid';
 import { createBattleCardAgentTools } from '../../battleCard/agentTools';
 import type { ConfirmImportDecisions } from '../../battleCard/importService';
@@ -738,6 +744,123 @@ const customerDeleteBinding: CapabilityExecutorBinding = {
 };
 
 /* ------------------------------------------------------------------ */
+/* 3.8) visit.create — salesAgentWriteTool:create_visit_record          */
+/*      （W4-3：唯一新增生产能力；scope=CUSTOMER；A10 REQUIRE_CONFIRMATION）*/
+/* ------------------------------------------------------------------ */
+
+/**
+ * 校验后的 visit.create 输入（db 句柄用于交接前证明目标客户存在；title 必填；
+ * 其余 6 个面访字段可选，空值 → null）。面访结论/意向/下一步动作枚举在绑定层
+ * 即闭合校验；系统派生字段（visited_at / id / created_at / updated_at）绝不进入输入。
+ */
+export interface VisitCreateInput {
+  readonly db: DatabaseLike;
+  readonly title: string;
+  readonly visit_notes: string | null;
+  readonly customer_concerns: string | null;
+  readonly intent_after_visit: IntentLevel | null;
+  readonly visit_outcome: VisitOutcome | null;
+  /** 下一步动作（人工面访表单 6 项子集；非完整 NextAction）。 */
+  readonly next_action: string | null;
+  /** 预计签约时间（YYYY-MM-DD，来自人工表单 `<input type="date">`）。 */
+  readonly expected_contract_at: string | null;
+}
+
+/** 输入允许键 = db 执行句柄 + 7 个面访表单字段 + 防御性客户选择字段（经相干校验后拒绝/放行）。 */
+const VISIT_CREATE_INPUT_KEYS_WITH_SELECTORS: readonly string[] = Object.freeze([
+  'db',
+  ...VISIT_CREATE_INPUT_KEYS,
+  ...CUSTOMER_SELECTOR_KEYS,
+]);
+
+/** 可选面访日期字段：undefined/null/'' → null；否则必须是 YYYY-MM-DD 有效日历日期。 */
+function optionalVisitDate(value: unknown, field: string): string | null {
+  if (value === undefined || value === null || value === '') return null;
+  if (typeof value !== 'string') {
+    throw new CapabilityInputValidationError(`${field} must be a string when present.`);
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    throw new CapabilityInputValidationError(`${field} must be a YYYY-MM-DD date string.`);
+  }
+  const [year, month, day] = value.split('-').map((part) => Number(part));
+  const date = new Date(Date.UTC(year, month - 1, day));
+  // 回环校验：拒绝 JavaScript Date 会把非法日期（如 2026-02-30 / 2026-13-40）归一化的情形。
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) {
+    throw new CapabilityInputValidationError(`${field} must be a valid calendar date.`);
+  }
+  return value;
+}
+
+const visitCreateBinding: CapabilityExecutorBinding = {
+  executor_ref: 'salesAgentWriteTool:create_visit_record',
+  validateInput: (input: unknown, scope: CapabilityInvocationScope): VisitCreateInput => {
+    if (!isPlainObject(input)) {
+      throw new CapabilityInputValidationError('visit.create requires an object input with the visit form fields.');
+    }
+    assertCustomerSelectorCoherent(input, scope);
+    const record = input as Record<string, unknown>;
+    // 原型污染键显式 fail closed（Object.keys 之外的保护层；绝不 strip）。
+    for (const key of FORBIDDEN_PROTOTYPE_KEYS) {
+      if (Object.prototype.hasOwnProperty.call(record, key)) {
+        throw new CapabilityInputValidationError(`visit.create rejects forbidden key '${key}'.`);
+      }
+    }
+    rejectUnknownFields(record, 'visit.create', VISIT_CREATE_INPUT_KEYS_WITH_SELECTORS);
+    if (!isDatabaseLike(record.db)) {
+      throw new CapabilityInputValidationError('visit.create requires a DatabaseLike db handle (to prove the scope customer exists before handoff).');
+    }
+    const title = requireString(record.title, 'visit.create title');
+    const visit_notes = optionalProductString(record.visit_notes, 'visit.create visit_notes');
+    const customer_concerns = optionalProductString(record.customer_concerns, 'visit.create customer_concerns');
+    const intent_after_visit = optionalProductEnum(record.intent_after_visit, INTENT_LEVELS, 'visit.create intent_after_visit', null);
+    const visit_outcome = optionalProductEnum(record.visit_outcome, VISIT_OUTCOMES, 'visit.create visit_outcome', null);
+    const next_action = optionalProductEnum(record.next_action, VISIT_NEXT_ACTIONS, 'visit.create next_action', null);
+    const expected_contract_at = optionalVisitDate(record.expected_contract_at, 'visit.create expected_contract_at');
+    return {
+      db: record.db as DatabaseLike,
+      title,
+      visit_notes,
+      customer_concerns,
+      intent_after_visit,
+      visit_outcome,
+      next_action,
+      expected_contract_at,
+    };
+  },
+  handoff: async (validatedInput: unknown, scope: CapabilityInvocationScope): Promise<CapabilityConfirmationHandoff> => {
+    const input = validatedInput as VisitCreateInput;
+    const customerId = requireCustomerScope(scope);
+    // 目标客户必须已存在（§8）：未知客户 → truthful failure（INVALID_INPUT），
+    // 零提案注册、零写入，绝不 upsert / create。
+    const rows = await input.db.select<{ id: string }>('SELECT id FROM customers WHERE id = ?', [customerId]);
+    if (rows.length === 0) {
+      throw new CapabilityInputValidationError(`visit.create scope customer does not exist: ${customerId}`);
+    }
+    const proposal = registerCanonicalProposal(buildWriteProposal({
+      customer_id: customerId,
+      message: '新增面访记录',
+      evidence_refs: [`customer:${customerId}`],
+      created_at: now(),
+      tool_id: 'create_visit_record',
+      // proposed_values = 规范化后的 7 个人工面访表单字段（空值 → null）——
+      // 人工确认所见即所得，绝不携带系统派生字段（id/visited_at/created_at/updated_at）。
+      proposed_values: {
+        title: input.title,
+        visit_notes: input.visit_notes,
+        customer_concerns: input.customer_concerns,
+        intent_after_visit: input.intent_after_visit,
+        visit_outcome: input.visit_outcome,
+        next_action: input.next_action,
+        expected_contract_at: input.expected_contract_at,
+      },
+      reason: 'W4-3 统一执行确认交接（现有 confirmed-write 提案路径）。确认后将按现有产品"新增面访记录"语义创建面访记录：系统派生 visited_at/created_at/updated_at；若 visit_outcome 非空，还将按面访结论规则更新客户状态（等级/阶段/下一步/下次跟进，与人工面访路径一致，不创建任务）。',
+    }));
+    return { mechanism: SALES_AGENT_CONFIRMATION_MECHANISM, proposal_id: proposal.proposal_id };
+  },
+  execute: () => refuseBusinessExecutor('visit.create'),
+};
+
+/* ------------------------------------------------------------------ */
 /* 4) battle_card.draft.create — battleCard:generateStageCardDraft      */
 /*    （唯一 AUTO 写；execute 调用真实产品草稿执行器）                     */
 /* ------------------------------------------------------------------ */
@@ -983,8 +1106,9 @@ const battleCardIntelligenceImportConfirmBinding: CapabilityExecutorBinding = {
 };
 
 /* ------------------------------------------------------------------ */
-/* 生产写绑定集合（10 项；W3-3 七项 + W4-1 customer.create + W4-2      */
-/* customer.profile.update + W4-4 customer.delete；供 production.ts 组合；冻结数组） */
+/* 生产写绑定集合（11 项；W3-3 七项 + W4-1 customer.create + W4-2      */
+/* customer.profile.update + W4-4 customer.delete + W4-3 visit.create； */
+/* 供 production.ts 组合；冻结数组）                                     */
 /* ------------------------------------------------------------------ */
 
 export const PRODUCTION_WRITE_BINDINGS: readonly CapabilityExecutorBinding[] = Object.freeze([
@@ -994,6 +1118,7 @@ export const PRODUCTION_WRITE_BINDINGS: readonly CapabilityExecutorBinding[] = O
   Object.freeze(customerCreateBinding),
   Object.freeze(customerProfileUpdateBinding),
   Object.freeze(customerDeleteBinding),
+  Object.freeze(visitCreateBinding),
   Object.freeze(battleCardDraftCreateBinding),
   Object.freeze(battleCardConfirmBinding),
   Object.freeze(battleCardHypothesisStatusUpdateBinding),

@@ -2,8 +2,8 @@
  * V0.2A / W3-1 Closure 1 — Capability Write Production Integration 契约测试。
  *
  * 证明七个 W3-3 写/草稿/状态迁移能力成为 W3-1 生产执行基础的真实成员：
- *   T1  PRODUCTION REGISTRY 23            T2  ZERO DUPLICATES
- *   T3  PRODUCTION BINDINGS 23            T4  ZERO UNBOUND
+ *   T1  PRODUCTION REGISTRY 24            T2  ZERO DUPLICATES
+ *   T3  PRODUCTION BINDINGS 24            T4  ZERO UNBOUND
  *   T5  WRITE AUTHORITY MATRIX            T6  CONFIRMATION WRITE DOES NOT EXECUTE
  *   T7  STRONG CONFIRMATION DOES NOT EXECUTE
  *   T8  AUTO DRAFT EXECUTES ONLY ITSELF   T9  FOLLOW-UP CREATE BINDING TRUTH
@@ -250,13 +250,13 @@ function invoke(engine: { invoke: (invocation: CapabilityInvocation) => Promise<
 }
 
 /* ------------------------------------------------------------------ */
-/* T1 — PRODUCTION REGISTRY 23                                          */
+/* T1 — PRODUCTION REGISTRY 24                                          */
 /* ------------------------------------------------------------------ */
 
-describe('T1 — PRODUCTION REGISTRY 23: production registry contains exactly all frozen 23 capabilities', () => {
-  it('registry count is 23 and IDs match the frozen set (13 read + 7 W3-3 write + 1 W4-1 customer.create + 1 W4-2 customer.profile.update + 1 W4-4 customer.delete)', () => {
-    expect(PRODUCTION_CAPABILITY_COUNT).toBe(23);
-    expect(PRODUCTION_CAPABILITY_REGISTRY.size()).toBe(23);
+describe('T1 — PRODUCTION REGISTRY 24: production registry contains exactly all frozen 24 capabilities', () => {
+  it('registry count is 24 and IDs match the frozen set (13 read + 7 W3-3 write + 1 W4-1 customer.create + 1 W4-2 customer.profile.update + 1 W4-4 customer.delete + 1 W4-3 visit.create)', () => {
+    expect(PRODUCTION_CAPABILITY_COUNT).toBe(24);
+    expect(PRODUCTION_CAPABILITY_REGISTRY.size()).toBe(24);
     expect(PRODUCTION_CAPABILITY_IDS).toEqual([
       // Wave1/Wave2 读 13
       'customer.search',
@@ -286,10 +286,12 @@ describe('T1 — PRODUCTION REGISTRY 23: production registry contains exactly al
       'customer.profile.update',
       // W4-4 新增 1（唯一新身份；customer.delete）
       'customer.delete',
+      // W4-3 新增 1（唯一新身份；visit.create）
+      'visit.create',
     ]);
   });
 
-  it('every frozen W3-3 write identity + W4-1 + W4-2 + W4-4 resolves with the frozen version 1.0.0', () => {
+  it('every frozen W3-3 write identity + W4-1 + W4-2 + W4-4 + W4-3 resolves with the frozen version 1.0.0', () => {
     for (const id of [
       'follow_up.create',
       'task.create',
@@ -301,6 +303,7 @@ describe('T1 — PRODUCTION REGISTRY 23: production registry contains exactly al
       'customer.create',
       'customer.profile.update',
       'customer.delete',
+      'visit.create',
     ]) {
       const definition = PRODUCTION_CAPABILITY_REGISTRY.get(id, '1.0.0');
       expect(definition.id).toBe(id);
@@ -317,18 +320,18 @@ describe('T2 — ZERO DUPLICATES: no duplicate id+version in the production regi
   it('all identity keys are unique', () => {
     const keys = PRODUCTION_CAPABILITY_REGISTRY.list().map((d) => `${d.id}@${d.version}`);
     expect(new Set(keys).size).toBe(keys.length);
-    expect(keys.length).toBe(23);
+    expect(keys.length).toBe(24);
   });
 });
 
 /* ------------------------------------------------------------------ */
-/* T3 — PRODUCTION BINDINGS 23                                          */
+/* T3 — PRODUCTION BINDINGS 24                                          */
 /* ------------------------------------------------------------------ */
 
-describe('T3 — PRODUCTION BINDINGS 23: all 23 executor_ref values resolve', () => {
-  it('binding count is 23 and every registered executor_ref resolves exactly once', () => {
-    expect(PRODUCTION_CAPABILITY_BINDINGS).toHaveLength(23);
-    expect(PRODUCTION_CAPABILITY_BINDING_REGISTRY.size()).toBe(23);
+describe('T3 — PRODUCTION BINDINGS 24: all 24 executor_ref values resolve', () => {
+  it('binding count is 24 and every registered executor_ref resolves exactly once', () => {
+    expect(PRODUCTION_CAPABILITY_BINDINGS).toHaveLength(24);
+    expect(PRODUCTION_CAPABILITY_BINDING_REGISTRY.size()).toBe(24);
     for (const definition of PRODUCTION_CAPABILITY_REGISTRY.list()) {
       const binding = PRODUCTION_CAPABILITY_BINDING_REGISTRY.resolve(definition.executor_ref);
       expect(binding, `executor_ref ${definition.executor_ref} of ${definition.id} must be bound`).toBeDefined();
@@ -336,7 +339,7 @@ describe('T3 — PRODUCTION BINDINGS 23: all 23 executor_ref values resolve', ()
     }
   });
 
-  it('the ten write/destructive bindings are the frozen executor_ref identities', () => {
+  it('the eleven write/destructive bindings are the frozen executor_ref identities', () => {
     expect(PRODUCTION_WRITE_BINDINGS.map((b) => b.executor_ref)).toEqual([
       'salesAgentWriteTool:create_follow_up_record',
       'salesAgentWriteTool:create_task',
@@ -344,6 +347,7 @@ describe('T3 — PRODUCTION BINDINGS 23: all 23 executor_ref values resolve', ()
       'salesAgentWriteTool:create_customer',
       'salesAgentWriteTool:update_customer_profile',
       'salesAgentWriteTool:delete_customer',
+      'salesAgentWriteTool:create_visit_record',
       'battleCard:generateStageCardDraft',
       'battleCard:confirmStageCard',
       'battleCard:updateHypothesisStatus',
@@ -372,20 +376,24 @@ describe('T4 — ZERO UNBOUND: no declared production capability is unbound', ()
 /* T5 — WRITE AUTHORITY MATRIX                                          */
 /* ------------------------------------------------------------------ */
 
-describe('T5 — WRITE AUTHORITY MATRIX: all 8 write definitions produce their frozen A10 decisions', () => {
+describe('T5 — WRITE AUTHORITY MATRIX: all 11 write/destructive definitions produce their frozen A10 decisions', () => {
   const EXPECTED: Readonly<Record<string, { effect: string; risk: string; authority: string; requiresConfirmation: boolean; decision: string; reason: string }>> = {
     // A10 楼层 6（requires_confirmation=true）先于 POLICY_CONTROLLED 分支 → EXPLICIT_CONFIRMATION_REQUIRED。
     'follow_up.create': { effect: 'WRITE', risk: 'LOW', authority: 'POLICY_CONTROLLED', requiresConfirmation: true, decision: 'REQUIRE_CONFIRMATION', reason: 'EXPLICIT_CONFIRMATION_REQUIRED' },
     'task.create': { effect: 'WRITE', risk: 'LOW', authority: 'POLICY_CONTROLLED', requiresConfirmation: true, decision: 'REQUIRE_CONFIRMATION', reason: 'EXPLICIT_CONFIRMATION_REQUIRED' },
     'customer.next_follow_up_time.update': { effect: 'WRITE', risk: 'MEDIUM', authority: 'CONFIRM', requiresConfirmation: true, decision: 'REQUIRE_CONFIRMATION', reason: 'EXPLICIT_CONFIRMATION_REQUIRED' },
     'customer.create': { effect: 'WRITE', risk: 'MEDIUM', authority: 'POLICY_CONTROLLED', requiresConfirmation: true, decision: 'REQUIRE_CONFIRMATION', reason: 'EXPLICIT_CONFIRMATION_REQUIRED' },
+    'customer.profile.update': { effect: 'WRITE', risk: 'MEDIUM', authority: 'POLICY_CONTROLLED', requiresConfirmation: true, decision: 'REQUIRE_CONFIRMATION', reason: 'EXPLICIT_CONFIRMATION_REQUIRED' },
+    'visit.create': { effect: 'WRITE', risk: 'MEDIUM', authority: 'POLICY_CONTROLLED', requiresConfirmation: true, decision: 'REQUIRE_CONFIRMATION', reason: 'EXPLICIT_CONFIRMATION_REQUIRED' },
+    // customer.delete：effect=DELETE → 楼层 3 先于 STRONG_CONFIRM → REQUIRE_STRONG_CONFIRMATION。
+    'customer.delete': { effect: 'DELETE', risk: 'DESTRUCTIVE', authority: 'STRONG_CONFIRM', requiresConfirmation: true, decision: 'REQUIRE_STRONG_CONFIRMATION', reason: 'DESTRUCTIVE_EFFECT_REQUIRES_STRONG_CONTROL' },
     'battle_card.draft.create': { effect: 'DRAFT', risk: 'LOW', authority: 'AUTO', requiresConfirmation: false, decision: 'ALLOW_AUTO', reason: 'AUTO_ALLOWED' },
     'battle_card.confirm': { effect: 'WRITE', risk: 'HIGH', authority: 'CONFIRM', requiresConfirmation: true, decision: 'REQUIRE_CONFIRMATION', reason: 'EXPLICIT_CONFIRMATION_REQUIRED' },
     'battle_card.hypothesis.status.update': { effect: 'WRITE', risk: 'MEDIUM', authority: 'CONFIRM', requiresConfirmation: true, decision: 'REQUIRE_CONFIRMATION', reason: 'EXPLICIT_CONFIRMATION_REQUIRED' },
     'battle_card.intelligence_import.confirm': { effect: 'BULK_WRITE', risk: 'HIGH', authority: 'STRONG_CONFIRM', requiresConfirmation: true, decision: 'REQUIRE_STRONG_CONFIRMATION', reason: 'DESTRUCTIVE_EFFECT_REQUIRES_STRONG_CONTROL' },
   };
 
-  it('A10 decisions and frozen metadata match the W3-3/W4-1 manifests', () => {
+  it('A10 decisions and frozen metadata match the W3-3/W4-1/W4-2/W4-4/W4-3 manifests', () => {
     for (const [id, expected] of Object.entries(EXPECTED)) {
       const definition = PRODUCTION_CAPABILITY_REGISTRY.get(id, '1.0.0');
       expect(definition.effect).toBe(expected.effect);
@@ -399,7 +407,7 @@ describe('T5 — WRITE AUTHORITY MATRIX: all 8 write definitions produce their f
     }
   });
 
-  it('only battle_card.draft.create is AUTO among the eight writes', () => {
+  it('only battle_card.draft.create is AUTO among the eleven writes', () => {
     const auto = PRODUCTION_WRITE_BINDINGS
       .map((b) => PRODUCTION_CAPABILITY_REGISTRY.list().find((d) => d.executor_ref === b.executor_ref))
       .filter((d): d is CapabilityDefinition => d !== undefined)
@@ -1110,21 +1118,25 @@ describe('T23 — OBSERVATION WIRING: Closure 2 wires W3-2 through one bridge wh
 });
 
 /* ------------------------------------------------------------------ */
-/* T24 — NO WAVE 4                                                      */
+/* T24 — WAVE-4 IDENTITIES                                              */
 /* ------------------------------------------------------------------ */
 
-describe('T24 — WAVE-4 IDENTITIES: customer.create + customer.profile.update + customer.delete registered; visit.create / import.execute / customer.update remain absent', () => {
-  it('registry contains exactly 23 capabilities; the only Wave-4 identities are create / profile.update / delete', () => {
+describe('T24 — WAVE-4 IDENTITIES: customer.create + customer.profile.update + customer.delete + visit.create registered; visit.update / visit.delete / import.execute / customer.update remain absent', () => {
+  it('registry contains exactly 24 capabilities; the only Wave-4 identities are create / profile.update / delete / visit.create', () => {
     const ids = PRODUCTION_CAPABILITY_REGISTRY.list().map((d) => d.id);
     expect(ids).toContain('customer.create');
     expect(ids).toContain('customer.profile.update');
     expect(ids).toContain('customer.delete');
+    expect(ids).toContain('visit.create');
     // customer.delete 是 W4-4 唯一新身份，且是唯一 DELETE 能力
     expect(PRODUCTION_CAPABILITY_REGISTRY.list().filter((d) => d.id === 'customer.delete')).toHaveLength(1);
-    expect(ids).not.toContain('visit.create');
+    // visit.create 是 W4-3 唯一新身份，且恰出现一次
+    expect(PRODUCTION_CAPABILITY_REGISTRY.list().filter((d) => d.id === 'visit.create')).toHaveLength(1);
+    expect(ids).not.toContain('visit.update');
+    expect(ids).not.toContain('visit.delete');
     expect(ids).not.toContain('import.execute');
     expect(ids).not.toContain('customer.update');
-    expect(ids.length).toBe(23);
+    expect(ids.length).toBe(24);
   });
 });
 

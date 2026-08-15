@@ -1008,15 +1008,15 @@ describe('T20 — A1 AUDIT CONTRACT RESOLVABLE: event identity resolves the exac
 });
 
 /* ================================================================== */
-/* T21 — ORIGINAL 20 FOUNDATION UNCHANGED + W4-1/W4-2/W4-4 additions   */
+/* T21 — ORIGINAL 20 FOUNDATION UNCHANGED + W4-1/W4-2/W4-4/W4-3 additions */
 /* ================================================================== */
 
-describe('T21 — ORIGINAL 20 FOUNDATION UNCHANGED + W4-1 customer.create + W4-2 customer.profile.update + W4-4 customer.delete: registry=23, bindings=23, unbound=0', () => {
-  it('production registry/bindings remain exactly 23 with zero unbound', () => {
-    expect(PRODUCTION_CAPABILITY_COUNT).toBe(23);
-    expect(PRODUCTION_CAPABILITY_REGISTRY.size()).toBe(23);
-    expect(PRODUCTION_CAPABILITY_BINDINGS).toHaveLength(23);
-    expect(PRODUCTION_CAPABILITY_BINDING_REGISTRY.size()).toBe(23);
+describe('T21 — ORIGINAL 20 FOUNDATION UNCHANGED + W4-1 customer.create + W4-2 customer.profile.update + W4-4 customer.delete + W4-3 visit.create: registry=24, bindings=24, unbound=0', () => {
+  it('production registry/bindings remain exactly 24 with zero unbound', () => {
+    expect(PRODUCTION_CAPABILITY_COUNT).toBe(24);
+    expect(PRODUCTION_CAPABILITY_REGISTRY.size()).toBe(24);
+    expect(PRODUCTION_CAPABILITY_BINDINGS).toHaveLength(24);
+    expect(PRODUCTION_CAPABILITY_BINDING_REGISTRY.size()).toBe(24);
     const unbound = PRODUCTION_CAPABILITY_IDS.filter((id) => {
       const definition = PRODUCTION_CAPABILITY_REGISTRY.get(id, '1.0.0');
       return PRODUCTION_CAPABILITY_BINDING_REGISTRY.resolve(definition.executor_ref) === undefined;
@@ -1239,16 +1239,18 @@ describe('T28 — NO V0.3 RUNTIME: no planner / tool-selection / agent loop intr
 /* T29 — WAVE-4 IDENTITIES                                             */
 /* ================================================================== */
 
-describe('T29 — WAVE-4 IDENTITIES: customer.create + customer.profile.update + customer.delete registered; visit.create / import.execute remain absent (count=23)', () => {
-  it('registry contains exactly the 23 frozen capabilities; create / profile.update / delete are the Wave-4 identities', () => {
+describe('T29 — WAVE-4 IDENTITIES: customer.create + customer.profile.update + customer.delete + visit.create registered; visit.update / visit.delete / import.execute remain absent (count=24)', () => {
+  it('registry contains exactly the 24 frozen capabilities; create / profile.update / delete / visit.create are the Wave-4 identities', () => {
     const ids = PRODUCTION_CAPABILITY_REGISTRY.list().map((d) => d.id);
-    expect(ids).toHaveLength(23);
+    expect(ids).toHaveLength(24);
     expect(ids).toContain('customer.create');
     expect(ids).toContain('customer.profile.update');
     expect(ids).toContain('customer.delete');
-    expect(ids).not.toContain('visit.create');
+    expect(ids).toContain('visit.create');
+    expect(ids).not.toContain('visit.update');
+    expect(ids).not.toContain('visit.delete');
     expect(ids).not.toContain('import.execute');
-    expect(PRODUCTION_CAPABILITY_COUNT).toBe(23);
+    expect(PRODUCTION_CAPABILITY_COUNT).toBe(24);
   });
 });
 

@@ -534,7 +534,7 @@ export interface ExactConfirmation { readonly proposal_id: string; readonly prop
 const consumed = new Set<string>();
 let proposalSequence = 0;
 const allowedFields: Readonly<Record<AgentWriteToolId, readonly string[]>> = Object.freeze({
-  create_follow_up_record: ['title', 'feedback_notes', 'next_follow_up_at'], create_visit_record: ['title', 'visit_notes', 'visited_at'], create_task: ['title', 'due_at', 'status'], update_task: ['title', 'due_at'], update_task_status: ['status'], update_next_follow_up_time: ['next_follow_up_at'], update_customer_basic_fields: ['name', 'industry', 'address', 'phone'], update_contact_basic_fields: ['name', 'phone', 'email', 'position'],
+  create_follow_up_record: ['title', 'feedback_notes', 'next_follow_up_at'], create_visit_record: ['title', 'visit_notes', 'customer_concerns', 'intent_after_visit', 'visit_outcome', 'next_action', 'expected_contract_at'], create_task: ['title', 'due_at', 'status'], update_task: ['title', 'due_at'], update_task_status: ['status'], update_next_follow_up_time: ['next_follow_up_at'], update_customer_basic_fields: ['name', 'industry', 'address', 'phone'], update_contact_basic_fields: ['name', 'phone', 'email', 'position'],
   // W4-2 customer.profile.update：仅 16 个经审计的普通客户资料字段（与
   // CUSTOMER_PROFILE_UPDATE_KEYS / 能力绑定层输入白名单同一集合；测试断言一致）。
   // 刻意不包含规则自有信号（wechat_add_status / intent_level / phone_feedback）、
@@ -660,7 +660,7 @@ export function buildWriteProposal(input: BuildWriteProposalInput): AgentWritePr
     proposal_hash: '',
     tool_id,
     customer_id: input.customer_id,
-    entity_type: tool_id === 'create_task' ? 'task' : tool_id === 'create_follow_up_record' ? 'follow_up' : 'customer',
+    entity_type: tool_id === 'create_task' ? 'task' : tool_id === 'create_follow_up_record' ? 'follow_up' : tool_id === 'create_visit_record' ? 'visit' : 'customer',
     ...(tool_id === 'update_next_follow_up_time' ? { entity_id: input.customer_id } : {}),
     operation,
     current_values,
