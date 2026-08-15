@@ -2,8 +2,8 @@
  * V0.2A / W4-2 — customer.profile.update Capability 契约测试（T1–T35 + 黄金路径对等）。
  *
  * 证明唯一新增生产能力 customer.profile.update：
- *   T1  能力定义（冻结元数据，恰一次）      T2  生产计数 23（原 22 保持 + W4-4 唯一新身份）
- *   T3  生产绑定 23 / UNBOUND=0             T4  scope=CUSTOMER
+ *   T1  能力定义（冻结元数据，恰一次）      T2  生产计数 24（原 22 保持 + W4-4/W4-3 新身份）
+ *   T3  生产绑定 24 / UNBOUND=0             T4  scope=CUSTOMER
  *   T5  生效客户身份只来自 scope             T6  customer_id/customerId 输入拒绝
  *   T7  精确资料字段白名单（16 字段）        T8  空 patch 拒绝
  *   T9  未知字段拒绝                        T10 系统字段拒绝
@@ -288,22 +288,24 @@ describe('T1 — CAPABILITY DEFINITION: customer.profile.update exists exactly o
 });
 
 /* ================================================================== */
-/* T2 — EXACT 23 PRODUCTION IDENTITIES                                 */
+/* T2 — EXACT 24 PRODUCTION IDENTITIES                                 */
 /* ================================================================== */
 
-describe('T2 — EXACT 23 PRODUCTION IDENTITIES: original 22 preserved; customer.delete is the only W4-4 new identity', () => {
-  it('count = 23, all original 22 identities remain, only new identity is customer.delete', () => {
-    expect(PRODUCTION_CAPABILITY_COUNT).toBe(23);
-    expect(PRODUCTION_CAPABILITY_REGISTRY.size()).toBe(23);
+describe('T2 — EXACT 24 PRODUCTION IDENTITIES: original 22 preserved; customer.delete (W4-4) and visit.create (W4-3) are the two new identities', () => {
+  it('count = 24, all original 22 identities remain, new identities are customer.delete and visit.create', () => {
+    expect(PRODUCTION_CAPABILITY_COUNT).toBe(24);
+    expect(PRODUCTION_CAPABILITY_REGISTRY.size()).toBe(24);
     const ids = PRODUCTION_CAPABILITY_IDS;
-    const original22 = new Set(ids.filter((id) => id !== 'customer.delete'));
+    const original22 = new Set(ids.filter((id) => id !== 'customer.delete' && id !== 'visit.create'));
     expect(original22.size).toBe(22);
-    // 无第 24 个能力
-    expect(ids).toHaveLength(23);
-    // customer.profile.update 是唯一 W4-2 新身份（保持）
+    // 无第 25 个能力
+    expect(ids).toHaveLength(24);
+    // customer.profile.update（W4-2）仍是其唯一身份（保持）
     expect(ids.filter((id) => id === 'customer.profile.update')).toEqual(['customer.profile.update']);
     // customer.delete 是唯一 W4-4 新身份
     expect(ids.filter((id) => id === 'customer.delete')).toEqual(['customer.delete']);
+    // visit.create 是唯一 W4-3 新身份
+    expect(ids.filter((id) => id === 'visit.create')).toEqual(['visit.create']);
     // 原 22 身份完整保留
     for (const id of [
       'customer.search', 'customer.get', 'customer.context',
@@ -322,11 +324,12 @@ describe('T2 — EXACT 23 PRODUCTION IDENTITIES: original 22 preserved; customer
     // 不存在的身份仍不存在
     expect(ids).not.toContain('customer.update');
     expect(ids).not.toContain('customer.state.update');
-    expect(ids).not.toContain('visit.create');
+    expect(ids).not.toContain('visit.update');
+    expect(ids).not.toContain('visit.delete');
     expect(ids).not.toContain('import.execute');
   });
 
-  it('all 23 identities resolve with version 1.0.0', () => {
+  it('all 24 identities resolve with version 1.0.0', () => {
     for (const id of PRODUCTION_CAPABILITY_IDS) {
       expect(PRODUCTION_CAPABILITY_REGISTRY.get(id, '1.0.0').id).toBe(id);
     }
@@ -334,13 +337,13 @@ describe('T2 — EXACT 23 PRODUCTION IDENTITIES: original 22 preserved; customer
 });
 
 /* ================================================================== */
-/* T3 — EXACT 23 BINDINGS                                              */
+/* T3 — EXACT 24 BINDINGS                                              */
 /* ================================================================== */
 
-describe('T3 — EXACT 23 BINDINGS: customer.profile.update executor_ref resolves explicitly; unbound = 0', () => {
-  it('binding count = 23 and customer.profile.update executor_ref resolves to the profile binding', () => {
-    expect(PRODUCTION_CAPABILITY_BINDINGS).toHaveLength(23);
-    expect(PRODUCTION_CAPABILITY_BINDING_REGISTRY.size()).toBe(23);
+describe('T3 — EXACT 24 BINDINGS: customer.profile.update executor_ref resolves explicitly; unbound = 0', () => {
+  it('binding count = 24 and customer.profile.update executor_ref resolves to the profile binding', () => {
+    expect(PRODUCTION_CAPABILITY_BINDINGS).toHaveLength(24);
+    expect(PRODUCTION_CAPABILITY_BINDING_REGISTRY.size()).toBe(24);
     const binding = PRODUCTION_CAPABILITY_BINDING_REGISTRY.resolve('salesAgentWriteTool:update_customer_profile');
     expect(binding).toBeDefined();
     expect(binding?.executor_ref).toBe('salesAgentWriteTool:update_customer_profile');
@@ -351,12 +354,13 @@ describe('T3 — EXACT 23 BINDINGS: customer.profile.update executor_ref resolve
     expect(unbound).toEqual([]);
   });
 
-  it('PRODUCTION_WRITE_BINDINGS has exactly 10 and includes the profile binding once', async () => {
+  it('PRODUCTION_WRITE_BINDINGS has exactly 11 and includes the profile binding once', async () => {
     const { PRODUCTION_WRITE_BINDINGS } = await import('../lib/capabilities/execution/writeAdapters');
-    expect(PRODUCTION_WRITE_BINDINGS).toHaveLength(10);
+    expect(PRODUCTION_WRITE_BINDINGS).toHaveLength(11);
     expect(PRODUCTION_WRITE_BINDINGS.map((b) => b.executor_ref)).toContain('salesAgentWriteTool:update_customer_profile');
     expect(PRODUCTION_WRITE_BINDINGS.filter((b) => b.executor_ref === 'salesAgentWriteTool:update_customer_profile')).toHaveLength(1);
     expect(PRODUCTION_WRITE_BINDINGS.filter((b) => b.executor_ref === 'salesAgentWriteTool:delete_customer')).toHaveLength(1);
+    expect(PRODUCTION_WRITE_BINDINGS.filter((b) => b.executor_ref === 'salesAgentWriteTool:create_visit_record')).toHaveLength(1);
   });
 });
 
@@ -1431,15 +1435,17 @@ describe('T33 — NO GENERIC CUSTOMER.UPDATE: the profile primitive is not a gen
 });
 
 /* ================================================================== */
-/* T34 — W4 IDENTITIES                                                 */
+/* T34 — WAVE-4 IDENTITIES                                             */
 /* ================================================================== */
 
-describe('T34 — WAVE-4 IDENTITIES: customer.delete (W4-4) registered; visit.create / import.execute remain absent', () => {
-  it('customer.delete is the only new W4-4 identity; the other Wave-4 candidates remain absent', () => {
+describe('T34 — WAVE-4 IDENTITIES: customer.delete (W4-4) and visit.create (W4-3) registered; visit.update / visit.delete / import.execute remain absent', () => {
+  it('customer.delete and visit.create are the new W4-4/W4-3 identities; the other Wave-4 candidates remain absent', () => {
     const ids = PRODUCTION_CAPABILITY_IDS;
     expect(ids).toContain('customer.delete');
     expect(ids.filter((id) => id === 'customer.delete')).toHaveLength(1);
-    for (const forbidden of ['visit.create', 'import.execute']) {
+    expect(ids).toContain('visit.create');
+    expect(ids.filter((id) => id === 'visit.create')).toHaveLength(1);
+    for (const forbidden of ['visit.update', 'visit.delete', 'import.execute']) {
       expect(ids).not.toContain(forbidden);
     }
   });
