@@ -59,8 +59,10 @@ Version:
 
 ## Windows
 
-Windows installer 将在 Windows 真机最终 Smoke
-完成后追加到同一个 v0.1.0 Release。
+V0.1 does not publish a Windows installer.
+
+Windows support remains part of the cross-platform codebase
+and future releases will be validated separately.
 
 不要创建：
 
@@ -70,10 +72,22 @@ v0.1.0-macos
 
 两个平台属于同一个产品版本。
 
+## Provenance
+
+Binary production source baseline:
+
+`421ef53a6a832284b019c10274f4b43009af960c`
+
+Final OSS tag additionally includes docs + MIT LICENSE only.
+
+The macOS DMG was built from the source baseline above
+and was not rebuilt from the docs-only final tag.
+
 ## License
 
-License 尚未确定（仓库无 LICENSE 文件）。
-仓库当前保持 Private，License 确定并完成发布检查后再转为 Public。
+License: MIT
+
+See [LICENSE](LICENSE) for the full text.
 
 ## Known Limitations
 

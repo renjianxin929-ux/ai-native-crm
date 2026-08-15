@@ -68,6 +68,27 @@ npx tauri build   # 桌面安装包（按当前平台生成 NSIS/MSI 或 DMG）
 
 Key 不随 Release 分发。
 
+## Downloads
+
+### macOS
+
+Apple Silicon (arm64):
+
+`local-crm_0.1.0_aarch64.dmg`
+
+Current macOS package is not Apple notarized.
+
+首次运行如被 Gatekeeper 拦截：
+
+右键应用 → 打开
+
+### Windows
+
+V0.1 does not publish a Windows installer.
+
+Windows support remains part of the cross-platform codebase
+and future releases will be validated separately.
+
 ## Build
 
 ### macOS（Apple Silicon）
@@ -126,6 +147,6 @@ Agent First Foundation
 
 ## License
 
-尚未选择 License（仓库无 LICENSE 文件）。
+License: MIT
 
-仓库保持 Private，License 确定并完成发布检查后再转为 Public。
+See [LICENSE](LICENSE) for the full text.

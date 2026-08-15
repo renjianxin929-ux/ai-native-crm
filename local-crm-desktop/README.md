@@ -82,10 +82,14 @@ npm install
 npx tauri build
 ```
 
-产物（Windows 真机最终 Smoke 完成后随 v0.1.0 Release 发布）：
+产物（从源码构建）：
 
 - `src-tauri/target/release/bundle/nsis/local-crm_0.1.0_x64-setup.exe`
 - `src-tauri/target/release/bundle/msi/local-crm_0.1.0_x64_en-US.msi`
+
+V0.1 does not publish a Windows installer.
+Windows support remains part of the cross-platform codebase
+and future releases will be validated separately.
 
 ## Database
 
@@ -120,4 +124,6 @@ Agent First Foundation
 
 ## License
 
-尚未选择 License（仓库无 LICENSE 文件）。License 确定后再公开。
+License: MIT
+
+See [../LICENSE](../LICENSE) for the full text.
