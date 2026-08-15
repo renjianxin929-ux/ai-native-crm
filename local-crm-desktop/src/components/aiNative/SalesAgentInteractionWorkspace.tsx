@@ -95,7 +95,8 @@ function formatProposalValues(values: Record<string, unknown>): string {
           : key === 'title' ? '标题'
             : key === 'due_at' ? '截止时间'
               : key === 'status' ? '状态'
-                : key;
+                : key === 'customer_name' ? '客户名称'
+                  : key;
       const text = typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
         ? String(value)
         : value == null ? '（空）' : formatUserFacingErrorMessage(value);
@@ -109,6 +110,7 @@ function proposalTitle(proposal: AgentWriteProposal): string {
   if (proposal.tool_id === 'create_follow_up_record') return '新增跟进记录';
   if (proposal.tool_id === 'create_task') return '创建任务';
   if (proposal.tool_id === 'update_next_follow_up_time') return '更新下一次跟进时间';
+  if (proposal.tool_id === 'delete_customer') return '永久删除客户（不可逆）';
   return '确认 CRM 写入';
 }
 
@@ -117,6 +119,7 @@ function confirmButtonLabel(proposal: AgentWriteProposal): string {
   if (proposal.tool_id === 'create_follow_up_record') return '确认新增';
   if (proposal.tool_id === 'create_task') return '确认创建';
   if (proposal.tool_id === 'update_next_follow_up_time') return '确认更新';
+  if (proposal.tool_id === 'delete_customer') return '确认永久删除';
   return '确认';
 }
 
@@ -125,6 +128,7 @@ function successLabel(proposal: AgentWriteProposal): string {
   if (proposal.tool_id === 'create_follow_up_record') return '✓ 已新增跟进记录';
   if (proposal.tool_id === 'create_task') return '✓ 已创建任务';
   if (proposal.tool_id === 'update_next_follow_up_time') return '✓ 已更新下一次跟进时间';
+  if (proposal.tool_id === 'delete_customer') return '✓ 已永久删除客户及其关联记录';
   return '✓ 已完成写入';
 }
 
@@ -1084,7 +1088,7 @@ export function SalesAgentInteractionWorkspace({
           <section className="agent-confirm-card agent-confirm-inline" aria-label="Exact CRM confirmation" data-testid="agent-confirm-card">
             <h3>{proposalTitle(proposal)}</h3>
             <p>客户：{customerName || proposal.customer_id}</p>
-            <p>操作：{proposal.tool_id}（{proposal.operation === 'create' ? '新增' : '更新'}）</p>
+            <p>操作：{proposal.tool_id}（{proposal.operation === 'create' ? '新增' : proposal.operation === 'delete' ? '删除' : '更新'}）</p>
             <p className="agent-confirm-current">当前：{formatProposalValues(proposal.current_values as Record<string, unknown>) || '（无）'}</p>
             <p className="agent-confirm-proposed">建议：{formatProposalValues(proposal.proposed_values as Record<string, unknown>) || '（无）'}</p>
             {proposal.grouped_operations ? (

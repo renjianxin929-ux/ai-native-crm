@@ -1,5 +1,5 @@
 import { v4 as uuid } from 'uuid';
-import { createFollowUp, createTask, getDb, updateCustomer } from '../db';
+import { createFollowUp, createTask, deleteCustomer, getDb, updateCustomer } from '../db';
 import type { AgentWriteProposal } from './confirmedWrite';
 import type { SafeWriteBoundary } from './agentSession';
 import type { FollowUpRecord, Task } from '../types';
@@ -76,6 +76,15 @@ async function executeOne(proposal: AgentWriteProposal, repository: ApprovedCrmW
       if (proposal.tool_id === 'update_customer_profile') {
         const outcome = await updateCustomerProfile(proposal.customer_id, proposal.proposed_values);
         return { entity_id: outcome.customer_id, fields: Object.keys(proposal.proposed_values) };
+      }
+      // W4-4 customer.delete：确认后走真实产品"删除客户"路径
+      // （共享产品服务 deleteCustomer = CustomerDetail handleDelete 同一函数：
+      // 硬删除客户行 + 应用层级联删除 follow_up/visit/task/battle-card 记录）。
+      // 客户身份只来自 proposal.customer_id（= scope.customer_id，经 canonical
+      // proposal hash + nonce/replay 复核，不可被确认侧篡改）；绝不创建第二份删除实现。
+      if (proposal.tool_id === 'delete_customer') {
+        await deleteCustomer(proposal.customer_id);
+        return { entity_id: proposal.customer_id, fields: [] };
       }
       if (proposal.tool_id === 'update_next_follow_up_time' || proposal.tool_id === 'update_customer_basic_fields') {
         await repository.updateCustomer(proposal.customer_id, values); return { entity_id: proposal.customer_id, fields: Object.keys(values) };
