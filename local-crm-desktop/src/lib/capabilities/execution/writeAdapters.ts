@@ -1,10 +1,11 @@
 /**
- * V0.2A / W3-1 Closure 1 (+ W4-1 customer.create) — Production Write Adapters
- * （生产写绑定 + 确认交接适配器）。
+ * V0.2A / W3-1 Closure 1 (+ W4-1 customer.create + W4-2 customer.profile.update)
+ * — Production Write Adapters（生产写绑定 + 确认交接适配器）。
  *
  * 本模块是 GAP-B / GAP-C / GAP-F 的执行侧实现：为 W3-3 七个冻结写能力提供
- * 真实、权威优先、确认安全的 W3-1 生产绑定，并为 W4-1 customer.create 提供
- * 唯一新增生产写绑定（scope=NONE / A10 REQUIRE_CONFIRMATION / 现有确认运行时）：
+ * 真实、权威优先、确认安全的 W3-1 生产绑定，为 W4-1 customer.create 提供
+ * scope=NONE 的新增生产写绑定，并为 W4-2 customer.profile.update 提供
+ * scope=CUSTOMER 的窄资料更新生产写绑定（A10 REQUIRE_CONFIRMATION / 现有确认运行时）：
  *
  *   - executor_ref 精确绑定到已审计的现有 Product 写执行器身份；
  *   - validateInput 是确定性输入护栏（fail-closed，执行前）——绝不 `input: unknown`
@@ -52,6 +53,7 @@ import {
 import { buildWriteProposal, parseFactVerificationsRuntime, MAX_CANONICAL_PROPOSAL_ENVELOPE_BYTES, type FactVerificationItem } from '../../salesAgentTools/confirmedWrite';
 import { registerCanonicalProposal } from '../../salesAgentTools/sessionWriteStateStore';
 import { SALES_AGENT_APP_CLOCK } from '../../salesAgentTools/appClock';
+import { CUSTOMER_PROFILE_UPDATE_KEYS } from '../../customerProfileUpdate';
 import { v4 as uuidv4 } from 'uuid';
 import { createBattleCardAgentTools } from '../../battleCard/agentTools';
 import type { ConfirmImportDecisions } from '../../battleCard/importService';
@@ -509,6 +511,165 @@ const customerCreateBinding: CapabilityExecutorBinding = {
 };
 
 /* ------------------------------------------------------------------ */
+/* 3.6) customer.profile.update — salesAgentWriteTool:update_customer_profile */
+/*      （W4-2：唯一新增生产能力；scope=CUSTOMER；A10 REQUIRE_CONFIRMATION）   */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 校验后的 customer.profile.update 输入（部分更新；db 句柄 + 已提供的资料字段）。
+ * 只有普通客户资料字段可进入；系统/规则/调度/战斗卡字段在此层即 fail closed。
+ * 资料字段白名单与 CUSTOMER_PROFILE_UPDATE_KEYS（共享产品服务）一致。
+ */
+export interface CustomerProfileUpdateInput {
+  readonly db: DatabaseLike;
+  readonly name?: string;
+  readonly wechat_id?: string | null;
+  readonly phone_number?: string | null;
+  readonly wechat_search_status?: WechatSearchStatus | null;
+  readonly is_key_decision_maker?: 0 | 1;
+  readonly contact_method?: ContactMethod | null;
+  readonly notes?: string | null;
+  readonly website?: string | null;
+  readonly region?: string | null;
+  readonly industry?: string | null;
+  readonly contact_person?: string | null;
+  readonly email?: string | null;
+  readonly address?: string | null;
+  readonly pitch_angle?: string | null;
+  readonly qualification_reason?: string | null;
+  readonly source?: string | null;
+}
+
+/** 输入允许键 = 16 个资料字段 + 执行句柄 db + 防御性客户选择字段（经相干校验后拒绝/放行）。 */
+const CUSTOMER_PROFILE_UPDATE_INPUT_KEYS: readonly string[] = Object.freeze([
+  ...CUSTOMER_PROFILE_UPDATE_KEYS,
+  'db',
+  ...CUSTOMER_SELECTOR_KEYS,
+]);
+
+/** 原型污染键：显式拒绝（与 confirmedWrite FORBIDDEN_PROTOTYPE_KEYS 同款；纵深防御）。 */
+const FORBIDDEN_PROTOTYPE_KEYS: readonly string[] = ['__proto__', 'constructor', 'prototype'];
+
+const customerProfileUpdateBinding: CapabilityExecutorBinding = {
+  executor_ref: 'salesAgentWriteTool:update_customer_profile',
+  validateInput: (input: unknown, scope: CapabilityInvocationScope): CustomerProfileUpdateInput => {
+    if (!isPlainObject(input)) {
+      throw new CapabilityInputValidationError('customer.profile.update requires an object input with a db handle and profile fields.');
+    }
+    assertCustomerSelectorCoherent(input, scope);
+    const record = input as Record<string, unknown>;
+    // 原型污染键显式 fail closed（Object.keys 之外的保护层；绝不 strip）。
+    for (const key of FORBIDDEN_PROTOTYPE_KEYS) {
+      if (Object.prototype.hasOwnProperty.call(record, key)) {
+        throw new CapabilityInputValidationError(`customer.profile.update rejects forbidden key '${key}'.`);
+      }
+    }
+    rejectUnknownFields(record, 'customer.profile.update', CUSTOMER_PROFILE_UPDATE_INPUT_KEYS);
+    if (!isDatabaseLike(record.db)) {
+      throw new CapabilityInputValidationError('customer.profile.update requires a DatabaseLike db handle (to read the stored current values for the proposal).');
+    }
+    const builder: Record<string, unknown> = { db: record.db as DatabaseLike };
+    let profileFieldCount = 0;
+
+    // name：编辑模式必填；未提供 → 不变。
+    if (record.name !== undefined) {
+      builder.name = requireString(record.name, 'customer.profile.update name');
+      profileFieldCount += 1;
+    }
+    // 可选资料字符串：undefined → 不变；null/'' → null（CustomerForm `value || null` 清除语义）。
+    const optionalProfileStringFields: ReadonlyArray<[string, string]> = [
+      ['wechat_id', 'wechat_id'],
+      ['phone_number', 'phone_number'],
+      ['notes', 'notes'],
+      ['website', 'website'],
+      ['region', 'region'],
+      ['industry', 'industry'],
+      ['contact_person', 'contact_person'],
+      ['email', 'email'],
+      ['address', 'address'],
+      ['pitch_angle', 'pitch_angle'],
+      ['qualification_reason', 'qualification_reason'],
+      ['source', 'source'],
+    ];
+    for (const [field, label] of optionalProfileStringFields) {
+      if (record[field] !== undefined) {
+        builder[field] = optionalProductString(record[field], `customer.profile.update ${label}`);
+        profileFieldCount += 1;
+      }
+    }
+    // 可选枚举：undefined → 不变；null/'' → null。
+    if (record.wechat_search_status !== undefined) {
+      builder.wechat_search_status = optionalProductEnum(
+        record.wechat_search_status,
+        WECHAT_SEARCH_STATUSES,
+        'customer.profile.update wechat_search_status',
+        null,
+      );
+      profileFieldCount += 1;
+    }
+    if (record.contact_method !== undefined) {
+      builder.contact_method = optionalProductEnum(
+        record.contact_method,
+        CONTACT_METHODS,
+        'customer.profile.update contact_method',
+        null,
+      );
+      profileFieldCount += 1;
+    }
+    // is_key_decision_maker：产品表示 0/1（编辑模式 select 仅 0/1；无清除语义）。
+    if (record.is_key_decision_maker !== undefined) {
+      const rawKeyDm = record.is_key_decision_maker;
+      if (rawKeyDm !== 0 && rawKeyDm !== 1) {
+        throw new CapabilityInputValidationError('customer.profile.update is_key_decision_maker must be 0 or 1.');
+      }
+      builder.is_key_decision_maker = rawKeyDm as 0 | 1;
+      profileFieldCount += 1;
+    }
+
+    // 空 patch fail closed（§9）：至少一个资料字段。
+    if (profileFieldCount === 0) {
+      throw new CapabilityInputValidationError('customer.profile.update requires at least one profile field (empty patch).');
+    }
+    return builder as unknown as CustomerProfileUpdateInput;
+  },
+  handoff: async (validatedInput: unknown, scope: CapabilityInvocationScope): Promise<CapabilityConfirmationHandoff> => {
+    const input = validatedInput as CustomerProfileUpdateInput;
+    const customerId = requireCustomerScope(scope);
+    // 现有产品语义（currentValuesForTool）：提案必须携带客户当前存储值（before 侧），
+    // 且目标客户必须已存在（§8：未知客户 → truthful failure，零写入，绝不 upsert）。
+    const rows = await input.db.select<Record<string, unknown>>(
+      'SELECT * FROM customers WHERE id = ?',
+      [customerId],
+    );
+    if (rows.length === 0) {
+      throw new CapabilityInputValidationError(`customer.profile.update scope customer does not exist: ${customerId}`);
+    }
+    const row = rows[0] ?? {};
+    const inputRecord = input as unknown as Record<string, unknown>;
+    const current_values: Record<string, unknown> = {};
+    const proposed_values: Record<string, unknown> = {};
+    for (const key of CUSTOMER_PROFILE_UPDATE_KEYS) {
+      if (inputRecord[key] !== undefined) {
+        current_values[key] = row[key] ?? null;
+        proposed_values[key] = inputRecord[key];
+      }
+    }
+    const proposal = registerCanonicalProposal(buildWriteProposal({
+      customer_id: customerId,
+      message: '更新客户资料',
+      evidence_refs: [`customer:${customerId}`],
+      created_at: now(),
+      tool_id: 'update_customer_profile',
+      current_values,
+      proposed_values,
+      reason: 'W4-2 统一执行确认交接（现有 confirmed-write 提案路径）。仅普通资料字段变更，绝不携带等级/阶段/支付/调度/战斗卡等规则或系统字段；确认后按人工编辑客户资料的同一产品语义仅更新资料字段，不触发任何规则/状态迁移/任务。',
+    }));
+    return { mechanism: SALES_AGENT_CONFIRMATION_MECHANISM, proposal_id: proposal.proposal_id };
+  },
+  execute: () => refuseBusinessExecutor('customer.profile.update'),
+};
+
+/* ------------------------------------------------------------------ */
 /* 4) battle_card.draft.create — battleCard:generateStageCardDraft      */
 /*    （唯一 AUTO 写；execute 调用真实产品草稿执行器）                     */
 /* ------------------------------------------------------------------ */
@@ -754,7 +915,8 @@ const battleCardIntelligenceImportConfirmBinding: CapabilityExecutorBinding = {
 };
 
 /* ------------------------------------------------------------------ */
-/* 生产写绑定集合（8 项；W3-3 七项 + W4-1 customer.create；供 production.ts 组合；冻结数组） */
+/* 生产写绑定集合（9 项；W3-3 七项 + W4-1 customer.create + W4-2        */
+/* customer.profile.update；供 production.ts 组合；冻结数组）            */
 /* ------------------------------------------------------------------ */
 
 export const PRODUCTION_WRITE_BINDINGS: readonly CapabilityExecutorBinding[] = Object.freeze([
@@ -762,6 +924,7 @@ export const PRODUCTION_WRITE_BINDINGS: readonly CapabilityExecutorBinding[] = O
   Object.freeze(taskCreateBinding),
   Object.freeze(customerNextFollowUpTimeUpdateBinding),
   Object.freeze(customerCreateBinding),
+  Object.freeze(customerProfileUpdateBinding),
   Object.freeze(battleCardDraftCreateBinding),
   Object.freeze(battleCardConfirmBinding),
   Object.freeze(battleCardHypothesisStatusUpdateBinding),

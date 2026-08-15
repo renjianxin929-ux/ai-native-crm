@@ -6,6 +6,7 @@ import type { FollowUpRecord, Task } from '../types';
 import { SALES_AGENT_APP_CLOCK, type AppClock } from './appClock';
 import { createBattleCardWriteExecutor } from '../battleCard/agentTools';
 import { createCustomerWithProductRules, type CustomerCreateInput } from '../customerCreate';
+import { updateCustomerProfile } from '../customerProfileUpdate';
 
 export interface ApprovedCrmWriteRepository { createFollowUp(record: FollowUpRecord): Promise<void>; createTask(task: Task): Promise<void>; updateCustomer(id: string, values: Record<string, unknown>): Promise<void>; }
 
@@ -63,6 +64,17 @@ async function executeOne(proposal: AgentWriteProposal, repository: ApprovedCrmW
           id: proposal.customer_id,
           ...(proposal.proposed_values as Readonly<Record<string, unknown>>),
         } as unknown as CustomerCreateInput);
+        return { entity_id: outcome.customer_id, fields: Object.keys(proposal.proposed_values) };
+      }
+      // W4-2 customer.profile.update：确认后走真实产品"编辑客户资料"语义
+      // （共享产品服务 updateCustomerProfile = CustomerForm edit-mode 的资料字段
+      // 部分更新：存在性校验 → 仅资料列写入 → { customer_id }，绝不触发规则）。
+      // proposed_values 只含 16 个资料白名单字段（allowedFields['update_customer_profile']
+      // 白名单，经 canonical proposal hash 复核，不可被确认侧篡改）；共享服务在
+      // 运行时再次闭合白名单（纵深防御第 3 层），绝不把 proposed_values 广度透传
+      // 给 repository.updateCustomer。
+      if (proposal.tool_id === 'update_customer_profile') {
+        const outcome = await updateCustomerProfile(proposal.customer_id, proposal.proposed_values);
         return { entity_id: outcome.customer_id, fields: Object.keys(proposal.proposed_values) };
       }
       if (proposal.tool_id === 'update_next_follow_up_time' || proposal.tool_id === 'update_customer_basic_fields') {
