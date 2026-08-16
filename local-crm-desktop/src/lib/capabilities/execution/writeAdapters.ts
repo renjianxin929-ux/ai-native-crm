@@ -1,6 +1,6 @@
 /**
  * V0.2A / W3-1 Closure 1 (+ W4-1 customer.create + W4-2 customer.profile.update
- * + W4-4 customer.delete + W4-3 visit.create)
+ * + W4-4 customer.delete + W4-3 visit.create + C0 customer.opportunity_amount.update)
  * — Production Write Adapters（生产写绑定 + 确认交接适配器）。
  *
  * 本模块是 GAP-B / GAP-C / GAP-F 的执行侧实现：为 W3-3 七个冻结写能力提供
@@ -9,7 +9,9 @@
  * scope=CUSTOMER 的窄资料更新生产写绑定（A10 REQUIRE_CONFIRMATION / 现有确认运行时），
  * 为 W4-4 customer.delete 提供 scope=CUSTOMER 的破坏性删除写绑定
  * （A10 REQUIRE_STRONG_CONFIRMATION），并为 W4-3 visit.create 提供
- * scope=CUSTOMER 的面访创建写绑定（A10 REQUIRE_CONFIRMATION）：
+ * scope=CUSTOMER 的面访创建写绑定（A10 REQUIRE_CONFIRMATION），
+ * 为 C0 customer.opportunity_amount.update 提供 scope=CUSTOMER 的窄义商机金额
+ * 更新写绑定（A10 REQUIRE_CONFIRMATION / 现有确认运行时）：
  *
  *   - executor_ref 精确绑定到已审计的现有 Product 写执行器身份；
  *   - validateInput 是确定性输入护栏（fail-closed，执行前）——绝不 `input: unknown`
@@ -676,6 +678,89 @@ const customerProfileUpdateBinding: CapabilityExecutorBinding = {
 };
 
 /* ------------------------------------------------------------------ */
+/* 3.6b) customer.opportunity_amount.update —                          */
+/*       salesAgentWriteTool:update_opportunity_amount                 */
+/*       （C0：唯一新增窄义商机金额写能力；scope=CUSTOMER；CONFIRM）      */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 校验后的 customer.opportunity_amount.update 输入（db 句柄 + 单字段值）。
+ * 值只允许：有限正数（记录期望商业金额）或 null（显式清除为 unknown）。
+ * 客户身份只来自 invocation.scope；绝不携带 customer_id / customerId 目标身份。
+ */
+export interface CustomerOpportunityAmountUpdateInput {
+  readonly db: DatabaseLike;
+  readonly opportunity_amount: number | null;
+}
+
+/** 输入允许键 = 执行句柄 db + 单字段 opportunity_amount + 防御性客户选择字段。 */
+const CUSTOMER_OPPORTUNITY_AMOUNT_UPDATE_INPUT_KEYS: readonly string[] = Object.freeze([
+  'db',
+  'opportunity_amount',
+  ...CUSTOMER_SELECTOR_KEYS,
+]);
+
+/** 商机金额值护栏（Layer 1）：有限正数 或 null（unknown/清除）；其余 fail closed。 */
+function requireOpportunityAmount(value: unknown, field: string): number | null {
+  if (value === null) return null;
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    throw new CapabilityInputValidationError(`${field} must be a finite positive number or null (unknown).`);
+  }
+  return value;
+}
+
+const customerOpportunityAmountUpdateBinding: CapabilityExecutorBinding = {
+  executor_ref: 'salesAgentWriteTool:update_opportunity_amount',
+  validateInput: (input: unknown, scope: CapabilityInvocationScope): CustomerOpportunityAmountUpdateInput => {
+    if (!isPlainObject(input)) {
+      throw new CapabilityInputValidationError('customer.opportunity_amount.update requires an object input.');
+    }
+    assertCustomerSelectorCoherent(input, scope);
+    const record = input as Record<string, unknown>;
+    // 原型污染键显式 fail closed（与 profile.update 同款；纵深防御）。
+    for (const key of FORBIDDEN_PROTOTYPE_KEYS) {
+      if (Object.prototype.hasOwnProperty.call(record, key)) {
+        throw new CapabilityInputValidationError(`customer.opportunity_amount.update rejects forbidden key '${key}'.`);
+      }
+    }
+    rejectUnknownFields(record, 'customer.opportunity_amount.update', CUSTOMER_OPPORTUNITY_AMOUNT_UPDATE_INPUT_KEYS);
+    if (!isDatabaseLike(record.db)) {
+      throw new CapabilityInputValidationError('customer.opportunity_amount.update requires a DatabaseLike db handle (to read the stored current value for the proposal).');
+    }
+    if (!Object.prototype.hasOwnProperty.call(record, 'opportunity_amount')) {
+      throw new CapabilityInputValidationError('customer.opportunity_amount.update requires the opportunity_amount field.');
+    }
+    const opportunity_amount = requireOpportunityAmount(record.opportunity_amount, 'customer.opportunity_amount.update opportunity_amount');
+    return { db: record.db as DatabaseLike, opportunity_amount };
+  },
+  handoff: async (validatedInput: unknown, scope: CapabilityInvocationScope): Promise<CapabilityConfirmationHandoff> => {
+    const input = validatedInput as CustomerOpportunityAmountUpdateInput;
+    const customerId = requireCustomerScope(scope);
+    // 现有产品语义（currentValuesForTool）：提案必须携带客户当前存储值（before 侧），
+    // 且目标客户必须已存在（未知客户 → truthful failure，零写入，绝不 upsert）。
+    const rows = await input.db.select<{ opportunity_amount: number | null }>(
+      'SELECT opportunity_amount FROM customers WHERE id = ?',
+      [customerId],
+    );
+    if (rows.length === 0) {
+      throw new CapabilityInputValidationError(`customer.opportunity_amount.update scope customer does not exist: ${customerId}`);
+    }
+    const proposal = registerCanonicalProposal(buildWriteProposal({
+      customer_id: customerId,
+      message: '更新商机金额',
+      evidence_refs: [`customer:${customerId}`],
+      created_at: now(),
+      tool_id: 'update_opportunity_amount',
+      current_values: { opportunity_amount: rows[0]?.opportunity_amount ?? null },
+      proposed_values: { opportunity_amount: input.opportunity_amount },
+      reason: 'C0 统一执行确认交接（现有 confirmed-write 提案路径）。仅更新 opportunity_amount（用户确认/显式记录的期望商业金额；null=unknown），绝不触发规则/状态迁移/任务，绝不写入 deal_amount 或任何其它列。',
+    }));
+    return { mechanism: SALES_AGENT_CONFIRMATION_MECHANISM, proposal_id: proposal.proposal_id };
+  },
+  execute: () => refuseBusinessExecutor('customer.opportunity_amount.update'),
+};
+
+/* ------------------------------------------------------------------ */
 /* 3.7) customer.delete — salesAgentWriteTool:delete_customer          */
 /*      （W4-4：唯一新增生产能力；scope=CUSTOMER；A10 REQUIRE_STRONG_CONFIRMATION） */
 /* ------------------------------------------------------------------ */
@@ -1106,9 +1191,9 @@ const battleCardIntelligenceImportConfirmBinding: CapabilityExecutorBinding = {
 };
 
 /* ------------------------------------------------------------------ */
-/* 生产写绑定集合（11 项；W3-3 七项 + W4-1 customer.create + W4-2      */
+/* 生产写绑定集合（12 项；W3-3 七项 + W4-1 customer.create + W4-2      */
 /* customer.profile.update + W4-4 customer.delete + W4-3 visit.create； */
-/* 供 production.ts 组合；冻结数组）                                     */
+/* + C0 customer.opportunity_amount.update；供 production.ts 组合；冻结数组） */
 /* ------------------------------------------------------------------ */
 
 export const PRODUCTION_WRITE_BINDINGS: readonly CapabilityExecutorBinding[] = Object.freeze([
@@ -1117,6 +1202,7 @@ export const PRODUCTION_WRITE_BINDINGS: readonly CapabilityExecutorBinding[] = O
   Object.freeze(customerNextFollowUpTimeUpdateBinding),
   Object.freeze(customerCreateBinding),
   Object.freeze(customerProfileUpdateBinding),
+  Object.freeze(customerOpportunityAmountUpdateBinding),
   Object.freeze(customerDeleteBinding),
   Object.freeze(visitCreateBinding),
   Object.freeze(battleCardDraftCreateBinding),

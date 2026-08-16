@@ -1,21 +1,22 @@
 /**
  * V0.2A / W3-1 — Production Capability Execution Composition.
  *
- * 唯一的"真实生产可消费"组合点：把冻结的 24 个生产能力（Wave1/Wave2 读 manifest
+ * 唯一的"真实生产可消费"组合点：把冻结的 25 个生产能力（Wave1/Wave2 读 manifest
  * 13 项 + W3-3 写/草稿/状态迁移 manifest 7 项 + W4-1 customer.create 1 项 +
  * W4-2 customer.profile.update 1 项 + W4-4 customer.delete 1 项 +
- * W4-3 visit.create 1 项；Evidence 空 manifest 贡献 0）组合为：
+ * W4-3 visit.create 1 项 + C0 customer.opportunity_amount.update 1 项；
+ * Evidence 空 manifest 贡献 0）组合为：
  *   - PRODUCTION_CAPABILITY_REGISTRY      —— A1 registry（确定性 / 不可变 / 可复用）
- *   - PRODUCTION_CAPABILITY_BINDING_REGISTRY —— executor_ref → 真实领域 adapter（24 项全绑定）
+ *   - PRODUCTION_CAPABILITY_BINDING_REGISTRY —— executor_ref → 真实领域 adapter（25 项全绑定）
  *   - PRODUCTION_CAPABILITY_EXECUTION     —— 统一执行入口（Registry → Input → Scope → A10 → Executor / 确认交接）
  *
  * 约束（本分支）：
  * - 不创建巨大的导出可变 ALL_CAPABILITIES 数组；不手动复制定义；
  *   全部经 A1 createCapabilityRegistry(...manifests) 组合。
  * - Evidence 空 manifest 继续参与领域组合，贡献 0 个生产能力身份。
- * - 所有 24 个 executor_ref 都能如实绑定到现有领域 adapter（不改变领域语义、
+ * - 所有 25 个 executor_ref 都能如实绑定到现有领域 adapter（不改变领域语义、
  *   不为统一而伪造执行器）；绑定缺失即 EXECUTOR_NOT_BOUND（无 fallback）。
- * - 十一个写绑定的执行器/确认交接适配器集中在 ./writeAdapters（复用现有
+ * - 十二个写绑定的执行器/确认交接适配器集中在 ./writeAdapters（复用现有
  *   salesAgentTools 确认运行时与 Battle Card 产品执行器路径）；本文件保持
  *   零写语义（引擎 A10-first 不变式由 engine.ts 保证）。
  */
@@ -31,6 +32,7 @@ import type { SearchCustomersToolInput } from '../../salesAgentTools/executeSear
 import { CUSTOMER_CAPABILITY_MANIFEST } from '../customer/manifest';
 import { CUSTOMER_CREATE_MANIFEST } from '../customer/createManifest';
 import { CUSTOMER_PROFILE_UPDATE_MANIFEST } from '../customer/profileUpdateManifest';
+import { OPPORTUNITY_AMOUNT_UPDATE_MANIFEST } from '../customer/opportunityAmountUpdateManifest';
 import { CUSTOMER_DELETE_MANIFEST } from '../customer/deleteManifest';
 import { VISIT_CREATE_MANIFEST } from '../visit/createManifest';
 import { TIMELINE_READ_CAPABILITY_MANIFEST } from '../timeline/manifest';
@@ -186,10 +188,10 @@ function validateBattleCardReadInput(input: unknown, scope: CapabilityInvocation
 /* 生产组合：A1 registry（11 个领域 manifest，含 Evidence 空 manifest）    */
 /* ------------------------------------------------------------------ */
 
-/** 生产注册表：24 个能力身份（Wave1/Wave2 读 13 + W3-3 写 7 + W4-1 customer.create 1
- *  + W4-2 customer.profile.update 1 + W4-4 customer.delete 1 + W4-3 visit.create 1；
- *  Evidence 贡献 0）。
- *  构造期即完成全部校验与深冻结；W3-3/W4-1/W4-2/W4-4/W4-3 写 manifest 经 A1 扩展缝
+/** 生产注册表：25 个能力身份（Wave1/Wave2 读 13 + W3-3 写 7 + W4-1 customer.create 1
+ *  + W4-2 customer.profile.update 1 + W4-4 customer.delete 1 + W4-3 visit.create 1
+ *  + C0 customer.opportunity_amount.update 1；Evidence 贡献 0）。
+ *  构造期即完成全部校验与深冻结；W3-3/W4-1/W4-2/W4-4/W4-3/C0 写 manifest 经 A1 扩展缝
  *  组合，绝不手动复制定义。 */
 export const PRODUCTION_CAPABILITY_REGISTRY = createCapabilityRegistry(
   CUSTOMER_CAPABILITY_MANIFEST,
@@ -211,6 +213,8 @@ export const PRODUCTION_CAPABILITY_REGISTRY = createCapabilityRegistry(
   CUSTOMER_DELETE_MANIFEST,
   // W4-3：visit.create 以追加方式组合（24th 身份；唯一新增面访生产能力）
   VISIT_CREATE_MANIFEST,
+  // C0：customer.opportunity_amount.update 以追加方式组合（25th 身份；唯一新增窄义商机金额生产能力）
+  OPPORTUNITY_AMOUNT_UPDATE_MANIFEST,
 );
 
 /** 生产 Follow-up 读取边界（绑定 db.ts 真实只读路径 listFollowUps / listAllFollowUps）。 */
@@ -389,7 +393,7 @@ export const PRODUCTION_CAPABILITY_BINDINGS: readonly CapabilityExecutorBinding[
     execute: (validatedInput: unknown) => validateImportMapping(validatedInput as readonly FieldMapping[]),
   }),
 
-  // ── W3-3/W4 生产写绑定（11 项；见 ./writeAdapters：输入护栏 + 确认交接 + 草稿 AUTO）──
+  // ── W3-3/W4/C0 生产写绑定（12 项；见 ./writeAdapters：输入护栏 + 确认交接 + 草稿 AUTO）──
   ...PRODUCTION_WRITE_BINDINGS,
 ]);
 
@@ -431,10 +435,10 @@ export const PRODUCTION_CAPABILITY_EXECUTION: CapabilityExecutionEngine = create
   PRODUCTION_OBSERVATION_BRIDGE.observer,
 );
 
-/** 生产能力身份集合（24 项；供调用方/测试断言，非可变中央数组）。 */
+/** 生产能力身份集合（25 项；供调用方/测试断言，非可变中央数组）。 */
 export const PRODUCTION_CAPABILITY_IDS: readonly string[] = Object.freeze(
   PRODUCTION_CAPABILITY_REGISTRY.list().map((definition: CapabilityDefinition) => definition.id),
 );
 
-/** 生产注册数量（当前冻结生产能力数量 = 24；Evidence 空 manifest 贡献 0）。 */
+/** 生产注册数量（当前冻结生产能力数量 = 25；Evidence 空 manifest 贡献 0）。 */
 export const PRODUCTION_CAPABILITY_COUNT: number = PRODUCTION_CAPABILITY_REGISTRY.size();

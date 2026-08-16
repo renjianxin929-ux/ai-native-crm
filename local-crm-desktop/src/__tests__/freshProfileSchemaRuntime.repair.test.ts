@@ -110,8 +110,8 @@ describe('fresh-profile schema and customer projection repair', () => {
     }
   });
 
-  it('uses one 44-field explicit customer projection and rejects a missing decoded field without positional access', () => {
-    expect(CUSTOMER_ROW_DECODER_FIELDS).toHaveLength(44);
+  it('uses one 45-field explicit customer projection and rejects a missing decoded field without positional access', () => {
+    expect(CUSTOMER_ROW_DECODER_FIELDS).toHaveLength(45);
     expect(CUSTOMER_ROW_DECODER_FIELDS.at(-1)).toBe('updated_at');
     expect(CUSTOMER_SELECT_PROJECTION.split(', ')).toEqual([...CUSTOMER_ROW_DECODER_FIELDS]);
 

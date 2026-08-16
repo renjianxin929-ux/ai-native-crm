@@ -362,19 +362,19 @@ describe('T1 — PRODUCT CAPABILITY DEFINITION: customer.create exists exactly o
 /* T2 — PRODUCTION COUNT                                               */
 /* ================================================================== */
 
-describe('T2 — PRODUCTION COUNT: registry becomes exactly 24; original 22 preserved; customer.delete (W4-4) and visit.create (W4-3) are the only later new identities', () => {
+describe('T2 — PRODUCTION COUNT: registry becomes exactly 25; original 22 preserved; customer.delete (W4-4), visit.create (W4-3), and customer.opportunity_amount.update (C0) are the later new identities', () => {
   // OLD_EXPECTATION: 22 (W4-2 冻结基线)
-  // NEW_TRUTH:      24（W4-4 customer.delete + W4-3 visit.create 追加组合，A1 扩展缝）
-  // WHY:            W4-4 注册唯一新破坏性生产能力 customer.delete；W4-3 注册唯一新生产能力 visit.create
-  // INVARIANT_PRESERVED: 原 22 身份完整保留；仅新增两个身份；无第 25 个能力
-  it('count = 24, all original 22 identities remain, new identities are customer.delete and visit.create', () => {
-    expect(PRODUCTION_CAPABILITY_COUNT).toBe(24);
-    expect(PRODUCTION_CAPABILITY_REGISTRY.size()).toBe(24);
+  // NEW_TRUTH:      25（W4-4 customer.delete + W4-3 visit.create + C0 customer.opportunity_amount.update 追加组合，A1 扩展缝）
+  // WHY:            W4-4 注册唯一新破坏性生产能力 customer.delete；W4-3 注册唯一新生产能力 visit.create；C0 注册唯一新窄义商机金额能力
+  // INVARIANT_PRESERVED: 原 22 身份完整保留；仅新增三个身份；无第 26 个能力
+  it('count = 25, all original 22 identities remain, new identities are customer.delete / visit.create / customer.opportunity_amount.update', () => {
+    expect(PRODUCTION_CAPABILITY_COUNT).toBe(25);
+    expect(PRODUCTION_CAPABILITY_REGISTRY.size()).toBe(25);
     const ids = PRODUCTION_CAPABILITY_IDS;
-    const original22 = new Set(ids.filter((id) => id !== 'customer.delete' && id !== 'visit.create'));
+    const original22 = new Set(ids.filter((id) => id !== 'customer.delete' && id !== 'visit.create' && id !== 'customer.opportunity_amount.update'));
     expect(original22.size).toBe(22);
-    // 无第 25 个能力
-    expect(ids).toHaveLength(24);
+    // 无第 26 个能力
+    expect(ids).toHaveLength(25);
     // customer.create（W4-1）仍是唯一 create 新身份（保持）
     expect(ids.filter((id) => id === 'customer.create')).toEqual(['customer.create']);
     // customer.profile.update（W4-2）仍是唯一身份（保持）
@@ -383,6 +383,8 @@ describe('T2 — PRODUCTION COUNT: registry becomes exactly 24; original 22 pres
     expect(ids.filter((id) => id === 'customer.delete')).toEqual(['customer.delete']);
     // visit.create 是唯一 W4-3 新身份
     expect(ids.filter((id) => id === 'visit.create')).toEqual(['visit.create']);
+    // customer.opportunity_amount.update 是唯一 C0 新身份
+    expect(ids.filter((id) => id === 'customer.opportunity_amount.update')).toEqual(['customer.opportunity_amount.update']);
     expect(ids).not.toContain('visit.update');
     expect(ids).not.toContain('visit.delete');
     expect(ids).not.toContain('import.execute');
@@ -402,12 +404,12 @@ describe('T2 — PRODUCTION COUNT: registry becomes exactly 24; original 22 pres
 
 describe('T3 — PRODUCTION BINDING: customer.create executor_ref resolves explicitly; unbound = 0', () => {
   // OLD_EXPECTATION: 22 bindings (W4-2 冻结基线)
-  // NEW_TRUTH:       24 bindings（W4-4 delete_customer + W4-3 create_visit_record 绑定追加）
-  // WHY:             W4-4 为 customer.delete 注册 salesAgentWriteTool:delete_customer；W4-3 为 visit.create 注册 salesAgentWriteTool:create_visit_record
+  // NEW_TRUTH:       25 bindings（W4-4 delete_customer + W4-3 create_visit_record + C0 update_opportunity_amount 绑定追加）
+  // WHY:             W4-4 为 customer.delete 注册 salesAgentWriteTool:delete_customer；W4-3 为 visit.create 注册 salesAgentWriteTool:create_visit_record；C0 为 customer.opportunity_amount.update 注册 salesAgentWriteTool:update_opportunity_amount
   // INVARIANT_PRESERVED: 原 22 绑定完整保留；UNBOUND=0；重复绑定在构造期 fail closed
-  it('binding count = 24 and customer.create executor_ref resolves to the create binding', () => {
-    expect(PRODUCTION_CAPABILITY_BINDINGS).toHaveLength(24);
-    expect(PRODUCTION_CAPABILITY_BINDING_REGISTRY.size()).toBe(24);
+  it('binding count = 25 and customer.create executor_ref resolves to the create binding', () => {
+    expect(PRODUCTION_CAPABILITY_BINDINGS).toHaveLength(25);
+    expect(PRODUCTION_CAPABILITY_BINDING_REGISTRY.size()).toBe(25);
     const binding = PRODUCTION_CAPABILITY_BINDING_REGISTRY.resolve('salesAgentWriteTool:create_customer');
     expect(binding).toBeDefined();
     expect(binding?.executor_ref).toBe('salesAgentWriteTool:create_customer');
@@ -418,13 +420,13 @@ describe('T3 — PRODUCTION BINDING: customer.create executor_ref resolves expli
     expect(unbound).toEqual([]);
   });
 
-  it('PRODUCTION_WRITE_BINDINGS has exactly 11 (7 W3-3 + customer.create + customer.profile.update + customer.delete + visit.create)', async () => {
+  it('PRODUCTION_WRITE_BINDINGS has exactly 12 (7 W3-3 + customer.create + customer.profile.update + customer.delete + visit.create + customer.opportunity_amount.update)', async () => {
     const { PRODUCTION_WRITE_BINDINGS } = await import('../lib/capabilities/execution/writeAdapters');
     // OLD_EXPECTATION: 9 (W4-2 冻结基线)
-    // NEW_TRUTH:       11（W4-4 追加 delete_customer + W4-3 追加 create_visit_record 写绑定）
-    // WHY:             W4-4 customer.delete 与 W4-3 visit.create 各需要真实写绑定
-    // INVARIANT_PRESERVED: 原 9 个写绑定完整保留；两个新绑定唯一
-    expect(PRODUCTION_WRITE_BINDINGS).toHaveLength(11);
+    // NEW_TRUTH:       12（W4-4 追加 delete_customer + W4-3 追加 create_visit_record + C0 追加 update_opportunity_amount 写绑定）
+    // WHY:             W4-4 customer.delete、W4-3 visit.create 与 C0 customer.opportunity_amount.update 各需要真实写绑定
+    // INVARIANT_PRESERVED: 原 9 个写绑定完整保留；三个新绑定唯一
+    expect(PRODUCTION_WRITE_BINDINGS).toHaveLength(12);
     expect(PRODUCTION_WRITE_BINDINGS.map((b) => b.executor_ref)).toContain('salesAgentWriteTool:create_customer');
     expect(PRODUCTION_WRITE_BINDINGS.map((b) => b.executor_ref)).toContain('salesAgentWriteTool:update_customer_profile');
     expect(PRODUCTION_WRITE_BINDINGS.map((b) => b.executor_ref)).toContain('salesAgentWriteTool:delete_customer');

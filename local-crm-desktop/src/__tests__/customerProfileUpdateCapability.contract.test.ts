@@ -291,21 +291,23 @@ describe('T1 — CAPABILITY DEFINITION: customer.profile.update exists exactly o
 /* T2 — EXACT 24 PRODUCTION IDENTITIES                                 */
 /* ================================================================== */
 
-describe('T2 — EXACT 24 PRODUCTION IDENTITIES: original 22 preserved; customer.delete (W4-4) and visit.create (W4-3) are the two new identities', () => {
-  it('count = 24, all original 22 identities remain, new identities are customer.delete and visit.create', () => {
-    expect(PRODUCTION_CAPABILITY_COUNT).toBe(24);
-    expect(PRODUCTION_CAPABILITY_REGISTRY.size()).toBe(24);
+describe('T2 — EXACT 25 PRODUCTION IDENTITIES: original 22 preserved; customer.delete (W4-4), visit.create (W4-3), and customer.opportunity_amount.update (C0) are the three new identities', () => {
+  it('count = 25, all original 22 identities remain, new identities are customer.delete / visit.create / customer.opportunity_amount.update', () => {
+    expect(PRODUCTION_CAPABILITY_COUNT).toBe(25);
+    expect(PRODUCTION_CAPABILITY_REGISTRY.size()).toBe(25);
     const ids = PRODUCTION_CAPABILITY_IDS;
-    const original22 = new Set(ids.filter((id) => id !== 'customer.delete' && id !== 'visit.create'));
+    const original22 = new Set(ids.filter((id) => id !== 'customer.delete' && id !== 'visit.create' && id !== 'customer.opportunity_amount.update'));
     expect(original22.size).toBe(22);
-    // 无第 25 个能力
-    expect(ids).toHaveLength(24);
+    // 无第 26 个能力
+    expect(ids).toHaveLength(25);
     // customer.profile.update（W4-2）仍是其唯一身份（保持）
     expect(ids.filter((id) => id === 'customer.profile.update')).toEqual(['customer.profile.update']);
     // customer.delete 是唯一 W4-4 新身份
     expect(ids.filter((id) => id === 'customer.delete')).toEqual(['customer.delete']);
     // visit.create 是唯一 W4-3 新身份
     expect(ids.filter((id) => id === 'visit.create')).toEqual(['visit.create']);
+    // customer.opportunity_amount.update 是唯一 C0 新身份
+    expect(ids.filter((id) => id === 'customer.opportunity_amount.update')).toEqual(['customer.opportunity_amount.update']);
     // 原 22 身份完整保留
     for (const id of [
       'customer.search', 'customer.get', 'customer.context',
@@ -329,7 +331,7 @@ describe('T2 — EXACT 24 PRODUCTION IDENTITIES: original 22 preserved; customer
     expect(ids).not.toContain('import.execute');
   });
 
-  it('all 24 identities resolve with version 1.0.0', () => {
+  it('all 25 identities resolve with version 1.0.0', () => {
     for (const id of PRODUCTION_CAPABILITY_IDS) {
       expect(PRODUCTION_CAPABILITY_REGISTRY.get(id, '1.0.0').id).toBe(id);
     }
@@ -337,13 +339,13 @@ describe('T2 — EXACT 24 PRODUCTION IDENTITIES: original 22 preserved; customer
 });
 
 /* ================================================================== */
-/* T3 — EXACT 24 BINDINGS                                              */
+/* T3 — EXACT 25 BINDINGS                                              */
 /* ================================================================== */
 
-describe('T3 — EXACT 24 BINDINGS: customer.profile.update executor_ref resolves explicitly; unbound = 0', () => {
-  it('binding count = 24 and customer.profile.update executor_ref resolves to the profile binding', () => {
-    expect(PRODUCTION_CAPABILITY_BINDINGS).toHaveLength(24);
-    expect(PRODUCTION_CAPABILITY_BINDING_REGISTRY.size()).toBe(24);
+describe('T3 — EXACT 25 BINDINGS: customer.profile.update executor_ref resolves explicitly; unbound = 0', () => {
+  it('binding count = 25 and customer.profile.update executor_ref resolves to the profile binding', () => {
+    expect(PRODUCTION_CAPABILITY_BINDINGS).toHaveLength(25);
+    expect(PRODUCTION_CAPABILITY_BINDING_REGISTRY.size()).toBe(25);
     const binding = PRODUCTION_CAPABILITY_BINDING_REGISTRY.resolve('salesAgentWriteTool:update_customer_profile');
     expect(binding).toBeDefined();
     expect(binding?.executor_ref).toBe('salesAgentWriteTool:update_customer_profile');
@@ -354,9 +356,9 @@ describe('T3 — EXACT 24 BINDINGS: customer.profile.update executor_ref resolve
     expect(unbound).toEqual([]);
   });
 
-  it('PRODUCTION_WRITE_BINDINGS has exactly 11 and includes the profile binding once', async () => {
+  it('PRODUCTION_WRITE_BINDINGS has exactly 12 and includes the profile binding once', async () => {
     const { PRODUCTION_WRITE_BINDINGS } = await import('../lib/capabilities/execution/writeAdapters');
-    expect(PRODUCTION_WRITE_BINDINGS).toHaveLength(11);
+    expect(PRODUCTION_WRITE_BINDINGS).toHaveLength(12);
     expect(PRODUCTION_WRITE_BINDINGS.map((b) => b.executor_ref)).toContain('salesAgentWriteTool:update_customer_profile');
     expect(PRODUCTION_WRITE_BINDINGS.filter((b) => b.executor_ref === 'salesAgentWriteTool:update_customer_profile')).toHaveLength(1);
     expect(PRODUCTION_WRITE_BINDINGS.filter((b) => b.executor_ref === 'salesAgentWriteTool:delete_customer')).toHaveLength(1);

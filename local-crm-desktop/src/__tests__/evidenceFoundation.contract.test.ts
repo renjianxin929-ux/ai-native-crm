@@ -340,11 +340,11 @@ describe('T14 — BATTLE CARD EVIDENCE_REFS COMPATIBILITY', () => {
   });
 });
 
-describe('T15 — FROZEN 24 V0.2A CAPABILITIES UNCHANGED', () => {
-  it('production registry and bindings remain exactly 24', () => {
-    expect(PRODUCTION_CAPABILITY_COUNT).toBe(24);
-    expect(PRODUCTION_CAPABILITY_BINDINGS).toHaveLength(24);
-    expect(PRODUCTION_CAPABILITY_IDS).toHaveLength(24);
+describe('T15 — FROZEN 25 V0.2A+C0 CAPABILITIES UNCHANGED (24 + C0 customer.opportunity_amount.update)', () => {
+  it('production registry and bindings remain exactly 25', () => {
+    expect(PRODUCTION_CAPABILITY_COUNT).toBe(25);
+    expect(PRODUCTION_CAPABILITY_BINDINGS).toHaveLength(25);
+    expect(PRODUCTION_CAPABILITY_IDS).toHaveLength(25);
   });
 });
 
