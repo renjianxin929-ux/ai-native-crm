@@ -7,6 +7,7 @@ import { SALES_AGENT_APP_CLOCK, type AppClock } from './appClock';
 import { createBattleCardWriteExecutor } from '../battleCard/agentTools';
 import { createCustomerWithProductRules, type CustomerCreateInput } from '../customerCreate';
 import { updateCustomerProfile } from '../customerProfileUpdate';
+import { updateCustomerOpportunityAmount } from '../customerOpportunityAmountUpdate';
 import { createVisitWithProductRules, type VisitCreateInput } from '../visitCreate';
 
 export interface ApprovedCrmWriteRepository { createFollowUp(record: FollowUpRecord): Promise<void>; createTask(task: Task): Promise<void>; updateCustomer(id: string, values: Record<string, unknown>): Promise<void>; }
@@ -77,6 +78,16 @@ async function executeOne(proposal: AgentWriteProposal, repository: ApprovedCrmW
       if (proposal.tool_id === 'update_customer_profile') {
         const outcome = await updateCustomerProfile(proposal.customer_id, proposal.proposed_values);
         return { entity_id: outcome.customer_id, fields: Object.keys(proposal.proposed_values) };
+      }
+      // C0 customer.opportunity_amount.update：确认后走真实窄义"更新商机金额"语义
+      // （共享产品服务 updateCustomerOpportunityAmount：值闭合校验（有限正数或 null）
+      // → 存在性校验 → 仅写 opportunity_amount 列 → { customer_id }，绝不触发规则）。
+      // proposed_values 只含 opportunity_amount（allowedFields['update_opportunity_amount']
+      // 白名单，经 canonical proposal hash 复核，不可被确认侧篡改）；共享服务在运行时
+      // 再次闭合值约束（纵深防御第 3 层），绝不写入 deal_amount 或任何其它列。
+      if (proposal.tool_id === 'update_opportunity_amount') {
+        const outcome = await updateCustomerOpportunityAmount(proposal.customer_id, values.opportunity_amount);
+        return { entity_id: outcome.customer_id, fields: ['opportunity_amount'] };
       }
       // W4-4 customer.delete：确认后走真实产品"删除客户"路径
       // （共享产品服务 deleteCustomer = CustomerDetail handleDelete 同一函数：

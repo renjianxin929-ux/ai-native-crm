@@ -1,4 +1,4 @@
-export const AGENT_WRITE_TOOL_IDS = ['create_follow_up_record', 'create_visit_record', 'create_customer', 'create_task', 'update_task', 'update_task_status', 'update_next_follow_up_time', 'update_customer_profile', 'update_customer_basic_fields', 'update_contact_basic_fields', 'confirm_battle_intelligence_import', 'confirm_stage_card', 'update_hypothesis_status', 'delete_customer'] as const;
+export const AGENT_WRITE_TOOL_IDS = ['create_follow_up_record', 'create_visit_record', 'create_customer', 'create_task', 'update_task', 'update_task_status', 'update_next_follow_up_time', 'update_customer_profile', 'update_customer_basic_fields', 'update_contact_basic_fields', 'confirm_battle_intelligence_import', 'confirm_stage_card', 'update_hypothesis_status', 'delete_customer', 'update_opportunity_amount'] as const;
 export type AgentWriteToolId = typeof AGENT_WRITE_TOOL_IDS[number];
 
 // ── Fact Verifications 闭合运行时 Schema（唯一权威结构校验）──
@@ -552,6 +552,9 @@ const allowedFields: Readonly<Record<AgentWriteToolId, readonly string[]>> = Obj
   // W4-4 customer.delete：硬删除无 proposed 字段（删除后无剩余字段；current_values
   // 携带被删除客户的 bounded 展示摘要）。空白名单 = 任何 proposed 字段都 fail closed。
   delete_customer: [],
+  // C0 customer.opportunity_amount.update：仅一个窄义字段（期望商业金额）。
+  // 绝不承载 customer_id / stage / grade / deal_amount 等任何其它列。
+  update_opportunity_amount: ['opportunity_amount'],
 });
 
 export function validateAgentWriteProposal(proposal: AgentWriteProposal): void {

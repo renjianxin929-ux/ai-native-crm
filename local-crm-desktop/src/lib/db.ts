@@ -92,7 +92,7 @@ export const CUSTOMER_ROW_DECODER_FIELDS = [
   'rough_visit_time_text', 'parsed_visit_reminder_at', 'time_parse_status',
   'time_parse_note', 'next_follow_up_at', 'last_contacted_at', 'last_feedback_type',
   'next_action', 'no_show_count', 'lost_reason', 'payment_status', 'deal_amount',
-  'paid_at', 'closed_at', 'website', 'region', 'industry',
+  'opportunity_amount', 'paid_at', 'closed_at', 'website', 'region', 'industry',
   'contact_person', 'email', 'address', 'pitch_angle', 'qualification_reason', 'source',
   'current_stage_card_id', 'battle_card_status', 'last_battle_review_at',
   'notes', 'created_at', 'updated_at',
@@ -260,6 +260,11 @@ export async function ensureCustomerSchema(db: DatabaseLike): Promise<void> {
       await db.execute(`ALTER TABLE customers ADD COLUMN ${col} TEXT`);
     }
   }
+
+  // V0.2C / C0 — 商机金额（active opportunity amount）为 REAL 可空列（与 TEXT 资料列区分）。
+  if (!columns.some(c => c.name === 'opportunity_amount')) {
+    await db.execute('ALTER TABLE customers ADD COLUMN opportunity_amount REAL');
+  }
 }
 
 export function getDbError(): string | null {
@@ -395,7 +400,7 @@ function getColumnsForTable(table: string): string[] {
         'rough_visit_time_text', 'parsed_visit_reminder_at', 'time_parse_status',
         'time_parse_note', 'next_follow_up_at', 'last_contacted_at', 'last_feedback_type',
         'next_action', 'no_show_count', 'lost_reason', 'payment_status', 'deal_amount',
-        'paid_at', 'closed_at',
+        'opportunity_amount', 'paid_at', 'closed_at',
         'website', 'region', 'industry',
         'contact_person', 'email', 'address', 'pitch_angle', 'qualification_reason', 'source',
         'current_stage_card_id', 'battle_card_status', 'last_battle_review_at',
@@ -457,15 +462,15 @@ export async function createCustomer(
      rough_visit_time_text, parsed_visit_reminder_at, time_parse_status,
      time_parse_note, next_follow_up_at, last_contacted_at, last_feedback_type,
      next_action, no_show_count, lost_reason, payment_status, deal_amount,
-     paid_at, closed_at, website, region, industry,
+     opportunity_amount, paid_at, closed_at, website, region, industry,
      contact_person, email, address, pitch_angle, qualification_reason, source,
      notes, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [id, name, grade, 'NEW_LEAD', contactMethod, wechatId, phoneNumber, wechatSearchStatus,
      isKeyDm, wechatAddStatus, 0, intentLevel, phoneFeedback, 0, null,
      roughVisitTime, parsedReminder, parseStatus,
      parseNote, nextFollowUpAt, null, 'UNKNOWN',
-     null, 0, null, 'NOT_STARTED', null,
+     null, 0, null, 'NOT_STARTED', null, null,
      null, null, website, region, industry,
      contactPerson, email, address, pitchAngle, qualificationReason, source,
      notes, now, now],
@@ -510,6 +515,7 @@ const CUSTOMER_UPDATE_FIELDS = new Set([
   'lost_reason',
   'payment_status',
   'deal_amount',
+  'opportunity_amount',
   'paid_at',
   'closed_at',
   'website',

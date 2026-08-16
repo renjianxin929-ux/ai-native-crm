@@ -110,6 +110,7 @@ describe('database module', () => {
         { name: 'website' }, { name: 'region' }, { name: 'industry' },
         { name: 'contact_person' }, { name: 'email' }, { name: 'address' },
         { name: 'pitch_angle' }, { name: 'qualification_reason' }, { name: 'source' },
+        { name: 'opportunity_amount' },
       ]),
       execute: vi.fn().mockResolvedValue({ rowsAffected: 1 }),
     };

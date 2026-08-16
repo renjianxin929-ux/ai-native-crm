@@ -142,6 +142,14 @@ const W4_VISIT_CREATE_A10: Readonly<Record<string, 'REQUIRE_CONFIRMATION'>> = Ob
   'visit.create': 'REQUIRE_CONFIRMATION',
 });
 
+/** C0 新增窄义商机金额写能力（唯一新身份；scope=CUSTOMER；A10 REQUIRE_CONFIRMATION）。 */
+const C0_OPPORTUNITY_AMOUNT_UPDATE_IDS: readonly string[] = Object.freeze(['customer.opportunity_amount.update']);
+
+/** C0 冻结 A10 决策（本分支审计真值：CONFIRM + requires_confirmation=true → REQUIRE_CONFIRMATION）。 */
+const C0_OPPORTUNITY_AMOUNT_UPDATE_A10: Readonly<Record<string, 'REQUIRE_CONFIRMATION'>> = Object.freeze({
+  'customer.opportunity_amount.update': 'REQUIRE_CONFIRMATION',
+});
+
 import { getCustomerRead, readCustomerContextRead } from '../lib/capabilities/customer/readAdapter';
 import { readCustomerTimeline, readCustomerVisits } from '../lib/capabilities/timeline/readAdapter';
 import {
@@ -514,10 +522,10 @@ async function openMemoryDbWithCards(): Promise<SeededDb> {
 /* T1 — PRODUCTION REGISTRY COMPOSITION                                 */
 /* ------------------------------------------------------------------ */
 
-describe('T1 — PRODUCTION REGISTRY COMPOSITION: all frozen manifests compose; count = 24 (13 original + 7 W3-3 + 1 W4-1 customer.create + 1 W4-2 customer.profile.update + 1 W4-4 customer.delete + 1 W4-3 visit.create); Evidence contributes 0', () => {
-  it('composes all frozen domain manifests: count = 24, exact identity set = 13 original + 7 W3-3 + 1 W4-1 + 1 W4-2 + 1 W4-4 + 1 W4-3', () => {
-    expect(PRODUCTION_CAPABILITY_COUNT).toBe(24);
-    expect(PRODUCTION_CAPABILITY_REGISTRY.size()).toBe(24);
+describe('T1 — PRODUCTION REGISTRY COMPOSITION: all frozen manifests compose; count = 25 (13 original + 7 W3-3 + 1 W4-1 customer.create + 1 W4-2 customer.profile.update + 1 W4-4 customer.delete + 1 W4-3 visit.create + 1 C0 customer.opportunity_amount.update); Evidence contributes 0', () => {
+  it('composes all frozen domain manifests: count = 25, exact identity set = 13 original + 7 W3-3 + 1 W4-1 + 1 W4-2 + 1 W4-4 + 1 W4-3 + 1 C0', () => {
+    expect(PRODUCTION_CAPABILITY_COUNT).toBe(25);
+    expect(PRODUCTION_CAPABILITY_REGISTRY.size()).toBe(25);
     expect(PRODUCTION_CAPABILITY_IDS).toEqual([
       // 原 Wave1/Wave2 READ/ANALYZE 13 项（注册顺序与 Wave-2 冻结基线一致）
       'customer.search',
@@ -549,8 +557,10 @@ describe('T1 — PRODUCTION REGISTRY COMPOSITION: all frozen manifests compose; 
       'customer.delete',
       // W4-3 新增 1 项（visit.create；唯一新身份，scope=CUSTOMER）
       'visit.create',
+      // C0 新增 1 项（customer.opportunity_amount.update；唯一新身份，scope=CUSTOMER）
+      'customer.opportunity_amount.update',
     ]);
-    expect(new Set(PRODUCTION_CAPABILITY_IDS).size).toBe(24);
+    expect(new Set(PRODUCTION_CAPABILITY_IDS).size).toBe(25);
     // 原 13 身份必须完整保留（不是被替换，而是被扩展）
     for (const id of ORIGINAL_READ_ANALYZE_IDS) {
       expect(PRODUCTION_CAPABILITY_IDS).toContain(id);
@@ -570,13 +580,17 @@ describe('T1 — PRODUCTION REGISTRY COMPOSITION: all frozen manifests compose; 
     // 恰好 1 个 W4-3 新身份（精确集合，不允许第 2 个 W4-3 身份）
     expect(PRODUCTION_CAPABILITY_IDS.filter((id) => W4_VISIT_CREATE_IDS.includes(id)).sort()).toEqual([...W4_VISIT_CREATE_IDS].sort());
     expect(PRODUCTION_CAPABILITY_IDS.filter((id) => W4_VISIT_CREATE_IDS.includes(id))).toHaveLength(1);
-    // 分区不重叠、无第 25 项
+    // 恰好 1 个 C0 新身份（精确集合，不允许第 2 个 C0 身份）
+    expect(PRODUCTION_CAPABILITY_IDS.filter((id) => C0_OPPORTUNITY_AMOUNT_UPDATE_IDS.includes(id)).sort()).toEqual([...C0_OPPORTUNITY_AMOUNT_UPDATE_IDS].sort());
+    expect(PRODUCTION_CAPABILITY_IDS.filter((id) => C0_OPPORTUNITY_AMOUNT_UPDATE_IDS.includes(id))).toHaveLength(1);
+    // 分区不重叠、无第 26 项
     expect(ORIGINAL_READ_ANALYZE_IDS.some((id) => WRITE_DRAFT_IDS.includes(id))).toBe(false);
-    expect(W4_CREATE_IDS.some((id) => WRITE_DRAFT_IDS.includes(id) || ORIGINAL_READ_ANALYZE_IDS.includes(id) || W4_PROFILE_UPDATE_IDS.includes(id) || W4_DELETE_IDS.includes(id) || W4_VISIT_CREATE_IDS.includes(id))).toBe(false);
-    expect(W4_PROFILE_UPDATE_IDS.some((id) => WRITE_DRAFT_IDS.includes(id) || ORIGINAL_READ_ANALYZE_IDS.includes(id) || W4_CREATE_IDS.includes(id) || W4_DELETE_IDS.includes(id) || W4_VISIT_CREATE_IDS.includes(id))).toBe(false);
-    expect(W4_DELETE_IDS.some((id) => WRITE_DRAFT_IDS.includes(id) || ORIGINAL_READ_ANALYZE_IDS.includes(id) || W4_CREATE_IDS.includes(id) || W4_PROFILE_UPDATE_IDS.includes(id) || W4_VISIT_CREATE_IDS.includes(id))).toBe(false);
-    expect(W4_VISIT_CREATE_IDS.some((id) => WRITE_DRAFT_IDS.includes(id) || ORIGINAL_READ_ANALYZE_IDS.includes(id) || W4_CREATE_IDS.includes(id) || W4_PROFILE_UPDATE_IDS.includes(id) || W4_DELETE_IDS.includes(id))).toBe(false);
-    expect(PRODUCTION_CAPABILITY_IDS.length).toBe(24);
+    expect(W4_CREATE_IDS.some((id) => WRITE_DRAFT_IDS.includes(id) || ORIGINAL_READ_ANALYZE_IDS.includes(id) || W4_PROFILE_UPDATE_IDS.includes(id) || W4_DELETE_IDS.includes(id) || W4_VISIT_CREATE_IDS.includes(id) || C0_OPPORTUNITY_AMOUNT_UPDATE_IDS.includes(id))).toBe(false);
+    expect(W4_PROFILE_UPDATE_IDS.some((id) => WRITE_DRAFT_IDS.includes(id) || ORIGINAL_READ_ANALYZE_IDS.includes(id) || W4_CREATE_IDS.includes(id) || W4_DELETE_IDS.includes(id) || W4_VISIT_CREATE_IDS.includes(id) || C0_OPPORTUNITY_AMOUNT_UPDATE_IDS.includes(id))).toBe(false);
+    expect(W4_DELETE_IDS.some((id) => WRITE_DRAFT_IDS.includes(id) || ORIGINAL_READ_ANALYZE_IDS.includes(id) || W4_CREATE_IDS.includes(id) || W4_PROFILE_UPDATE_IDS.includes(id) || W4_VISIT_CREATE_IDS.includes(id) || C0_OPPORTUNITY_AMOUNT_UPDATE_IDS.includes(id))).toBe(false);
+    expect(W4_VISIT_CREATE_IDS.some((id) => WRITE_DRAFT_IDS.includes(id) || ORIGINAL_READ_ANALYZE_IDS.includes(id) || W4_CREATE_IDS.includes(id) || W4_PROFILE_UPDATE_IDS.includes(id) || W4_DELETE_IDS.includes(id) || C0_OPPORTUNITY_AMOUNT_UPDATE_IDS.includes(id))).toBe(false);
+    expect(C0_OPPORTUNITY_AMOUNT_UPDATE_IDS.some((id) => WRITE_DRAFT_IDS.includes(id) || ORIGINAL_READ_ANALYZE_IDS.includes(id) || W4_CREATE_IDS.includes(id) || W4_PROFILE_UPDATE_IDS.includes(id) || W4_DELETE_IDS.includes(id) || W4_VISIT_CREATE_IDS.includes(id))).toBe(false);
+    expect(PRODUCTION_CAPABILITY_IDS.length).toBe(25);
   });
 
   it('evidence empty manifest stays part of composition while contributing zero identities', () => {
@@ -593,8 +607,8 @@ describe('T1 — PRODUCTION REGISTRY COMPOSITION: all frozen manifests compose; 
     expect(Object.isFrozen(a)).toBe(true);
     expect(Object.isFrozen(a.audit_contract)).toBe(true);
     const listed = PRODUCTION_CAPABILITY_REGISTRY.list();
-    expect(listed).toHaveLength(24);
-    expect(PRODUCTION_CAPABILITY_REGISTRY.size()).toBe(24);
+    expect(listed).toHaveLength(25);
+    expect(PRODUCTION_CAPABILITY_REGISTRY.size()).toBe(25);
   });
 
   it('no giant mutable ALL_CAPABILITIES array is exported', () => {
@@ -631,11 +645,11 @@ describe('T2 — IDENTITY LOOKUP: all 24 identities resolve through the producti
       expect(binding?.executor_ref).toBe(definition.executor_ref);
     }
     expect(unbound).toEqual([]);
-    // 绑定数 = 注册表数 = 24（绑定与身份一一对应）
-    expect(PRODUCTION_CAPABILITY_BINDINGS).toHaveLength(24);
-    expect(PRODUCTION_CAPABILITY_BINDING_REGISTRY.size()).toBe(24);
-    // 七个 W3-3 写 executor_ref + W4-1 create + W4-2 profile update + W4-4 delete + W4-3 visit create 全部为冻结身份
-    for (const id of [...WRITE_DRAFT_IDS, ...W4_CREATE_IDS, ...W4_PROFILE_UPDATE_IDS, ...W4_DELETE_IDS, ...W4_VISIT_CREATE_IDS]) {
+    // 绑定数 = 注册表数 = 25（绑定与身份一一对应）
+    expect(PRODUCTION_CAPABILITY_BINDINGS).toHaveLength(25);
+    expect(PRODUCTION_CAPABILITY_BINDING_REGISTRY.size()).toBe(25);
+    // 七个 W3-3 写 executor_ref + W4-1 create + W4-2 profile update + W4-4 delete + W4-3 visit create + C0 opportunity_amount.update 全部为冻结身份
+    for (const id of [...WRITE_DRAFT_IDS, ...W4_CREATE_IDS, ...W4_PROFILE_UPDATE_IDS, ...W4_DELETE_IDS, ...W4_VISIT_CREATE_IDS, ...C0_OPPORTUNITY_AMOUNT_UPDATE_IDS]) {
       const definition = PRODUCTION_CAPABILITY_REGISTRY.get(id, '1.0.0');
       expect(PRODUCTION_CAPABILITY_BINDING_REGISTRY.resolve(definition.executor_ref)).toBeDefined();
     }
@@ -973,7 +987,7 @@ describe('T10 — AUTHORITY AUTO: original 13 READ/ANALYZE run exactly once; 7 W
     expect(harness.callsFor('fixture.executor.success')).toBe(2);
   });
 
-  it('original 13 READ/ANALYZE capabilities stay ALLOW_AUTO; the 7 W3-3 writes + customer.create + customer.profile.update + customer.delete + visit.create keep their frozen A10 matrix (AUTO is NOT broadened to 24)', () => {
+  it('original 13 READ/ANALYZE capabilities stay ALLOW_AUTO; the 7 W3-3 writes + customer.create + customer.profile.update + customer.delete + visit.create + customer.opportunity_amount.update keep their frozen A10 matrix (AUTO is NOT broadened to 25)', () => {
     // 原 13：READ/ANALYZE effect + A10 ALLOW_AUTO（Wave1/Wave2 冻结行为不变）
     for (const id of ORIGINAL_READ_ANALYZE_IDS) {
       const definition = PRODUCTION_CAPABILITY_REGISTRY.get(id, '1.0.0');
@@ -1011,10 +1025,16 @@ describe('T10 — AUTHORITY AUTO: original 13 READ/ANALYZE run exactly once; 7 W
       expect(evaluateAuthorityPolicy(definition).decision, id).toBe(W4_VISIT_CREATE_A10[id]);
       expect(evaluateAuthorityPolicy(definition).reason_code, id).toBe('EXPLICIT_CONFIRMATION_REQUIRED');
     }
-    // 分区完备：13 + 7 + 1 + 1 + 1 + 1 = 24；全部身份都落在六个冻结分区之一
+    // C0：customer.opportunity_amount.update 冻结 REQUIRE_CONFIRMATION（CONFIRM + requires_confirmation=true）
+    for (const id of C0_OPPORTUNITY_AMOUNT_UPDATE_IDS) {
+      const definition = PRODUCTION_CAPABILITY_REGISTRY.get(id, '1.0.0');
+      expect(evaluateAuthorityPolicy(definition).decision, id).toBe(C0_OPPORTUNITY_AMOUNT_UPDATE_A10[id]);
+      expect(evaluateAuthorityPolicy(definition).reason_code, id).toBe('EXPLICIT_CONFIRMATION_REQUIRED');
+    }
+    // 分区完备：13 + 7 + 1 + 1 + 1 + 1 + 1 = 25；全部身份都落在七个冻结分区之一
     const all = new Set(PRODUCTION_CAPABILITY_IDS);
-    expect(all.size).toBe(24);
-    for (const id of [...ORIGINAL_READ_ANALYZE_IDS, ...WRITE_DRAFT_IDS, ...W4_CREATE_IDS, ...W4_PROFILE_UPDATE_IDS, ...W4_DELETE_IDS, ...W4_VISIT_CREATE_IDS]) {
+    expect(all.size).toBe(25);
+    for (const id of [...ORIGINAL_READ_ANALYZE_IDS, ...WRITE_DRAFT_IDS, ...W4_CREATE_IDS, ...W4_PROFILE_UPDATE_IDS, ...W4_DELETE_IDS, ...W4_VISIT_CREATE_IDS, ...C0_OPPORTUNITY_AMOUNT_UPDATE_IDS]) {
       expect(all.has(id)).toBe(true);
     }
   });
@@ -1079,19 +1099,20 @@ describe('T12 — STRONG CONFIRMATION: DELETE / BULK_WRITE never invoke the exec
     expect(harness.callsFor('fixture.executor.write.delete')).toBe(0);
   });
 
-  it('the production write/draft surface is exactly the 7 frozen W3-3 capabilities + customer.create + customer.profile.update + visit.create; customer.delete is the ONLY DELETE; no other Wave-4 leakage, no generic customer.update', () => {
+  it('the production write/draft surface is exactly the 7 frozen W3-3 capabilities + customer.create + customer.profile.update + visit.create + customer.opportunity_amount.update; customer.delete is the ONLY DELETE; no other Wave-4 leakage, no generic customer.update', () => {
     const effects = Object.fromEntries(PRODUCTION_CAPABILITY_REGISTRY.list().map((d) => [d.id, d.effect]));
     // 原 13 保持 READ/ANALYZE（写面没有从读能力上"偷渡"）
     for (const id of ORIGINAL_READ_ANALYZE_IDS) {
       expect(['READ', 'ANALYZE']).toContain(effects[id]);
     }
     // 写/草稿面 = 7 个 W3-3 身份 + customer.create + customer.profile.update + visit.create
-    // （WRITE / DRAFT / BULK_WRITE；精确集合，仍为 10 项；DELETE 是独立的破坏性面）
+    // + customer.opportunity_amount.update（WRITE / DRAFT / BULK_WRITE；精确集合，
+    // 仍为 11 项；DELETE 是独立的破坏性面）
     const writeDraft = Object.entries(effects)
       .filter(([, effect]) => effect === 'WRITE' || effect === 'BULK_WRITE' || effect === 'DRAFT')
       .map(([id]) => id);
-    expect(writeDraft.sort()).toEqual([...WRITE_DRAFT_IDS, ...W4_CREATE_IDS, ...W4_PROFILE_UPDATE_IDS, ...W4_VISIT_CREATE_IDS].sort());
-    expect(writeDraft).toHaveLength(10);
+    expect(writeDraft.sort()).toEqual([...WRITE_DRAFT_IDS, ...W4_CREATE_IDS, ...W4_PROFILE_UPDATE_IDS, ...W4_VISIT_CREATE_IDS, ...C0_OPPORTUNITY_AMOUNT_UPDATE_IDS].sort());
+    expect(writeDraft).toHaveLength(11);
     // 破坏性面 = 恰好 1 个 DELETE：customer.delete（W4-4 唯一新身份）
     const deleteIds = Object.entries(effects)
       .filter(([, effect]) => effect === 'DELETE')
@@ -1949,14 +1970,16 @@ describe('T23 — ALL CUSTOMER CAPABILITY COHERENCE: every CUSTOMER-scoped produ
       'customer.delete',
       // W4-3 1 个 CUSTOMER 面访创建能力（既有客户新增面访记录，禁止全局/输入选择器）
       'visit.create',
+      // C0 1 个 CUSTOMER 商机金额更新能力（既有客户窄义金额，禁止全局/输入选择器）
+      'customer.opportunity_amount.update',
     ]);
     const globalScoped = PRODUCTION_CAPABILITY_REGISTRY.list().filter((d) => d.scope_requirement === 'GLOBAL').map((d) => d.id);
     const noneScoped = PRODUCTION_CAPABILITY_REGISTRY.list().filter((d) => d.scope_requirement === 'NONE').map((d) => d.id);
     expect(globalScoped).toEqual(['customer.search', 'follow_up.global.read']);
     // W4-1：customer.create 是第三个 NONE 范围能力（创建前客户不存在，不伪造 CUSTOMER scope）
     expect(noneScoped).toEqual(['import.file.preview', 'import.mapping.validate', 'customer.create']);
-    expect(customerScoped.length + globalScoped.length + noneScoped.length).toBe(24);
-    expect(customerScoped.length).toBe(19);
+    expect(customerScoped.length + globalScoped.length + noneScoped.length).toBe(25);
+    expect(customerScoped.length).toBe(20);
     expect(noneScoped.length).toBe(3);
     // 7 个 W3-3 写全部 CUSTOMER 范围（W3-3 T17 的冻结语义在生产组合中保持）
     expect(customerScoped.filter((id) => WRITE_DRAFT_IDS.includes(id)).sort()).toEqual([...WRITE_DRAFT_IDS].sort());

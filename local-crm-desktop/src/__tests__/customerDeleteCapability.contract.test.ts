@@ -301,16 +301,17 @@ describe('T1 — CAPABILITY DEFINITION: customer.delete exists exactly once with
 /* T2 — EXACT 24 PRODUCTION IDENTITIES                                 */
 /* ================================================================== */
 
-describe('T2 — EXACT 24 PRODUCTION IDENTITIES: original 22 preserved; customer.delete (W4-4) and visit.create (W4-3) are the new identities', () => {
-  it('count = 24, all original 22 identities remain, new identities are customer.delete and visit.create', () => {
-    expect(PRODUCTION_CAPABILITY_COUNT).toBe(24);
-    expect(PRODUCTION_CAPABILITY_REGISTRY.size()).toBe(24);
+describe('T2 — EXACT 25 PRODUCTION IDENTITIES: original 22 preserved; customer.delete (W4-4), visit.create (W4-3), and customer.opportunity_amount.update (C0) are the new identities', () => {
+  it('count = 25, all original 22 identities remain, new identities are customer.delete / visit.create / customer.opportunity_amount.update', () => {
+    expect(PRODUCTION_CAPABILITY_COUNT).toBe(25);
+    expect(PRODUCTION_CAPABILITY_REGISTRY.size()).toBe(25);
     const ids = PRODUCTION_CAPABILITY_IDS;
-    const original22 = new Set(ids.filter((id) => id !== 'customer.delete' && id !== 'visit.create'));
+    const original22 = new Set(ids.filter((id) => id !== 'customer.delete' && id !== 'visit.create' && id !== 'customer.opportunity_amount.update'));
     expect(original22.size).toBe(22);
-    expect(ids).toHaveLength(24);
+    expect(ids).toHaveLength(25);
     expect(ids.filter((id) => id === 'customer.delete')).toEqual(['customer.delete']);
     expect(ids.filter((id) => id === 'visit.create')).toEqual(['visit.create']);
+    expect(ids.filter((id) => id === 'customer.opportunity_amount.update')).toEqual(['customer.opportunity_amount.update']);
     for (const id of [
       'customer.search', 'customer.get', 'customer.context',
       'timeline.customer.read', 'timeline.visit.read',
@@ -333,7 +334,7 @@ describe('T2 — EXACT 24 PRODUCTION IDENTITIES: original 22 preserved; customer
     expect(ids).not.toContain('import.execute');
   });
 
-  it('all 24 identities resolve with version 1.0.0', () => {
+  it('all 25 identities resolve with version 1.0.0', () => {
     for (const id of PRODUCTION_CAPABILITY_IDS) {
       expect(PRODUCTION_CAPABILITY_REGISTRY.get(id, '1.0.0').id).toBe(id);
     }
@@ -341,13 +342,13 @@ describe('T2 — EXACT 24 PRODUCTION IDENTITIES: original 22 preserved; customer
 });
 
 /* ================================================================== */
-/* T3 — EXACT 24 BINDINGS                                              */
+/* T3 — EXACT 25 BINDINGS                                              */
 /* ================================================================== */
 
-describe('T3 — EXACT 24 BINDINGS: customer.delete executor_ref resolves explicitly; unbound = 0', () => {
-  it('binding count = 24 and customer.delete executor_ref resolves to the delete binding', () => {
-    expect(PRODUCTION_CAPABILITY_BINDINGS).toHaveLength(24);
-    expect(PRODUCTION_CAPABILITY_BINDING_REGISTRY.size()).toBe(24);
+describe('T3 — EXACT 25 BINDINGS: customer.delete executor_ref resolves explicitly; unbound = 0', () => {
+  it('binding count = 25 and customer.delete executor_ref resolves to the delete binding', () => {
+    expect(PRODUCTION_CAPABILITY_BINDINGS).toHaveLength(25);
+    expect(PRODUCTION_CAPABILITY_BINDING_REGISTRY.size()).toBe(25);
     const binding = PRODUCTION_CAPABILITY_BINDING_REGISTRY.resolve('salesAgentWriteTool:delete_customer');
     expect(binding).toBeDefined();
     expect(binding?.executor_ref).toBe('salesAgentWriteTool:delete_customer');
@@ -358,9 +359,9 @@ describe('T3 — EXACT 24 BINDINGS: customer.delete executor_ref resolves explic
     expect(unbound).toEqual([]);
   });
 
-  it('PRODUCTION_WRITE_BINDINGS has exactly 11 and includes the delete binding once', async () => {
+  it('PRODUCTION_WRITE_BINDINGS has exactly 12 and includes the delete binding once', async () => {
     const { PRODUCTION_WRITE_BINDINGS } = await import('../lib/capabilities/execution/writeAdapters');
-    expect(PRODUCTION_WRITE_BINDINGS).toHaveLength(11);
+    expect(PRODUCTION_WRITE_BINDINGS).toHaveLength(12);
     expect(PRODUCTION_WRITE_BINDINGS.map((b) => b.executor_ref)).toContain('salesAgentWriteTool:delete_customer');
     expect(PRODUCTION_WRITE_BINDINGS.filter((b) => b.executor_ref === 'salesAgentWriteTool:delete_customer')).toHaveLength(1);
   });
