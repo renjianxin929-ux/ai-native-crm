@@ -149,7 +149,9 @@ jobs:
 
       - name: Tauri Windows production package
         run: |
-          npm run tauri -- build
+          # V0.1 already packaged this declared sidecar. Windows bundler needs the
+          # release exe present; the empty migration-tool feature does not change GUI code.
+          npm run tauri -- build --features migration-tool
           if ($LASTEXITCODE -ne 0) { throw "TAURI_BUILD=FAIL" }
           Write-Host "TAURI_BUILD=PASS"
 
