@@ -1,0 +1,305 @@
+# Windows V0.2 Release Gate
+# Job 1 blocks the Windows compatibility / packaging gate.
+# Job 2 only records the known full Vitest suite debt and is not gate authority.
+# This is not a foreground Windows smoke test and does not use provider API keys.
+
+name: Windows V0.2 Release Gate
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  RUST_BACKTRACE: "1"
+
+jobs:
+  windows-release-gate:
+    name: windows-release-gate
+    runs-on: windows-latest
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: local-crm-desktop
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Enable Windows long paths
+        working-directory: ${{ github.workspace }}
+        run: git config --global core.longpaths true
+
+      - name: Record Windows runner evidence
+        working-directory: ${{ github.workspace }}
+        run: |
+          Write-Host "WINDOWS_RUNNER=$env:RUNNER_OS"
+          Write-Host "RUNNER_ARCH=$env:RUNNER_ARCH"
+          Write-Host "ImageOS=$env:ImageOS"
+          if ($env:RUNNER_OS -ne "Windows") { throw "Expected windows-latest, got $env:RUNNER_OS" }
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: local-crm-desktop/package-lock.json
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: local-crm-desktop/src-tauri -> target
+
+      - name: npm ci
+        run: |
+          npm ci
+          if ($LASTEXITCODE -ne 0) { throw "NPM_CI=FAIL" }
+          Write-Host "NPM_CI=PASS"
+
+      - name: V0.2 critical focused tests
+        run: |
+          $required = @(
+            "src/__tests__/encrypted-sql-credential.focused.test.ts",
+            "src/__tests__/secretBoundary.focused.test.ts",
+            "src/__tests__/customerCreateCapability.contract.test.ts",
+            "src/__tests__/customerDeleteCapability.contract.test.ts"
+          )
+          $optional = @(
+            "src/__tests__/v02FinalCandidateCancelClosure.focused.test.ts",
+            "src/__tests__/v02FinalCustomerNameAndSelectionAuthority.focused.test.ts",
+            "src/__tests__/v02ForegroundCustomerCreateConfirm.focused.test.ts",
+            "src/__tests__/v02ForegroundCustomerCreateScopeIsolation.focused.test.ts",
+            "src/__tests__/v02FinalConversationLifecycleClosure.focused.test.ts",
+            "src/__tests__/v02FinalConversationScopeAndI18nClosure.focused.test.ts",
+            "src/__tests__/v02ForegroundCurrentTurnWritePrecedence.focused.test.ts",
+            "src/__tests__/v02FinalGenuinePreviousResultReferenceGate.focused.test.ts",
+            "src/__tests__/v02ForegroundReasoningActionHandoff.focused.test.ts",
+            "src/__tests__/v02FinalBindAndI18nProductClosure.focused.test.ts",
+            "src/__tests__/v02ForegroundMultiturnContinuation.focused.test.ts",
+            "src/__tests__/v02FinalFunctionalTruthClosure.focused.test.ts",
+            "src/__tests__/v02FinalSystemicClosure.focused.test.ts",
+            "src/__tests__/v02FinalCreateWriteConfirmationTruth.focused.test.ts",
+            "src/__tests__/v02FinalNaturalLanguageTruth.focused.test.ts"
+          )
+          $found = @()
+          $missingRequired = @()
+          $missingOptional = @()
+          foreach ($file in $required) {
+            if (Test-Path $file) { $found += $file } else { $missingRequired += $file }
+          }
+          foreach ($file in $optional) {
+            if (Test-Path $file) { $found += $file } else { $missingOptional += $file }
+          }
+          Write-Host "WINDOWS_CRITICAL_FILES_FOUND=$($found -join ',')"
+          Write-Host "WINDOWS_CRITICAL_FILES_MISSING_REQUIRED=$($missingRequired -join ',')"
+          Write-Host "WINDOWS_CRITICAL_FILES_MISSING_OPTIONAL=$($missingOptional -join ',')"
+          if ($missingRequired.Count -gt 0) {
+            throw "Required Windows critical tests are missing: $($missingRequired -join ', ')"
+          }
+          & npm test -- @found
+          if ($LASTEXITCODE -ne 0) { throw "WINDOWS_CRITICAL_TESTS=FAIL" }
+          Write-Host "WINDOWS_CRITICAL_TESTS=PASS"
+
+      - name: Production frontend build
+        run: |
+          npm run build
+          if ($LASTEXITCODE -ne 0) { throw "FRONTEND_BUILD=FAIL" }
+          Write-Host "FRONTEND_BUILD=PASS"
+
+      - name: Rust tests including Windows cfg / DPAPI
+        working-directory: local-crm-desktop/src-tauri
+        run: |
+          $log = Join-Path $env:RUNNER_TEMP "cargo-test.log"
+          & cargo test --all-targets -- --nocapture *>&1 | Tee-Object -FilePath $log
+          $cargoCode = $LASTEXITCODE
+          if ($cargoCode -ne 0) { throw "CARGO_TEST=FAIL exit=$cargoCode" }
+          $text = Get-Content -Raw $log
+          function Test-Outcome([string]$name) {
+            if ($text -match ("test .*" + [regex]::Escape($name) + " \.\.\. ok")) { return "PASS" }
+            if ($text -match [regex]::Escape($name)) { return "SEEN" }
+            return "NOT_RUN"
+          }
+          $round = Test-Outcome "dpapi_current_user_round_trip_is_not_plaintext"
+          $entropy = Test-Outcome "dpapi_wrong_application_entropy_fails_closed"
+          $restart = Test-Outcome "encrypted_sql_restart_readback_and_delete"
+          $delete = Test-Outcome "encrypted_sql_delete_removes_ciphertext_row"
+          Write-Host "DPAPI_ROUND_TRIP=$round"
+          Write-Host "DPAPI_WRONG_ENTROPY_FAIL_CLOSED=$entropy"
+          Write-Host "DPAPI_RESTART_READBACK=$restart"
+          Write-Host "DPAPI_DELETE=$delete"
+          Write-Host "WINDOWS_CFG_TESTS_EXECUTED=YES"
+          Write-Host "WINDOWS_CREDENTIAL_MANAGER_API_TESTS=NOT_PRESENT"
+          if ($round -ne "PASS" -or $entropy -ne "PASS" -or $restart -ne "PASS" -or $delete -ne "PASS") {
+            throw "Windows DPAPI tests did not execute and pass. round=$round entropy=$entropy restart=$restart delete=$delete"
+          }
+          Write-Host "CARGO_TEST=PASS"
+
+      - name: Tauri Windows production package
+        run: |
+          npm run tauri -- build
+          if ($LASTEXITCODE -ne 0) { throw "TAURI_BUILD=FAIL" }
+          Write-Host "TAURI_BUILD=PASS"
+
+      - name: Discover Windows installers
+        id: artifacts
+        run: |
+          $bundle = "src-tauri/target/release/bundle"
+          Write-Host "Bundle tree:"
+          if (-not (Test-Path $bundle)) { throw "Tauri bundle directory not found: $bundle" }
+          Get-ChildItem -Path $bundle -Recurse -File | Select-Object FullName, Length | Format-Table -AutoSize | Out-String | Write-Host
+          $msi = @(Get-ChildItem -Path $bundle -Recurse -Filter *.msi -File -ErrorAction SilentlyContinue)
+          $nsis = @(Get-ChildItem -Path (Join-Path $bundle "nsis") -Filter *-setup.exe -File -ErrorAction SilentlyContinue)
+          if ($nsis.Count -eq 0) {
+            $nsis = @(Get-ChildItem -Path (Join-Path $bundle "nsis") -Filter *.exe -File -ErrorAction SilentlyContinue)
+          }
+          if ($msi.Count -eq 0) {
+            Write-Host "WINDOWS_MSI_FOUND=false"
+            "msi_found=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          } else {
+            $item = $msi[0]
+            Write-Host "WINDOWS_MSI_FOUND=true"
+            Write-Host "MSI_PATH=$($item.FullName)"
+            Write-Host "MSI_SIZE=$($item.Length)"
+            Write-Host "MSI_SIGNATURE=$((Get-AuthenticodeSignature $item.FullName).Status)"
+            "msi_found=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            "msi_path=$($item.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            "msi_size=$($item.Length)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          }
+          if ($nsis.Count -eq 0) {
+            Write-Host "WINDOWS_NSIS_FOUND=false"
+            "nsis_found=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          } else {
+            $item = $nsis[0]
+            Write-Host "WINDOWS_NSIS_FOUND=true"
+            Write-Host "NSIS_PATH=$($item.FullName)"
+            Write-Host "NSIS_SIZE=$($item.Length)"
+            Write-Host "NSIS_SIGNATURE=$((Get-AuthenticodeSignature $item.FullName).Status)"
+            "nsis_found=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            "nsis_path=$($item.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            "nsis_size=$($item.Length)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          }
+          if ($msi.Count -eq 0 -or $nsis.Count -eq 0) {
+            Write-Host "WINDOWS_PACKAGE_GATE=FAIL"
+            throw "WINDOWS_PACKAGE_GATE=FAIL MSI=$($msi.Count) NSIS=$($nsis.Count)"
+          }
+          Write-Host "WINDOWS_PACKAGE_GATE=PASS"
+
+      - name: Upload Windows installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-native-crm-v0.2-windows-x64
+          path: |
+            local-crm-desktop/src-tauri/target/release/bundle/**/*.msi
+            local-crm-desktop/src-tauri/target/release/bundle/**/*.exe
+          if-no-files-found: error
+
+      - name: Release gate summary
+        if: always()
+        working-directory: ${{ github.workspace }}
+        run: |
+          @(
+            "## Windows V0.2 release gate",
+            "- WINDOWS_RUNNER=$env:RUNNER_OS",
+            "- MSI_FOUND=${{ steps.artifacts.outputs.msi_found }}",
+            "- MSI_PATH=${{ steps.artifacts.outputs.msi_path }}",
+            "- MSI_SIZE=${{ steps.artifacts.outputs.msi_size }}",
+            "- NSIS_FOUND=${{ steps.artifacts.outputs.nsis_found }}",
+            "- NSIS_PATH=${{ steps.artifacts.outputs.nsis_path }}",
+            "- NSIS_SIZE=${{ steps.artifacts.outputs.nsis_size }}",
+            "- ARTIFACT_NAME=ai-native-crm-v0.2-windows-x64",
+            "- UNSIGNED_EXPECTED=true",
+            "- WINDOWS_V0_2_STATUS=CI_VERIFIED_ARTIFACT_BUILT only if this job is green",
+            "- REQUIRES_LATER_WINDOWS_FOREGROUND_SMOKE_TEST=true"
+          ) | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+
+  full-suite-diagnostic:
+    name: full-suite-diagnostic
+    runs-on: windows-latest
+    timeout-minutes: 60
+    continue-on-error: true
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: local-crm-desktop
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: local-crm-desktop/package-lock.json
+
+      - name: npm ci
+        run: npm ci
+
+      - name: Record full Vitest suite
+        id: full
+        run: |
+          Write-Host "FULL_SUITE_DIAGNOSTIC_ONLY=true"
+          $report = Join-Path $env:RUNNER_TEMP "vitest-full.json"
+          $log = Join-Path $env:RUNNER_TEMP "vitest-full.log"
+          & npm test -- --reporter=default --reporter=json --outputFile $report *>&1 | Tee-Object -FilePath $log
+          $code = $LASTEXITCODE
+          $pass = "unknown"
+          $fail = "unknown"
+          $failedNames = @()
+          if (Test-Path $report) {
+            $json = Get-Content -Raw $report | ConvertFrom-Json
+            if ($null -ne $json.numPassedTests) { $pass = [string]$json.numPassedTests }
+            if ($null -ne $json.numFailedTests) { $fail = [string]$json.numFailedTests }
+            if ($null -ne $json.testResults) {
+              foreach ($suite in $json.testResults) {
+                if ($null -ne $suite.assertionResults) {
+                  foreach ($assertion in $suite.assertionResults) {
+                    if ($assertion.status -eq "failed") {
+                      $failedNames += "$( $suite.name ) :: $($assertion.title)"
+                    }
+                  }
+                }
+              }
+            }
+          }
+          $status = if ($code -eq 0) { "GREEN" } else { "FAIL" }
+          Write-Host "FULL_SUITE_STATUS=$status"
+          Write-Host "FULL_TEST_EXIT_CODE=$code"
+          Write-Host "FULL_TEST_PASS_COUNT=$pass"
+          Write-Host "FULL_TEST_FAIL_COUNT=$fail"
+          Write-Host "FAILED_TEST_NAMES_BEGIN"
+          $failedNames | ForEach-Object { Write-Host $_ }
+          Write-Host "FAILED_TEST_NAMES_END"
+          Write-Host "This job is diagnostic only. It is not Windows Release Gate authority. Do not record PASS for a red full suite."
+          "full_status=$status" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "full_pass=$pass" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "full_fail=$fail" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "full_code=$code" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          if ($code -ne 0) {
+            Write-Host "::warning::FULL_SUITE_DIAGNOSTIC_ONLY failed with exit $code. Not gate authority."
+            throw "FULL_SUITE_DIAGNOSTIC_ONLY=FAIL exit=$code pass=$pass fail=$fail"
+          }
+
+      - name: Diagnostic summary
+        if: always()
+        working-directory: ${{ github.workspace }}
+        run: |
+          @(
+            "## Windows V0.2 full-suite diagnostic",
+            "- FULL_SUITE_DIAGNOSTIC_ONLY=true",
+            "- FULL_SUITE_STATUS=${{ steps.full.outputs.full_status }}",
+            "- FULL_TEST_EXIT_CODE=${{ steps.full.outputs.full_code }}",
+            "- FULL_TEST_PASS_COUNT=${{ steps.full.outputs.full_pass }}",
+            "- FULL_TEST_FAIL_COUNT=${{ steps.full.outputs.full_fail }}",
+            "- This job is not Windows Release Gate authority."
+          ) | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
