@@ -66,6 +66,12 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "NPM_CI=FAIL" }
           Write-Host "NPM_CI=PASS"
 
+      - name: Production frontend build
+        run: |
+          npm run build
+          if ($LASTEXITCODE -ne 0) { throw "FRONTEND_BUILD=FAIL" }
+          Write-Host "FRONTEND_BUILD=PASS"
+
       - name: V0.2 critical focused tests
         run: |
           $required = @(
@@ -109,12 +115,6 @@ jobs:
           & npm test -- @found
           if ($LASTEXITCODE -ne 0) { throw "WINDOWS_CRITICAL_TESTS=FAIL" }
           Write-Host "WINDOWS_CRITICAL_TESTS=PASS"
-
-      - name: Production frontend build
-        run: |
-          npm run build
-          if ($LASTEXITCODE -ne 0) { throw "FRONTEND_BUILD=FAIL" }
-          Write-Host "FRONTEND_BUILD=PASS"
 
       - name: Rust tests including Windows cfg / DPAPI
         working-directory: local-crm-desktop/src-tauri
