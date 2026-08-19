@@ -13,6 +13,7 @@ import type {
   StageCardStatus,
 } from '../battleCard/types';
 import { STAGE_LABELS } from '../types';
+import { t, tStage } from '../i18n/appLocale';
 
 export const FACT_VERIFICATION_STATUS_LABELS: Readonly<Record<FactVerificationStatus, string>> = {
   PENDING: '待核实',
@@ -70,16 +71,16 @@ export const STAGE_CARD_GENERATED_BY_LABELS: Readonly<Record<StageCardGeneratedB
 };
 
 export const BATTLE_CARD_STATUS_LABELS: Readonly<Record<CustomerBattleCardStatus, string>> = {
-  NONE: '无作战卡',
-  DRAFT: '草稿待确认',
-  CONFIRMED: '已确认',
-  REVIEW_DUE: '待复核',
+  get NONE() { return t('battle.status.none'); },
+  get DRAFT() { return t('battle.status.draft'); },
+  get CONFIRMED() { return t('battle.status.confirmed'); },
+  get REVIEW_DUE() { return t('battle.status.reviewDue'); },
 };
 
 export const STAGE_LABELS_MAP = STAGE_LABELS;
 
 export function stageLabel(stageCode: string): string {
-  return STAGE_LABELS[stageCode as keyof typeof STAGE_LABELS] ?? stageCode;
+  return tStage(stageCode);
 }
 
 export function formatDateTime(iso: string | null | undefined): string {

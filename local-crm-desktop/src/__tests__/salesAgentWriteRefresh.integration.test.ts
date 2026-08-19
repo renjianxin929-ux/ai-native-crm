@@ -21,7 +21,7 @@ describe('Sales Agent write refresh integration', () => {
     const session = sessionForWrite(); const proposal = await proposalFor(session, 'Log a follow up: customer asked for pricing');
     await confirmSalesAgentProposal(session, proposal, async () => undefined, createApprovedCrmWriteBoundary(sqliteRepository(fixture.db)));
     const row = fixture.sqlite.prepare('SELECT id,customer_id,title,feedback_notes,next_follow_up_at,is_completed,created_at,updated_at FROM follow_up_records WHERE customer_id=?').get('customer-1') as { id: string; customer_id: string; title: string; feedback_notes: string; next_follow_up_at: string | null; is_completed: number; created_at: string; updated_at: string };
-    expect(row).toMatchObject({ customer_id: 'customer-1', title: '跟进记录', feedback_notes: 'customer asked for pricing', next_follow_up_at: null, is_completed: 0 });
+    expect(row).toMatchObject({ customer_id: 'customer-1', title: '跟进记录', feedback_notes: 'customer asked for pricing', next_follow_up_at: null, is_completed: 1 });
     expect(row.id).toBeTruthy(); expect(Date.parse(row.created_at)).toBeTruthy(); expect(Date.parse(row.updated_at)).toBeTruthy();
     const timeline = buildCustomerTimeline([{ id: row.id, customer_id: row.customer_id, title: row.title, contact_channel: null, contact_result: null, feedback_notes: row.feedback_notes, intent_assessment: null, suggested_grade: null, next_action: null, next_follow_up_at: row.next_follow_up_at, is_completed: row.is_completed, created_at: row.created_at, updated_at: row.updated_at }], []);
     expect(timeline).toEqual([expect.objectContaining({ title: '跟进记录', detail: 'customer asked for pricing', evidenceId: row.id })]);

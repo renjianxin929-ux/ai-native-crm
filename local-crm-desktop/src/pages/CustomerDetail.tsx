@@ -1,18 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Brain, Edit3, MessageSquare, MapPin, Trash2 } from 'lucide-react';
+import { ArrowLeft, Brain, CalendarClock, CircleDollarSign, Edit3, Layers, MessageSquare, MapPin, Trash2, UserRound } from 'lucide-react';
 import { getCustomer, deleteCustomer, createFollowUp, createVisit, updateCustomer } from '../lib/db';
 import { applyWechatPassed, applyVisitOutcome, applyPaymentRule, applyFollowUpUpdate } from '../lib/rules';
 import { parseRoughTime } from '../lib/timeParser';
 import { GRADE_LABELS, STAGE_LABELS, WECHAT_ADD_LABELS, WECHAT_SEARCH_LABELS, INTENT_LABELS, PHONE_FEEDBACK_LABELS, NEXT_ACTION_LABELS, VISIT_OUTCOME_LABELS, CHANNEL_LABELS, CONTACT_RESULT_LABELS } from '../lib/types';
 import type { Customer, FollowUpRecord, VisitRecord } from '../lib/types';
 import { getDb } from '../lib/db';
-const BATTLE_CARD_STATUS_SHORT: Record<string, string> = {
-  NONE: '无',
-  DRAFT: '草稿',
-  CONFIRMED: '已确认',
-  REVIEW_DUE: '待复核',
-};
 import CustomerForm from '../components/CustomerForm';
 import FollowUpForm from '../components/FollowUpForm';
 import VisitForm from '../components/VisitForm';
@@ -22,6 +16,19 @@ import { SqliteCrmEvidenceResolver, SqliteMemoryRepository } from '../lib/custom
 import type { CustomerMemoryEntry } from '../lib/customerMemory';
 import { buildCustomerScopedSalesAgentEntry, buildCustomerTimeline, CustomerIntelligencePanel } from '../components/salesWorkspace/CustomerIntelligencePanel';
 import { CustomerCaptureContract } from '../components/salesWorkspace/CustomerCaptureContract';
+import { createEvidenceRepository } from '../lib/evidence/repository';
+import type { EvidenceRow } from '../lib/evidence/types';
+import { updateCustomerOpportunityAmount } from '../lib/customerOpportunityAmountUpdate';
+import { formatOpportunityAmount } from '../lib/opportunityBoard/boardPresentation';
+import { formatUserFacingScheduleDate } from '../lib/salesAgentUi/userFacingFieldFormatter';
+import { t, tEnum, tField, tFormat, tGrade, tStage } from '../lib/i18n/appLocale';
+import { useAppLocale } from '../lib/i18n/LocaleProvider';
+import { EvidenceQuietPanel, evidenceEntryLabel } from '../components/controlSurface/EvidenceQuietPanel';
+import {
+  projectCustomerDetailFirstLayer,
+  projectCustomerProfileFields,
+  type CustomerProfileFieldKey,
+} from '../lib/customerDetailUi/customerDetailProjection';
 
 interface Props {
   onRefresh: () => void;
@@ -206,36 +213,89 @@ function summarizeText(value: string, maxLength: number): string {
   return normalized.length > maxLength ? `${normalized.slice(0, maxLength)}...` : normalized;
 }
 
-function customerRiskLabel(customer: Customer): { text: string; tone: string } {
-  if (customer.no_show_count >= 2) return { text: '高爽约风险', tone: 'warn' };
-  if (customer.intent_level === 'LOW') return { text: '意向偏低', tone: 'warn' };
-  if (customer.intent_level === 'HIGH') return { text: '机会较大', tone: 'ok' };
-  return { text: '平稳', tone: 'info' };
-}
-
 function formatTimelineKind(kind: string): string {
   switch (kind) {
-    case 'call': return '电话跟进';
-    case 'meeting': return '面访';
-    case 'email': return '邮件';
-    case 'interaction': return '互动';
-    default: return '跟进';
+    case 'call': return t('customer.detail.timeline.call');
+    case 'meeting': return t('customer.detail.timeline.meeting');
+    case 'email': return t('customer.detail.timeline.email');
+    case 'interaction': return t('customer.detail.timeline.interaction');
+    default: return t('customer.detail.timeline.followUp');
   }
 }
 
-function formatLastInteraction(customer: Customer, timeline: ReturnType<typeof buildCustomerTimeline>): string {
-  if (customer.last_contacted_at) {
-    return new Date(customer.last_contacted_at).toLocaleString('zh-CN');
+function battleCardStatusShort(status: string | null | undefined): string {
+  if (status === 'DRAFT') return t('battle.statusShort.draft');
+  if (status === 'CONFIRMED') return t('battle.statusShort.confirmed');
+  if (status === 'REVIEW_DUE') return t('battle.statusShort.reviewDue');
+  return t('battle.statusShort.none');
+}
+
+function paymentStatusLabel(status: Customer['payment_status']): string {
+  if (status === 'PENDING') return t('customer.detail.payment.pending');
+  if (status === 'PAID') return t('customer.detail.payment.paid');
+  return t('customer.detail.payment.notStarted');
+}
+
+function timeParseStatusLabel(status: Customer['time_parse_status']): string {
+  if (status === 'PARSED') return t('customer.detail.time.parsed');
+  if (status === 'NEEDS_CONFIRMATION') return t('customer.detail.time.needsConfirmation');
+  return t('customer.detail.time.notParsed');
+}
+
+function profileFieldValue(customer: Customer, key: CustomerProfileFieldKey): string | ReturnType<typeof formatUserFacingScheduleDate> {
+  switch (key) {
+    case 'name': return customer.name;
+    case 'customer_grade': return tGrade(customer.customer_grade);
+    case 'stage': return tStage(customer.stage);
+    case 'is_key_decision_maker': return customer.is_key_decision_maker ? t('common.yes') : t('common.no');
+    case 'wechat_id': return customer.wechat_id ?? '';
+    case 'phone_number': return customer.phone_number ?? '';
+    case 'contact_person': return customer.contact_person ?? '';
+    case 'industry': return customer.industry ?? '';
+    case 'region': return customer.region ?? '';
+    case 'website': return customer.website ?? '';
+    case 'email': return customer.email ?? '';
+    case 'address': return customer.address ?? '';
+    case 'pitch_angle': return customer.pitch_angle ?? '';
+    case 'qualification_reason': return customer.qualification_reason ?? '';
+    case 'source': return customer.source ?? '';
+    case 'wechat_search_status': return customer.wechat_search_status ? (tEnum(customer.wechat_search_status) ?? WECHAT_SEARCH_LABELS[customer.wechat_search_status]) : '';
+    case 'wechat_add_status': return tEnum(customer.wechat_add_status) ?? WECHAT_ADD_LABELS[customer.wechat_add_status];
+    case 'intent_level': return tEnum(customer.intent_level) ?? INTENT_LABELS[customer.intent_level];
+    case 'phone_feedback': return customer.phone_feedback ? (tEnum(customer.phone_feedback) ?? PHONE_FEEDBACK_LABELS[customer.phone_feedback]) : '';
+    case 'next_action': return customer.next_action ? (tEnum(customer.next_action) ?? NEXT_ACTION_LABELS[customer.next_action]) : '';
+    case 'next_follow_up_at': return formatUserFacingScheduleDate(customer.next_follow_up_at, { withTime: true });
+    case 'rough_visit_time_text': return customer.rough_visit_time_text ?? '';
+    case 'parsed_visit_reminder_at': return formatUserFacingScheduleDate(customer.parsed_visit_reminder_at, { withTime: true });
+    case 'time_parse_status': return timeParseStatusLabel(customer.time_parse_status);
+    case 'time_parse_note': return customer.time_parse_note ?? '';
+    case 'no_show_count': return String(customer.no_show_count);
+    case 'payment_status': return paymentStatusLabel(customer.payment_status);
+    case 'deal_amount': return customer.deal_amount ? `¥${customer.deal_amount.toLocaleString()}` : '';
+    case 'notes': return customer.notes ?? '';
+    default: return '';
   }
-  if (timeline[0]) {
-    return new Date(timeline[0].occurredAt).toLocaleString('zh-CN');
-  }
-  return '暂无互动';
+}
+
+function profileFieldLabel(key: CustomerProfileFieldKey): string {
+  if (key === 'is_key_decision_maker') return t('customer.detail.keyDecisionMaker');
+  if (key === 'payment_status') return t('customer.detail.paymentStatus');
+  if (key === 'deal_amount') return t('customer.detail.dealAmount');
+  if (key === 'no_show_count') return t('customer.detail.noShowCount');
+  if (key === 'time_parse_status') return t('customer.detail.timeParseStatus');
+  if (key === 'time_parse_note') return t('customer.detail.timeParseNote');
+  if (key === 'parsed_visit_reminder_at') return t('customer.detail.parsedReminder');
+  if (key === 'customer_grade') return t('customer.detail.grade');
+  if (key === 'stage') return t('customer.detail.stage');
+  const field = tField(key);
+  if (field !== t('common.otherField')) return field;
+  return t('customer.detail.overview');
 }
 
 export default function CustomerDetail({ onRefresh }: Props) {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  useAppLocale();
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [followUps, setFollowUps] = useState<FollowUpRecord[]>([]);
   const [visits, setVisits] = useState<VisitRecord[]>([]);
@@ -243,6 +303,11 @@ export default function CustomerDetail({ onRefresh }: Props) {
   const [showFollowUp, setShowFollowUp] = useState(false);
   const [showVisit, setShowVisit] = useState(false);
   const [activeMemory, setActiveMemory] = useState<CustomerMemoryEntry[]>([]);
+  const [evidenceOpen, setEvidenceOpen] = useState(false);
+  const [evidenceRows, setEvidenceRows] = useState<readonly EvidenceRow[]>([]);
+  const [amountDraft, setAmountDraft] = useState('');
+  const [amountEditing, setAmountEditing] = useState(false);
+  const [amountError, setAmountError] = useState('');
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -254,6 +319,7 @@ export default function CustomerDetail({ onRefresh }: Props) {
       const memoryDb = await getDb();
       const memory = await new SqliteMemoryRepository(memoryDb, new SqliteCrmEvidenceResolver(memoryDb)).listCustomerMemory(id);
       setActiveMemory(memory.filter(item => item.validation_status === 'ACTIVE'));
+      setEvidenceRows(await createEvidenceRepository(memoryDb).listByCustomer(id, { status: 'ACTIVE' }));
     } else {
       setActiveMemory([]);
     }
@@ -268,10 +334,29 @@ export default function CustomerDetail({ onRefresh }: Props) {
   }, [id, load]);
 
   const handleDelete = async () => {
-    if (!id || !confirm('确定删除该客户及其所有记录？')) return;
+    if (!id || !confirm(t('customer.detail.deleteConfirm'))) return;
     await deleteCustomer(id);
     onRefresh();
     navigate('/customers');
+  };
+
+  const saveOpportunityAmount = async () => {
+    if (!customer) return;
+    const trimmed = amountDraft.trim();
+    if (!trimmed) {
+      setAmountError(t('customer.detail.amountBlankError'));
+      return;
+    }
+    const value = Number(trimmed.replace(/[,¥]/g, ''));
+    try {
+      await updateCustomerOpportunityAmount(customer.id, value);
+      setAmountEditing(false);
+      setAmountError('');
+      await load();
+      onRefresh();
+    } catch (cause) {
+      setAmountError(cause instanceof Error ? cause.message : t('customer.detail.amountFailed'));
+    }
   };
 
   const handleWechatPassed = async () => {
@@ -346,12 +431,12 @@ export default function CustomerDetail({ onRefresh }: Props) {
     return (
       <div className="product-page">
         <div className="page-header">
-          <button className="btn" onClick={() => navigate('/customers')}>
-            <ArrowLeft size={16} /> 返回
+          <button className="btn" onClick={() => navigate('/customers')} aria-label={t('customer.detail.back')}>
+            <ArrowLeft size={16} />
           </button>
         </div>
         <div className="page-body">
-          <div className="empty-state">客户不存在或已删除</div>
+          <div className="empty-state">{t('customer.detail.notFound')}</div>
         </div>
       </div>
     );
@@ -359,303 +444,249 @@ export default function CustomerDetail({ onRefresh }: Props) {
 
   const showContractActions = customer.stage === 'VISITED' || customer.stage === 'CONTRACTING' || customer.stage === 'PAYMENT_PENDING';
   const showPaymentActions = customer.stage === 'PAYMENT_PENDING' || customer.stage === 'PAID';
-  const customerScopedEntry = buildCustomerScopedSalesAgentEntry(customer, activeMemory, buildCustomerTimeline(followUps, visits));
   const unifiedTimeline = buildCustomerTimeline(followUps, visits);
-  const heroAnalysis = buildCustomerActionAnalysis(customer, followUps);
-  const risk = customerRiskLabel(customer);
-  const contactSummary = formatContactFact(customer);
-  const opportunitySummary = customer.industry
-    ? `行业/主营：${customer.industry}`
-    : customer.intent_level === 'HIGH'
-      ? '高意向线索，可优先推进'
-      : '待补充行业与需求信息';
-  const riskSummary = heroAnalysis.risks[0] ?? risk.text;
+  const customerScopedEntry = buildCustomerScopedSalesAgentEntry(customer, activeMemory, unifiedTimeline);
+  const firstLayer = projectCustomerDetailFirstLayer(customer, followUps, visits, unifiedTimeline);
+  const profile = projectCustomerProfileFields(customer);
+  const nextActionLabel = firstLayer.nextAction
+    ? (tEnum(firstLayer.nextAction) ?? NEXT_ACTION_LABELS[firstLayer.nextAction])
+    : t('customer.detail.nextActionEmpty');
 
   return (
     <div className="product-page">
-      <div className="page-header">
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-          <button className="btn" onClick={() => navigate('/customers')} aria-label="返回客户列表">
+      <div className="page-header customer-detail-header">
+        <div className="customer-detail-identity">
+          <button className="btn" onClick={() => navigate('/customers')} aria-label={t('customer.detail.back')}>
             <ArrowLeft size={16} />
           </button>
           <div>
-            <p className="page-kicker">CUSTOMER DETAIL</p>
-            <h2>{customer.name}</h2>
-            <p className="page-subtitle">查看客户上下文、统一时间线与下一步动作；主入口交给 Sales Agent 做客户范围推理。</p>
+            <h2>{firstLayer.name}</h2>
+            <div className="customer-detail-tags">
+              <span className={`status-pill grade-${firstLayer.grade.toLowerCase()}`}>{tGrade(firstLayer.grade)}</span>
+              <span className="status-pill info">{tStage(firstLayer.stage)}</span>
+            </div>
           </div>
         </div>
-        <div className="btn-group">
-          <button className="btn btn-sm" onClick={() => navigate(`/customers/${customer.id}/battle-card`)}>
-            作战卡{customer.battle_card_status && customer.battle_card_status !== 'NONE' ? ` · ${BATTLE_CARD_STATUS_SHORT[customer.battle_card_status]}` : ''}
+        <div className="customer-detail-header-actions">
+          <button
+            className="btn btn-primary"
+            onClick={() => navigate('/ai-workspace', { state: { customerScopedEntry } })}
+          >
+            <Brain size={16} /> {t('customer.detail.askAgent')}
           </button>
-          <button className="btn btn-sm" onClick={() => setShowFollowUp(true)}>
-            <MessageSquare size={14} /> 记录跟进
-          </button>
-          <button className="btn btn-sm" onClick={() => setShowVisit(true)}>
-            <MapPin size={14} /> 记录面访
-          </button>
-          <button className="btn btn-sm" onClick={() => setShowEdit(true)}>
-            <Edit3 size={14} /> 编辑
-          </button>
-          <button className="btn btn-danger btn-sm" onClick={handleDelete}>
-            <Trash2 size={14} /> 删除
+          <button type="button" className="btn" onClick={() => setShowEdit(true)}>
+            <Edit3 size={16} /> {t('customer.detail.edit')}
           </button>
         </div>
       </div>
 
       <div className="page-body">
-        <section className="glass-card customer-detail-hero" aria-label="客户概览">
-          <div className="customer-detail-hero-top">
-            <div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 8 }}>
-                <span className={`badge badge-${customer.customer_grade.toLowerCase()}`}>{GRADE_LABELS[customer.customer_grade]}</span>
-                <span className="status-pill info">{STAGE_LABELS[customer.stage]}</span>
-                <span className={`status-pill ${risk.tone}`}>{risk.text}</span>
-                <span className="status-pill">{WECHAT_ADD_LABELS[customer.wechat_add_status]}</span>
-              </div>
-              <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: 14 }}>
-                联系人 / 负责人：{customer.contact_person || '未填写'} · {contactSummary}
-              </p>
-            </div>
-            <button
-              className="btn btn-primary"
-              onClick={() => navigate('/ai-workspace', { state: { customerScopedEntry } })}
-            >
-              <Brain size={16} /> Ask Sales Agent
-            </button>
-          </div>
-
-          <p className="status-pill info" style={{ margin: 0, width: 'fit-content' }}>
-            客户范围入口会保留当前客户上下文、ACTIVE memory 与时间线证据，进入 Sales Agent 后继续围绕 {customer.name} 工作。
-          </p>
-
+        <section className="customer-detail-hero" data-testid="customer-detail-first-layer" aria-label={t('customer.detail.overview')}>
           <div className="customer-detail-metrics">
-            <div className="glass-card" style={{ padding: 12 }}>
-              <small style={{ color: 'var(--text-muted)' }}>机会摘要</small>
-              <strong style={{ display: 'block', marginTop: 4 }}>{opportunitySummary}</strong>
+            <div className="customer-detail-metric">
+              <CircleDollarSign size={18} className="customer-detail-metric-icon" aria-hidden="true" />
+              <div>
+                <small>{t('customer.detail.amount')}</small>
+                {amountEditing ? (
+                  <div className="amount-edit-row">
+                    <input
+                      aria-label={t('customer.detail.amount')}
+                      value={amountDraft}
+                      onChange={event => setAmountDraft(event.target.value)}
+                      placeholder={t('customer.detail.amountPlaceholder')}
+                    />
+                    <button type="button" className="btn btn-sm btn-primary" onClick={() => void saveOpportunityAmount()}>{t('customer.detail.save')}</button>
+                    <button type="button" className="btn btn-sm" onClick={() => { setAmountEditing(false); setAmountError(''); }}>{t('customer.detail.cancel')}</button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    className="amount-quiet-btn"
+                    data-testid="opportunity-amount"
+                    onClick={() => {
+                      setAmountDraft(customer.opportunity_amount != null ? String(customer.opportunity_amount) : '');
+                      setAmountEditing(true);
+                    }}
+                  >
+                    {formatOpportunityAmount(firstLayer.opportunityAmount)}
+                  </button>
+                )}
+                {amountError ? <p role="alert">{amountError}</p> : null}
+              </div>
             </div>
-            <div className="glass-card" style={{ padding: 12 }}>
-              <small style={{ color: 'var(--text-muted)' }}>风险提醒</small>
-              <strong style={{ display: 'block', marginTop: 4 }}>{riskSummary}</strong>
+            <div className="customer-detail-metric">
+              <UserRound size={18} className="customer-detail-metric-icon" aria-hidden="true" />
+              <div>
+                <small>{t('customer.detail.grade')}</small>
+                <strong>{tGrade(firstLayer.grade)}</strong>
+              </div>
             </div>
-            <div className="glass-card" style={{ padding: 12 }}>
-              <small style={{ color: 'var(--text-muted)' }}>最近互动</small>
-              <strong style={{ display: 'block', marginTop: 4 }}>{formatLastInteraction(customer, unifiedTimeline)}</strong>
+            <div className="customer-detail-metric">
+              <Layers size={18} className="customer-detail-metric-icon" aria-hidden="true" />
+              <div>
+                <small>{t('customer.detail.stage')}</small>
+                <strong>{tStage(firstLayer.stage)}</strong>
+              </div>
             </div>
-            <div className="glass-card" style={{ padding: 12 }}>
-              <small style={{ color: 'var(--text-muted)' }}>下次跟进</small>
-              <strong style={{ display: 'block', marginTop: 4 }}>
-                {customer.next_follow_up_at ? new Date(customer.next_follow_up_at).toLocaleString('zh-CN') : '未设置'}
-              </strong>
+            <div className="customer-detail-metric">
+              <CalendarClock size={18} className="customer-detail-metric-icon" aria-hidden="true" />
+              <div>
+                <small>{t('customer.detail.nextFollowUp')}</small>
+                <strong>{formatUserFacingScheduleDate(firstLayer.nextFollowUpAt, { withTime: true })}</strong>
+              </div>
+            </div>
+            <div className="customer-detail-metric">
+              <UserRound size={18} className="customer-detail-metric-icon" aria-hidden="true" />
+              <div>
+                <small>{t('customer.detail.contact')}</small>
+                <strong>{firstLayer.contactPerson ?? t('customer.detail.noContact')}</strong>
+              </div>
             </div>
           </div>
 
-          <div className="btn-group">
-            {customer.wechat_add_status !== 'PASSED' && (
-              <button className="btn btn-sm" onClick={handleWechatPassed}>标记微信已通过</button>
-            )}
-            {showContractActions && customer.stage !== 'PAYMENT_PENDING' && customer.stage !== 'PAID' && customer.stage !== 'WON' && (
-              <button className="btn btn-sm" onClick={() => handlePaymentAction('SEND_CONTRACT')}>发合同</button>
-            )}
-            {showPaymentActions && customer.payment_status !== 'PAID' && (
-              <button className="btn btn-sm" onClick={() => handlePaymentAction('MARK_PAID')}>标记已打款</button>
-            )}
-            {customer.stage === 'PAID' && (
-              <button className="btn btn-sm" onClick={() => handlePaymentAction('MARK_WON')}>标记成交</button>
-            )}
+          <div className="customer-detail-snapshot">
+            <section className="customer-detail-snapshot-card" data-testid="customer-detail-recent-activity" aria-label={t('customer.detail.recentActivity')}>
+              <h3 className="customer-detail-layer-title">{t('customer.detail.recentActivity')}</h3>
+              {firstLayer.recent.lastFollowUp || firstLayer.recent.lastVisit ? (
+                <ul className="customer-detail-recent-list">
+                  {firstLayer.recent.lastFollowUp ? (
+                    <li>
+                      <small>{t('customer.detail.lastFollowUp')} · {formatUserFacingScheduleDate(firstLayer.recent.lastFollowUp.occurredAt, { withTime: true })}</small>
+                      <strong>{firstLayer.recent.lastFollowUp.title}</strong>
+                    </li>
+                  ) : null}
+                  {firstLayer.recent.lastVisit ? (
+                    <li>
+                      <small>{t('customer.detail.lastVisit')} · {formatUserFacingScheduleDate(firstLayer.recent.lastVisit.occurredAt, { withTime: true })}</small>
+                      <strong>{firstLayer.recent.lastVisit.title}</strong>
+                    </li>
+                  ) : null}
+                </ul>
+              ) : (
+                <p className="customer-detail-empty-note">{t('customer.detail.recentEmpty')}</p>
+              )}
+            </section>
+
+            <section className="customer-detail-snapshot-card customer-detail-next" data-testid="customer-detail-next-step" aria-label={t('customer.detail.nextStep')}>
+              <h3 className="customer-detail-layer-title">{t('customer.detail.nextStep')}</h3>
+              <p className="customer-detail-next-action">{nextActionLabel}</p>
+              <div className="customer-detail-next-actions">
+                <button type="button" className="btn btn-primary btn-sm" onClick={() => setShowFollowUp(true)}>
+                  <MessageSquare size={14} /> {t('customer.detail.recordFollowUp')}
+                </button>
+                <button type="button" className="btn btn-sm" onClick={() => setShowVisit(true)}>
+                  <MapPin size={14} /> {t('customer.detail.recordVisit')}
+                </button>
+              </div>
+            </section>
+          </div>
+
+          <div className="customer-quiet-actions">
+            <button type="button" className="agent-link-btn" data-testid="evidence-entry" onClick={() => setEvidenceOpen(true)}>
+              {evidenceEntryLabel(evidenceRows.length)}
+            </button>
+            <button type="button" className="agent-link-btn" onClick={() => navigate(`/customers/${customer.id}/battle-card`)}>
+              {t('customer.detail.battleCard')}{customer.battle_card_status && customer.battle_card_status !== 'NONE' ? ` · ${battleCardStatusShort(customer.battle_card_status)}` : ''}
+            </button>
           </div>
         </section>
 
-        <div className="customer-detail-layout">
-          <div>
-            <CustomerIntelligencePanel
-              customer={customer}
-              followUps={followUps}
-              visits={visits}
-              activeMemory={activeMemory}
-              drafts={[]}
-            />
-
-            <section className="glass-card" style={{ marginTop: 16 }} aria-label="统一时间线">
-              <h3 className="section-title">统一时间线</h3>
-              <p style={{ margin: '0 0 12px', color: 'var(--text-secondary)', fontSize: 13 }}>
-                合并跟进与面访记录，按时间倒序展示；数据来源仍为 followUps 与 visits。
-              </p>
-              {unifiedTimeline.length === 0 ? (
-                <div className="empty-state">暂无跟进或面访记录</div>
-              ) : (
-                <ul className="timeline">
-                  {unifiedTimeline.map(item => {
-                    const isVisit = item.id.startsWith('visit:');
-                    const sourceFollowUp = !isVisit ? followUps.find(f => f.id === item.evidenceId) : null;
-                    const sourceVisit = isVisit ? visits.find(v => v.id === item.evidenceId) : null;
-                    return (
-                      <li key={item.id} className="timeline-item">
-                        <div className="time">{new Date(item.occurredAt).toLocaleString('zh-CN')}</div>
-                        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                          <span className="status-pill info">{formatTimelineKind(item.kind)}</span>
-                          <div className="title">{item.title}</div>
-                        </div>
-                        <div className="notes">{item.detail}</div>
-                        <div style={{ marginTop: 4, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                          {sourceFollowUp?.contact_channel && (
-                            <span className="badge badge-info">{CHANNEL_LABELS[sourceFollowUp.contact_channel] || sourceFollowUp.contact_channel}</span>
-                          )}
-                          {sourceFollowUp?.contact_result && (
-                            <span className="badge badge-warning">{CONTACT_RESULT_LABELS[sourceFollowUp.contact_result] || sourceFollowUp.contact_result}</span>
-                          )}
-                          {sourceFollowUp?.intent_assessment && (
-                            <span className="badge badge-high">{INTENT_LABELS[sourceFollowUp.intent_assessment]}</span>
-                          )}
-                          {sourceVisit?.visit_outcome && (
-                            <span className="badge badge-warning">{VISIT_OUTCOME_LABELS[sourceVisit.visit_outcome]}</span>
-                          )}
-                          {sourceVisit?.intent_after_visit && (
-                            <span className="badge badge-info">{INTENT_LABELS[sourceVisit.intent_after_visit]}</span>
-                          )}
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </section>
-          </div>
-
-          <div>
-            <CustomerCaptureContract />
-
-            <section className="glass-card" style={{ marginTop: 16 }} aria-label="基础信息">
-              <h3 className="section-title">基础信息</h3>
-              <div className="detail-grid">
-                <div className="detail-item">
-                  <div className="label">客户名称</div>
-                  <div className="value">{customer.name}</div>
+        <details className="customer-detail-fold" data-testid="customer-detail-layer-profile">
+          <summary>{t('customer.detail.accordion.profile')}</summary>
+          <div className="detail-grid">
+            {profile.presentKeys.map(key => (
+              <div className="detail-item" key={key}>
+                <div className="label">{profileFieldLabel(key)}</div>
+                <div className="value">
+                  {key === 'website' && customer.website ? (
+                    <a href={customer.website} target="_blank" rel="noopener noreferrer">{customer.website}</a>
+                  ) : profileFieldValue(customer, key)}
                 </div>
-                <div className="detail-item">
-                  <div className="label">客户等级</div>
-                  <div className="value">{GRADE_LABELS[customer.customer_grade]}</div>
-                </div>
-                <div className="detail-item">
-                  <div className="label">当前阶段</div>
-                  <div className="value">{STAGE_LABELS[customer.stage]}</div>
-                </div>
-                <div className="detail-item">
-                  <div className="label">是否关键KP</div>
-                  <div className="value">{customer.is_key_decision_maker ? '是' : '否'}</div>
-                </div>
-                <div className="detail-item">
-                  <div className="label">微信号</div>
-                  <div className="value">{customer.wechat_id || '-'}</div>
-                </div>
-                <div className="detail-item">
-                  <div className="label">手机号</div>
-                  <div className="value">{customer.phone_number || '-'}</div>
-                </div>
-                <div className="detail-item">
-                  <div className="label">联系人</div>
-                  <div className="value">{customer.contact_person || '-'}</div>
-                </div>
-                <div className="detail-item">
-                  <div className="label">行业</div>
-                  <div className="value">{customer.industry || '-'}</div>
-                </div>
-                <div className="detail-item">
-                  <div className="label">城市/区域</div>
-                  <div className="value">{customer.region || '-'}</div>
-                </div>
-                <div className="detail-item">
-                  <div className="label">官网</div>
-                  <div className="value">{customer.website ? <a href={customer.website} target="_blank" rel="noopener noreferrer">{customer.website}</a> : '-'}</div>
-                </div>
-                <div className="detail-item">
-                  <div className="label">邮箱</div>
-                  <div className="value">{customer.email || '-'}</div>
-                </div>
-                <div className="detail-item">
-                  <div className="label">地址</div>
-                  <div className="value">{customer.address || '-'}</div>
-                </div>
-                <div className="detail-item">
-                  <div className="label">推荐切入点</div>
-                  <div className="value">{customer.pitch_angle || '-'}</div>
-                </div>
-                <div className="detail-item">
-                  <div className="label">判断原因</div>
-                  <div className="value">{customer.qualification_reason || '-'}</div>
-                </div>
-                <div className="detail-item">
-                  <div className="label">来源</div>
-                  <div className="value">{customer.source || '-'}</div>
-                </div>
-                <div className="detail-item">
-                  <div className="label">微信搜索状态</div>
-                  <div className="value">{customer.wechat_search_status ? WECHAT_SEARCH_LABELS[customer.wechat_search_status] : '-'}</div>
-                </div>
-                <div className="detail-item">
-                  <div className="label">微信添加状态</div>
-                  <div className="value">{WECHAT_ADD_LABELS[customer.wechat_add_status]}</div>
-                </div>
-                <div className="detail-item">
-                  <div className="label">意向度</div>
-                  <div className="value">{INTENT_LABELS[customer.intent_level]}</div>
-                </div>
-                <div className="detail-item">
-                  <div className="label">电话反馈</div>
-                  <div className="value">{customer.phone_feedback ? PHONE_FEEDBACK_LABELS[customer.phone_feedback] : '-'}</div>
-                </div>
-                <div className="detail-item">
-                  <div className="label">下一步动作</div>
-                  <div className="value">{customer.next_action ? NEXT_ACTION_LABELS[customer.next_action] : '-'}</div>
-                </div>
-                <div className="detail-item">
-                  <div className="label">下次跟进时间</div>
-                  <div className="value">{customer.next_follow_up_at ? new Date(customer.next_follow_up_at).toLocaleString('zh-CN') : '-'}</div>
-                </div>
-                <div className="detail-item">
-                  <div className="label">模糊约访时间</div>
-                  <div className="value">{customer.rough_visit_time_text || '-'}</div>
-                </div>
-                <div className="detail-item">
-                  <div className="label">解析后提醒时间</div>
-                  <div className="value">{customer.parsed_visit_reminder_at ? new Date(customer.parsed_visit_reminder_at).toLocaleString('zh-CN') : '-'}</div>
-                </div>
-                <div className="detail-item">
-                  <div className="label">时间解析状态</div>
-                  <div className="value">{customer.time_parse_status === 'PARSED' ? '已解析' : customer.time_parse_status === 'NEEDS_CONFIRMATION' ? '需确认' : '未解析'}</div>
-                </div>
-                {customer.time_parse_note && (
-                  <div className="detail-item">
-                    <div className="label">时间解析备注</div>
-                    <div className="value" style={{ color: '#f59e0b' }}>{customer.time_parse_note}</div>
-                  </div>
-                )}
-                <div className="detail-item">
-                  <div className="label">爽约次数</div>
-                  <div className="value">{customer.no_show_count}</div>
-                </div>
-                <div className="detail-item">
-                  <div className="label">打款状态</div>
-                  <div className="value">
-                    {customer.payment_status === 'NOT_STARTED' ? '未开始' :
-                     customer.payment_status === 'PENDING' ? <span className="badge badge-warning">待打款</span> :
-                     <span className="badge badge-success">已打款</span>}
-                  </div>
-                </div>
-                <div className="detail-item">
-                  <div className="label">成交金额</div>
-                  <div className="value">{customer.deal_amount ? `¥${customer.deal_amount.toLocaleString()}` : '-'}</div>
-                </div>
-                {customer.notes && (
-                  <div className="detail-item">
-                    <div className="label">备注</div>
-                    <div className="value">{customer.notes}</div>
-                  </div>
-                )}
               </div>
-            </section>
+            ))}
           </div>
-        </div>
+          {profile.emptyCount > 0 ? (
+            <p className="customer-detail-empty-note" data-testid="customer-detail-empty-count">{tFormat('customer.detail.missingCount', { n: profile.emptyCount })}</p>
+          ) : null}
+        </details>
+
+        <details className="customer-detail-fold" data-testid="customer-detail-layer-timeline">
+          <summary>{t('customer.detail.accordion.timeline')}</summary>
+          <p className="customer-timeline-note">{t('customer.detail.timelineNote')}</p>
+          {unifiedTimeline.length === 0 ? (
+            <div className="empty-state">{t('customer.detail.timelineEmpty')}</div>
+          ) : (
+            <ul className="timeline">
+              {unifiedTimeline.map(item => {
+                const isVisit = item.id.startsWith('visit:');
+                const sourceFollowUp = !isVisit ? followUps.find(f => f.id === item.evidenceId) : null;
+                const sourceVisit = isVisit ? visits.find(v => v.id === item.evidenceId) : null;
+                return (
+                  <li key={item.id} className="timeline-item">
+                    <div className="time">{formatUserFacingScheduleDate(item.occurredAt, { withTime: true })}</div>
+                    <div className="customer-timeline-head">
+                      <span className="status-pill info">{formatTimelineKind(item.kind)}</span>
+                      <div className="title">{item.title}</div>
+                    </div>
+                    <div className="notes">{item.detail}</div>
+                    <div className="customer-timeline-tags">
+                      {sourceFollowUp?.contact_channel && (
+                        <span className="badge badge-info">{CHANNEL_LABELS[sourceFollowUp.contact_channel] || sourceFollowUp.contact_channel}</span>
+                      )}
+                      {sourceFollowUp?.contact_result && (
+                        <span className="badge badge-warning">{CONTACT_RESULT_LABELS[sourceFollowUp.contact_result] || sourceFollowUp.contact_result}</span>
+                      )}
+                      {sourceFollowUp?.intent_assessment && (
+                        <span className="badge badge-high">{INTENT_LABELS[sourceFollowUp.intent_assessment]}</span>
+                      )}
+                      {sourceVisit?.visit_outcome && (
+                        <span className="badge badge-warning">{VISIT_OUTCOME_LABELS[sourceVisit.visit_outcome]}</span>
+                      )}
+                      {sourceVisit?.intent_after_visit && (
+                        <span className="badge badge-info">{INTENT_LABELS[sourceVisit.intent_after_visit]}</span>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </details>
+
+        <details className="customer-detail-fold" data-testid="customer-detail-layer-intelligence">
+          <summary>{t('customer.detail.accordion.intelligence')}</summary>
+          <CustomerIntelligencePanel
+            customer={customer}
+            followUps={followUps}
+            visits={visits}
+            activeMemory={activeMemory}
+            drafts={[]}
+          />
+        </details>
+
+        <details className="customer-detail-fold" data-testid="customer-detail-layer-management">
+          <summary>{t('customer.detail.accordion.management')}</summary>
+          <div className="customer-detail-ops">
+            {customer.wechat_add_status !== 'PASSED' && (
+              <button className="btn btn-sm" onClick={handleWechatPassed}>{t('customer.detail.wechatPassed')}</button>
+            )}
+            {showContractActions && customer.stage !== 'PAYMENT_PENDING' && customer.stage !== 'PAID' && customer.stage !== 'WON' && (
+              <button className="btn btn-sm" onClick={() => handlePaymentAction('SEND_CONTRACT')}>{t('customer.detail.sendContract')}</button>
+            )}
+            {showPaymentActions && customer.payment_status !== 'PAID' && (
+              <button className="btn btn-sm" onClick={() => handlePaymentAction('MARK_PAID')}>{t('customer.detail.markPaid')}</button>
+            )}
+            {customer.stage === 'PAID' && (
+              <button className="btn btn-sm" onClick={() => handlePaymentAction('MARK_WON')}>{t('customer.detail.markWon')}</button>
+            )}
+            <button className="btn btn-danger btn-sm" onClick={handleDelete}>
+              <Trash2 size={14} /> {t('customer.detail.delete')}
+            </button>
+          </div>
+          <CustomerCaptureContract />
+        </details>
+
+        <EvidenceQuietPanel open={evidenceOpen} evidence={evidenceRows} onClose={() => setEvidenceOpen(false)} />
 
       </div>
 

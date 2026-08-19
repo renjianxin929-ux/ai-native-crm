@@ -70,6 +70,12 @@ export interface Customer {
   lost_reason: string | null;
   payment_status: PaymentStatus;
   deal_amount: number | null;
+  /**
+   * V0.2C / C0 — 商机金额（active opportunity amount）。
+   * 用户确认/显式记录的期望商业金额。UNKNOWN 必须保持 null；绝不 AI 估算、
+   * 阶段派生默认值、自动推断或假演示金额。与 deal_amount（成交金额）语义分离。
+   */
+  opportunity_amount?: number | null;
   paid_at: string | null;
   closed_at: string | null;
   website: string | null;

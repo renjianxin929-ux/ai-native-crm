@@ -17,6 +17,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { DatabaseLike } from '../db';
 import { withTransaction } from '../battleCard/repository';
+import { isTauriRuntime } from '../runtime/tauriRuntime';
 import { buildImportScopeId, parseIntelligenceMaterial, SOURCE_SPAN_CONTRACT_VERSION } from '../battleCard/parser';
 import { sha256HexSync } from '../salesAgentTools/confirmedWrite';
 import { deriveVerificationStatusForWriteSet } from './applicabilityDerivation';
@@ -81,10 +82,7 @@ export interface AtomicBattleCardWriteBackend {
   confirmStageCard(payload: AtomicStageCardPayloadV1): Promise<AtomicStageCardResultV1>;
 }
 
-/** 生产环境判定：Tauri WebView 暴露 __TAURI_INTERNALS__（vitest node 环境无 window）。 */
-export function isTauriRuntime(): boolean {
-  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
-}
+export { isTauriRuntime };
 
 const IMPORT_COMMAND = 'confirm_battle_card_import_atomic_v1';
 const STAGE_CARD_COMMAND = 'confirm_battle_card_stage_card_atomic_v1';

@@ -132,13 +132,11 @@ describe('Sales Agent action matrix', () => {
   describe('WRITE action_ids', () => {
     it('create_follow_up_record → clarification then proposal', async () => {
       const session = sessionForWrite();
-      const first = await session.submit(intent('帮我写一条跟进，下周一联系'));
-      expect(first.kind).toBe('clarification_required');
-      const second = await session.submit(intent('上午10:00'));
-      expect(second.kind).toBe('write_proposal');
-      if (second.kind !== 'write_proposal') throw new Error('proposal');
-      expect(second.proposal.tool_id).toBe('create_follow_up_record');
-      expect(second.proposal.requires_confirmation).toBe(true);
+      const first = await session.submit(intent('帮我写一条跟进：客户确认预算'));
+      expect(first.kind).toBe('write_proposal');
+      if (first.kind !== 'write_proposal') throw new Error('proposal');
+      expect(first.proposal.tool_id).toBe('create_follow_up_record');
+      expect(first.proposal.requires_confirmation).toBe(true);
     });
   });
 

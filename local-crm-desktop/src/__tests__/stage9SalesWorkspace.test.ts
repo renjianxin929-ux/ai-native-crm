@@ -6,7 +6,7 @@ import { buildSalesBrief } from '../components/salesWorkspace/SalesCommandCenter
 describe('Stage 9 AI Native Sales Workspace projections', () => {
   it('unifies existing follow-up and visit records without mutating them', () => {
     const timeline = buildCustomerTimeline([
-      { id: 'follow-up-1', customer_id: 'customer-1', title: 'Phone follow-up', contact_channel: 'phone', contact_result: null, feedback_notes: 'Requested a proposal', intent_assessment: null, suggested_grade: null, next_action: null, next_follow_up_at: null, is_completed: 0, created_at: '2026-07-10T09:00:00.000Z', updated_at: '2026-07-10T09:00:00.000Z' },
+      { id: 'follow-up-1', customer_id: 'customer-1', title: 'Phone follow-up', contact_channel: 'phone', contact_result: null, feedback_notes: 'Requested a proposal', intent_assessment: null, suggested_grade: null, next_action: null, next_follow_up_at: null, is_completed: 1, created_at: '2026-07-10T09:00:00.000Z', updated_at: '2026-07-10T09:00:00.000Z' },
     ], [
       { id: 'visit-1', customer_id: 'customer-1', title: 'Discovery meeting', visited_at: '2026-07-11T09:00:00.000Z', visit_notes: 'Discussed priorities', customer_concerns: null, intent_after_visit: null, visit_outcome: null, next_action: null, expected_contract_at: null, created_at: '2026-07-11T09:00:00.000Z', updated_at: '2026-07-11T09:00:00.000Z' },
     ]);

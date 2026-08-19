@@ -2,7 +2,7 @@ import type { ContextSnapshot } from '../context/types';
 import type { CustomerMemoryContext, MemoryRepository } from '../customerMemory';
 import type { LoadedReadOnlyAgentSnapshot } from '../readOnlySnapshotLoaderReadiness';
 import { formatUserFacingErrorMessage } from '../salesAgentUi/formatUserFacingError';
-import { executeSalesAgentReadTool, type SalesAgentCustomerScopedToolId, type SalesAgentToolResult } from './registry';
+import { executeProductionReadTool, type SalesAgentCustomerScopedToolId, type SalesAgentToolResult } from './registry';
 import { intentFromEnvelope, type SalesAgentResponseProjection } from './operatingLayer';
 import { createAgentIntentEnvelopeFromPreset, type AgentIntentEnvelope } from './agentIntentEnvelope';
 import type { GroundedClaim } from '../productionAi/evidenceGrounding';
@@ -43,6 +43,7 @@ export interface SalesAgentHost {
   reason(input: { customer_id: string; message: string }): Promise<unknown>;
   capture(input: { customer_id: string; source_type: CaptureSourceType; source: string; signal?: AbortSignal }): Promise<unknown>;
   createProductionModelCaller?: () => ProductionModelCaller;
+  createModelPlannerCaller?: () => import('../planner/runtimePlanner').ModelPlannerCaller;
 }
 export type FakeTrustedHost = SalesAgentHost;
 export interface AgentSessionMessage {
@@ -321,14 +322,14 @@ export class SalesAgentSession {
       throw new Error('同一会话已有进行中的模型请求，请等待完成或取消后再试。');
     }
     try {
-      const tool_trace = plan.steps
+      const tool_trace = await Promise.all(plan.steps
         .filter(step => step.access === 'read')
-        .map(step => executeSalesAgentReadTool(step.tool_id as SalesAgentCustomerScopedToolId, {
+        .map(step => executeProductionReadTool(step.tool_id as SalesAgentCustomerScopedToolId, {
           customer_id: this.customerId,
           snapshot: this.dependencies!.snapshot,
           context: this.dependencies!.context,
           memory: this.dependencies!.memory,
-        }));
+        })));
       if (!tool_trace.length) throw new Error('A successful read result requires an executed registered read tool.');
 
       const model_caller = this.dependencies.model_caller
@@ -358,16 +359,7 @@ export class SalesAgentSession {
       const mode: AgentMode = path.runtime.runtime_mode === 'REAL_MODEL' ? 'live' : 'fallback';
       this.push('user', message, mode);
 
-      const response = [
-        path.blocked_message ? `【状态】${path.blocked_message}` : null,
-        `【客户理解】${path.structured.customer_understanding}`,
-        `【最近变化】${path.structured.recent_changes}`,
-        `【风险与机会】${path.structured.risks_and_opportunities}`,
-        `【建议下一步】${path.structured.recommended_next_step}`,
-        `【证据】${path.evidence_refs.join('、') || '无'}`,
-        `【工具】${tool_trace.map(item => item.tool_id).join(' → ')}`,
-        `【运行模式】${path.runtime.ui_label}`,
-      ].filter(Boolean).join('\n');
+      const response = formatReasoningResponse(intentEnvelope.intent, path, tool_trace);
 
       const result: AgentSessionResult = {
         plan,
@@ -539,13 +531,17 @@ export class SalesAgentSession {
       }
       throw new Error('Unknown or modified session-owned write proposal.');
     }
-    if (peeked.customer_id !== this.customerId) {
+    // Scope=NONE create_customer is registered under a pre-allocated identity that is
+    // not the currently bound session customer. Consume against the proposal's own bucket.
+    const sessionOwnsProposal = peeked.customer_id === this.customerId;
+    const unscopedCreate = peeked.tool_id === 'create_customer';
+    if (!sessionOwnsProposal && !unscopedCreate) {
       throw new Error('Unknown or modified session-owned write proposal.');
     }
     if (!peeked.nonce || peeked.nonce !== ref.nonce) {
       throw new Error('Confirmation does not match the exact proposal.');
     }
-    const canonical = consumeCanonicalProposal(ref.proposal_id, this.customerId);
+    const canonical = consumeCanonicalProposal(ref.proposal_id, peeked.customer_id);
     if (!canonical) {
       throw new Error('Confirmation replay rejected.');
     }
@@ -639,13 +635,16 @@ export class SalesAgentSession {
     if (draft.tool_id !== 'create_follow_up_record' || typeof next !== 'string') return undefined;
     const customer = await this.dependencies?.loadCustomerSnapshot?.(this.customerId);
     if (!customer) throw new Error('生成组合建议前需要读取当前客户的下次跟进时间。');
+    const followUpValues = { ...proposedValuesFromDraft(draft) };
+    delete followUpValues.next_follow_up_at;
+    delete followUpValues.next_follow_up_date;
     return [
       {
         operation_id: 'record-follow-up-now',
         label: '新增当前跟进记录',
         tool_id: 'create_follow_up_record',
         current_values: {},
-        proposed_values: proposedValuesFromDraft(draft),
+        proposed_values: followUpValues,
         selected: true,
       },
       {
@@ -691,6 +690,42 @@ export class SalesAgentSession {
   private push(role: AgentSessionMessage['role'], content: string, mode: AgentMode) {
     this.messages.push({ id: `${role}-${this.messages.length + 1}`, role, content, mode, created_at: this.clock() });
   }
+}
+
+function formatReasoningResponse(
+  intent: AgentIntentEnvelope['intent'],
+  path: Awaited<ReturnType<typeof runProductionReasoningPath>>,
+  _tool_trace: readonly SalesAgentToolResult[],
+): string {
+  const footer = [
+    `【依据】${path.evidence_refs.length} 条已核实记录`,
+  ];
+  const blocked = path.blocked_message ? `【状态】${path.blocked_message}` : null;
+  if (intent === 'NEXT_ACTION_PREPARATION') {
+    return [
+      blocked,
+      `【结论】${path.structured.customer_understanding}`,
+      `【建议下一步】${path.structured.recommended_next_step}`,
+      `【依据】${path.structured.recent_changes}`,
+      ...footer,
+    ].filter(Boolean).join('\n');
+  }
+  if (intent === 'INTERACTION_SUMMARY') {
+    return [
+      blocked,
+      `【本次进展】${path.structured.customer_understanding}`,
+      `【需要注意】${path.structured.recent_changes}`,
+      `【下一步】${path.structured.recommended_next_step}`,
+      ...footer,
+    ].filter(Boolean).join('\n');
+  }
+  return [
+    blocked,
+      `【核心判断】${path.structured.customer_understanding}`,
+      `【风险机会】${path.structured.risks_and_opportunities}`,
+      `【建议】${path.structured.recommended_next_step}`,
+    ...footer,
+  ].filter(Boolean).join('\n');
 }
 
 function stableKey(value: string): string {

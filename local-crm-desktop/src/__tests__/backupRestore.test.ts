@@ -19,6 +19,13 @@ const expectedBackupTables = [
   'tasks',
   'settings',
   'ai_drafts',
+  'evidence',
+  'ai_memory_entries',
+  'ai_memory_evidence_links',
+  'intelligence_imports',
+  'reviewed_facts',
+  'customer_hypotheses',
+  'customer_stage_cards',
   'lead_import_batches',
   'lead_import_rows',
   'lead_work_items',
@@ -149,6 +156,7 @@ describe('backup restore payload normalization', () => {
     expect(normalized.isLegacy).toBe(true);
     expect(normalized.tables.settings).toEqual([]);
     expect(normalized.tables.ai_drafts).toEqual([]);
+    expect(normalized.tables.evidence).toEqual([]);
     expect(normalized.tables.lead_import_batches).toEqual([]);
     expect(normalized.tables.lead_import_rows).toEqual([]);
     expect(normalized.tables.lead_work_items).toEqual([]);
@@ -158,6 +166,13 @@ describe('backup restore payload normalization', () => {
     expect(normalized.missingTables).toEqual([
       'settings',
       'ai_drafts',
+      'evidence',
+      'ai_memory_entries',
+      'ai_memory_evidence_links',
+      'intelligence_imports',
+      'reviewed_facts',
+      'customer_hypotheses',
+      'customer_stage_cards',
       'lead_import_batches',
       'lead_import_rows',
       'lead_work_items',
@@ -251,10 +266,17 @@ describe('backup restore payload normalization', () => {
     expect(getRestoreTableOrder()).toEqual([
       'settings',
       'customers',
+      'customer_stage_cards',
+      'ai_memory_entries',
+      'ai_memory_evidence_links',
+      'evidence',
       'follow_up_records',
       'visit_records',
       'tasks',
       'ai_drafts',
+      'intelligence_imports',
+      'reviewed_facts',
+      'customer_hypotheses',
       'lead_import_batches',
       'lead_import_rows',
       'lead_work_items',
@@ -270,10 +292,17 @@ describe('backup restore payload normalization', () => {
       'lead_work_items',
       'lead_import_rows',
       'lead_import_batches',
+      'customer_hypotheses',
+      'reviewed_facts',
+      'intelligence_imports',
       'ai_drafts',
       'tasks',
       'visit_records',
       'follow_up_records',
+      'evidence',
+      'ai_memory_evidence_links',
+      'ai_memory_entries',
+      'customer_stage_cards',
       'customers',
       'settings',
     ]);

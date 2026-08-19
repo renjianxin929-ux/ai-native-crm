@@ -2,6 +2,7 @@ import type { AgentSessionResult } from '../salesAgentTools/agentSession';
 import type { AgentWriteProposal } from '../salesAgentTools/confirmedWrite';
 import type { CustomerCaptureReview } from '../customerCapture/review';
 import { reviewedFacts } from '../customerCapture/review';
+import { t, tFormat } from '../i18n/appLocale';
 
 export type WorkProcessStepStatus = 'pending' | 'active' | 'done' | 'blocked';
 
@@ -36,7 +37,7 @@ export function summarizeWorkProcess(steps: readonly WorkProcessStep[]): string 
   if (tools) return tools.label;
   const done = [...steps].reverse().find(step => step.status === 'done');
   if (done) return done.label;
-  return '等待指令';
+  return t('work.await');
 }
 
 /** Auditable visible work process from real session/trace/evidence — never a fake 4-step complete ladder. */
@@ -46,8 +47,8 @@ export function buildAgentWorkProcess(input: BuildAgentWorkProcessInput): readon
   if (input.locatingCustomer) {
     steps.push({
       id: 'locate',
-      label: '正在定位客户',
-      detail: '通过受限只读 search_customers 匹配客户，不会写入 CRM。',
+      label: t('work.locate'),
+      detail: t('work.locateDetail'),
       status: 'active',
     });
     return steps;
@@ -56,8 +57,8 @@ export function buildAgentWorkProcess(input: BuildAgentWorkProcessInput): readon
   if (!input.customerSelected) {
     steps.push({
       id: 'await-customer',
-      label: '可通过自然语言定位客户',
-      detail: '直接提问或说「帮我找一下某某客户」；也可从客户详情进入。',
+      label: t('work.awaitCustomer'),
+      detail: t('work.awaitCustomerDetail'),
       status: 'pending',
     });
     return steps;
@@ -65,7 +66,7 @@ export function buildAgentWorkProcess(input: BuildAgentWorkProcessInput): readon
 
   steps.push({
     id: 'context',
-    label: input.contextLoaded ? '已读取客户上下文' : '正在读取客户上下文',
+    label: input.contextLoaded ? t('work.contextDone') : t('work.contextActive'),
     detail: input.contextLoaded
       ? '只读 CRM 快照已加载，未自动调用模型或写入 CRM。'
       : '正在读取当前客户的只读上下文…',
@@ -75,13 +76,13 @@ export function buildAgentWorkProcess(input: BuildAgentWorkProcessInput): readon
   if (input.contextLoaded) {
     steps.push({
       id: 'memory',
-      label: `已加载 ${input.memoryCount} 条有效记忆`,
+      label: tFormat('work.memoryCount', { n: input.memoryCount }),
       detail: '来自 ACTIVE Memory 仓库的已激活条目。',
       status: 'done',
     });
     steps.push({
       id: 'timeline',
-      label: `已检查最近 ${input.timelineCount} 条互动`,
+      label: tFormat('work.timelineCount', { n: input.timelineCount }),
       detail: '来自当前 ContextSnapshot 的近期互动记录。',
       status: 'done',
     });
@@ -90,7 +91,7 @@ export function buildAgentWorkProcess(input: BuildAgentWorkProcessInput): readon
   if (input.blockedReason) {
     steps.push({
       id: 'blocked',
-      label: '执行已阻断',
+      label: t('work.blocked'),
       detail: input.blockedReason,
       status: 'blocked',
     });
@@ -100,33 +101,31 @@ export function buildAgentWorkProcess(input: BuildAgentWorkProcessInput): readon
   if (input.sessionBusy) {
     steps.push({
       id: 'running',
-      label: '正在生成建议',
-      detail: 'SalesAgentSession 请求执行中；完成后展示可审计摘要。',
+      label: t('work.running'),
+      detail: '正在读取当前客户事实并生成建议。',
       status: 'active',
     });
     return steps;
   }
 
   if (input.result) {
-    const tools = input.result.tool_trace
-      .map(trace => `${trace.tool_id}（${trace.records.length}）`)
-      .join(' · ') || '无工具记录';
+    const tools = describeReadWork(input.result.tool_trace.map(trace => trace.tool_id));
     steps.push({
       id: 'tools',
-      label: '已执行已注册只读工具',
-      detail: tools,
+      label: tools || t('work.tools'),
+      detail: '只读查询，未写入 CRM。',
       status: 'done',
     });
     steps.push({
       id: 'evidence',
-      label: `已关联 ${input.result.evidence_refs.length} 条证据`,
-      detail: input.result.evidence_refs.slice(0, 6).join(' · ') || '当前没有额外证据引用',
+      label: tFormat('work.evidenceCount', { n: input.result.evidence_refs.length }),
+      detail: '来自当前客户已核实记录。',
       status: 'done',
     });
     steps.push({
       id: 'intent',
-      label: `意图：${input.result.plan.intent}`,
-      detail: input.result.plan.steps.map(step => step.tool_id).join(' → '),
+      label: describeReasoningWork(input.result.plan.intent),
+      detail: '结果需人工复核，不会自动写入。',
       status: 'done',
     });
   }
@@ -144,18 +143,37 @@ export function buildAgentWorkProcess(input: BuildAgentWorkProcessInput): readon
   if (input.proposal || input.confirmationPending) {
     steps.push({
       id: 'confirm',
-      label: '等待人工确认',
+      label: t('work.confirm'),
       detail: '任何 CRM 写入必须通过精确确认卡片。',
       status: 'active',
     });
   } else if (!input.result && input.contextLoaded) {
     steps.push({
       id: 'await-command',
-      label: '等待指令',
+      label: t('work.await'),
       detail: '输入销售问题或使用快捷动作启动 Session。',
       status: 'pending',
     });
   }
 
   return steps;
+}
+
+export function describeReadWork(toolIds: readonly string[]): string {
+  const labels = new Set<string>();
+  for (const id of toolIds) {
+    if (id.includes('timeline') || id.includes('followup') || id.includes('visit')) labels.add(t('work.timeline'));
+    else if (id.includes('task')) labels.add(t('work.tasks'));
+    else if (id.includes('memory')) labels.add(t('work.memory'));
+    else if (id.includes('customer')) labels.add(t('work.profile'));
+    else labels.add(t('work.tools'));
+  }
+  return [...labels].join('；');
+}
+
+export function describeReasoningWork(intent: string): string {
+  if (intent === 'INTERACTION_SUMMARY') return t('work.review');
+  if (intent === 'NEXT_ACTION_PREPARATION' || intent === 'NEXT_ACTION_RECOMMENDATION') return t('work.next');
+  if (intent === 'FOLLOW_UP_DRAFT') return t('work.followUp');
+  return t('work.analysis');
 }

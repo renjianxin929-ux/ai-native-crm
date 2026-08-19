@@ -45,3 +45,10 @@ export const SALES_AGENT_QUICK_ACTIONS: readonly SalesAgentQuickAction[] = [
     tone: 'orange',
   },
 ] as const;
+
+/** Agent home shows three supporting actions. Capture remains on the paperclip. */
+export const AGENT_HOME_QUICK_ACTION_IDS = ['summary', 'follow-up', 'interactions'] as const;
+
+export const AGENT_HOME_QUICK_ACTIONS: readonly SalesAgentQuickAction[] = SALES_AGENT_QUICK_ACTIONS.filter(
+  action => (AGENT_HOME_QUICK_ACTION_IDS as readonly string[]).includes(action.id),
+);

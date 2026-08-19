@@ -12,6 +12,7 @@ import {
   toVersionHistoryRows,
   toHypothesisRowViews,
   toFactRowViews,
+  evaluateBattleCardCoherence,
 } from '../lib/battleCardUi/battleCardViewModels';
 import type { ActionCard, CustomerStageCardRow } from '../lib/battleCard/types';
 import type { BattleReviewQueueItem } from '../lib/battleCard/dailyReview';
@@ -166,5 +167,14 @@ describe('toDailyReviewRowViews', () => {
     expect(rows[0]?.is_due_today).toBe(false);
     expect(rows[0]?.urgency_score).toBe(40);
     expect(rows[0]?.card_age_days).toBe(2);
+  });
+});
+
+describe('evaluateBattleCardCoherence', () => {
+  it('keeps matching pre-visit cards current until a visit exists', () => {
+    expect(evaluateBattleCardCoherence({ customerStage: 'NEW_LEAD', cardStageCode: 'NEW_LEAD', hasVisit: false }).kind).toBe('current');
+    expect(evaluateBattleCardCoherence({ customerStage: 'NEW_LEAD', cardStageCode: 'NEW_LEAD', hasVisit: true }).kind).toBe('stale');
+    expect(evaluateBattleCardCoherence({ customerStage: 'VISITED', cardStageCode: 'NEW_LEAD', hasVisit: true }).kind).toBe('stale');
+    expect(evaluateBattleCardCoherence({ customerStage: 'NEW_LEAD', cardStageCode: null, hasVisit: false }).kind).toBe('no_card');
   });
 });

@@ -1013,13 +1013,21 @@ fn build_provider_request(binding: &TrustedHostCapabilityRequest, model: &str, i
     let schema = input.get("schema").and_then(Value::as_str);
     let envelope_id = input.get("envelope_id").and_then(Value::as_str).filter(|value| !value.trim().is_empty());
     if schema != Some("semantic_intent_v1") || envelope_id.is_none() || input.as_object().is_none_or(|object| {
-      object.len() != 4 || object.keys().any(|key| !["capability", "schema", "instruction", "envelope_id"].contains(&key.as_str()))
+      let allowed = ["capability", "schema", "instruction", "envelope_id", "has_selected_customer", "has_previous_reasoning", "has_previous_review"];
+      if object.len() < 4 || object.len() > 7 || object.keys().any(|key| !allowed.contains(&key.as_str())) { return true; }
+      if !["capability", "schema", "instruction", "envelope_id"].iter().all(|key| object.contains_key(*key)) { return true; }
+      ["has_selected_customer", "has_previous_reasoning", "has_previous_review"].iter().any(|key| {
+        object.get(*key).is_some_and(|value| !value.is_boolean())
+      })
     }) { return Err(blocked("invalid_semantic_intent_input")); }
+    let has_selected_customer = input.get("has_selected_customer").and_then(Value::as_bool).unwrap_or(false);
+    let has_previous_reasoning = input.get("has_previous_reasoning").and_then(Value::as_bool).unwrap_or(false);
+    let has_previous_review = input.get("has_previous_review").and_then(Value::as_bool).unwrap_or(false);
     return Ok(json!({
       "model": model, "stream": false, "temperature": 0, "user": request_id,
       "messages": [
-        {"role":"system","content":"Classify only into semantic_intent_v1. Return exactly intent, filters, entities, scope, missing_fields, confidence, clarification_question. Allowed intents: CUSTOMER_SUMMARY, CUSTOMER_RISK_ANALYSIS, NEXT_ACTION_RECOMMENDATION, FOLLOW_UP_DRAFT, INTERACTION_SUMMARY, COMPLEX_CUSTOMER_COMPARE, IMAGE_CAPTURE_ANALYSIS, CUSTOMER_PRIORITY_RANKING, CLARIFICATION_REQUIRED, UNSUPPORTED. filters must be string-only; entities contain only type and value. Never return SQL, guessed customer IDs, tool IDs, proposals, write payloads, confirmations, CRM mutations, or executable actions."},
-        {"role":"user","content":json!({"envelope_id":envelope_id,"instruction":instruction}).to_string()}
+        {"role":"system","content":"Classify only into semantic_intent_v1. Return exactly intent, filters, entities, scope, missing_fields, confidence, clarification_question. Allowed intents: CUSTOMER_SUMMARY, CUSTOMER_RISK_ANALYSIS, NEXT_ACTION_RECOMMENDATION, FOLLOW_UP_DRAFT, INTERACTION_SUMMARY, COMPLEX_CUSTOMER_COMPARE, IMAGE_CAPTURE_ANALYSIS, CUSTOMER_PRIORITY_RANKING, CUSTOMER_TIMELINE_REVIEW, BATTLE_CARD_ANALYSIS, ACTION_FROM_PREVIOUS_RESULT, CLARIFICATION_REQUIRED, UNSUPPORTED. When a customer is already selected, open-ended analysis defaults to CUSTOMER_SUMMARY rather than asking which CRM object to inspect. Visit history questions are CUSTOMER_TIMELINE_REVIEW with filters.fact=visits, never a write. Battle-card look/review is BATTLE_CARD_ANALYSIS, never draft create. Next-step and follow-up timing advice is NEXT_ACTION_RECOMMENDATION, never a CRM write. Recent chat/progress recap is INTERACTION_SUMMARY. If previous reasoning or review exists and the user asks to record a todo, remember an ordinal suggestion, or schedule that suggested follow-up, use ACTION_FROM_PREVIOUS_RESULT. filters must be string-only; entities contain only type and value. Never return SQL, guessed customer IDs, tool IDs, proposals, write payloads, confirmations, CRM mutations, or executable actions."},
+        {"role":"user","content":json!({"envelope_id":envelope_id,"instruction":instruction,"has_selected_customer":has_selected_customer,"has_previous_reasoning":has_previous_reasoning,"has_previous_review":has_previous_review}).to_string()}
       ]
     }));
   }
@@ -1189,7 +1197,7 @@ fn validate_semantic_intent_output(value: &Value) -> Result<(), TrustedHostBlock
   if object.len() != allowed.len() || object.keys().any(|key| !allowed.contains(&key.as_str())) {
     return Err(blocked("host_provider_invalid_semantic_intent"));
   }
-  let intents = ["CUSTOMER_SUMMARY", "CUSTOMER_RISK_ANALYSIS", "NEXT_ACTION_RECOMMENDATION", "FOLLOW_UP_DRAFT", "INTERACTION_SUMMARY", "COMPLEX_CUSTOMER_COMPARE", "IMAGE_CAPTURE_ANALYSIS", "CUSTOMER_PRIORITY_RANKING", "CLARIFICATION_REQUIRED", "UNSUPPORTED"];
+  let intents = ["CUSTOMER_SUMMARY", "CUSTOMER_RISK_ANALYSIS", "NEXT_ACTION_RECOMMENDATION", "FOLLOW_UP_DRAFT", "INTERACTION_SUMMARY", "COMPLEX_CUSTOMER_COMPARE", "IMAGE_CAPTURE_ANALYSIS", "CUSTOMER_PRIORITY_RANKING", "CUSTOMER_TIMELINE_REVIEW", "BATTLE_CARD_ANALYSIS", "ACTION_FROM_PREVIOUS_RESULT", "CLARIFICATION_REQUIRED", "UNSUPPORTED"];
   if !object.get("intent").and_then(Value::as_str).is_some_and(|intent| intents.contains(&intent))
     || !valid_confidence(object.get("confidence"))
     || !object.get("filters").and_then(Value::as_object).is_some_and(|filters| filters.iter().all(|(key, item)| !key.is_empty() && item.is_string()))

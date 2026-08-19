@@ -102,7 +102,8 @@ describe('Sales Agent real functional closure', () => {
     const fixture = await openSalesAgentSqliteFixture();
     try {
       const norm = normalizeCustomerSearchFilters('帮我找一下东莞的 A 类客户', NOW);
-      expect(norm.filters.region).toBe('东莞');
+      expect(norm.filters.name_query).toBe('东莞');
+      expect(norm.filters.region).toBeUndefined();
       expect(norm.filters.customer_grade).toBe('A');
       expect(norm.filters.stage).toBeUndefined();
 

@@ -14,12 +14,21 @@ const NOW = '2026-07-15T09:30:00+08:00';
 describe('AI Native CRM overnight full stabilization contracts', () => {
   beforeEach(() => __resetSessionWriteStateStoreForTests());
 
-  it('normalizes at least 100 search paraphrases to one Guangzhou portfolio contract', () => {
+  it('normalizes Guangzhou name-search paraphrases separately from explicit region language', () => {
     const actions = ['帮我找', '给我查', '查询', '搜索', '筛选', '列出', '找出', '看看', '有哪些', '显示'];
-    const regions = ['广州', '广州市', '广州地区', '广州区域', '位于广州', '在广州', '广州当地', '广州这边', '广州范围内', '广州的'];
-    const phrases = actions.flatMap(action => regions.map(region => `${action}${region}的客户`));
-    expect(phrases).toHaveLength(100);
-    for (const phrase of phrases) {
+    const namePlaces = ['广州', '广州的'];
+    const geoPlaces = ['广州市', '广州地区', '广州区域', '位于广州', '在广州', '广州当地', '广州这边', '广州范围内'];
+    const namePhrases = actions.flatMap(action => namePlaces.map(place => `${action}${place}的客户`));
+    const geoPhrases = actions.flatMap(action => geoPlaces.map(place => `${action}${place}的客户`));
+    expect(namePhrases).toHaveLength(20);
+    expect(geoPhrases).toHaveLength(80);
+    for (const phrase of namePhrases) {
+      const result = buildAgentIntentEnvelope(phrase, NOW);
+      expect(result).toMatchObject({ intent: 'SEARCH_CUSTOMERS', mode: 'portfolio_search', parser_source: 'production_deterministic_v2', clarification_required: false });
+      expect(result.portfolio_filters.name_query).toBe('广州');
+      expect(result.portfolio_filters.region).toBeUndefined();
+    }
+    for (const phrase of geoPhrases) {
       const result = buildAgentIntentEnvelope(phrase, NOW);
       expect(result).toMatchObject({ intent: 'SEARCH_CUSTOMERS', mode: 'portfolio_search', customer_reference: null, parser_source: 'production_deterministic_v2', clarification_required: false });
       expect(result.portfolio_filters.region).toBe('广州');
@@ -91,7 +100,7 @@ describe('AI Native CRM overnight full stabilization contracts', () => {
     expect(parseRelativeDateTimeInZone('下周一上午10点', NOW, 'UTC')?.iso).toBe('2026-07-20T10:00:00+00:00');
   });
 
-  it('creates and confirms a disclosed grouped follow-up + next-follow-up proposal', async () => {
+  it('routes future-only 写一条跟进 + 下周一联系 to schedule, not a fake historical follow-up', async () => {
     const fixture = sqliteFixture();
     await fixture.initialize();
     seedCustomer(fixture.sqlite);
@@ -102,33 +111,31 @@ describe('AI Native CRM overnight full stabilization contracts', () => {
 
     const outcome = await session.submit(buildAgentIntentEnvelope('帮我写一条跟进，下周一上午 10 点联系', NOW));
     expect(outcome.kind).toBe('write_proposal');
-    if (outcome.kind !== 'write_proposal') throw new Error('expected grouped proposal');
-    expect(outcome.proposal.grouped_operations).toEqual([
-      expect.objectContaining({ operation_id: 'record-follow-up-now', tool_id: 'create_follow_up_record', selected: true }),
-      expect.objectContaining({ operation_id: 'update-next-follow-up', tool_id: 'update_next_follow_up_time', selected: true, proposed_values: { next_follow_up_at: '2026-07-20T10:00:00+08:00' } }),
-    ]);
-    expect(JSON.stringify(outcome.proposal.grouped_operations)).not.toContain('create_task');
+    if (outcome.kind !== 'write_proposal') throw new Error('expected schedule proposal');
+    expect(outcome.proposal.tool_id).toBe('update_next_follow_up_time');
+    expect(outcome.proposal.grouped_operations).toBeUndefined();
 
     await session.confirmWriteByRef({ proposal_id: outcome.proposal.proposal_id, nonce: outcome.proposal.nonce!, confirmed_at: '2026-07-15T09:31:00+08:00' }, boundary);
-    expect(fixture.sqlite.prepare('SELECT COUNT(*) AS c FROM follow_up_records').get()).toEqual({ c: 1 });
+    expect(fixture.sqlite.prepare('SELECT COUNT(*) AS c FROM follow_up_records').get()).toEqual({ c: 0 });
     expect(fixture.sqlite.prepare('SELECT COUNT(*) AS c FROM tasks').get()).toEqual({ c: 0 });
-    expect(fixture.sqlite.prepare('SELECT feedback_notes,next_follow_up_at,created_at FROM follow_up_records').get()).toEqual({
-      feedback_notes: '下周一上午 10 点联系', next_follow_up_at: null, created_at: NOW,
-    });
     expect(fixture.sqlite.prepare('SELECT next_follow_up_at FROM customers WHERE id=?').get('customer-1')).toEqual({ next_follow_up_at: '2026-07-20T10:00:00+08:00' });
     await expect(session.confirmWriteByRef({ proposal_id: outcome.proposal.proposal_id, nonce: outcome.proposal.nonce!, confirmed_at: '2026-07-15T09:32:00+08:00' }, boundary)).rejects.toThrow(/replay/i);
     fixture.close();
   });
 
-  it('lets the user cancel one grouped child without hidden second write', async () => {
+  it('lets the user cancel a mixed schedule child without hidden second write', async () => {
     const fixture = sqliteFixture();
     await fixture.initialize();
     seedCustomer(fixture.sqlite);
     const clock = new FixedAppClock(NOW, 'Asia/Shanghai');
     const boundary = createApprovedCrmWriteBoundary(createCrmRepository(fixture.db, () => clock.now()), clock);
     const session = sessionForWrite('2026-07-16T15:00:00+08:00', NOW);
-    const outcome = await session.submit(buildAgentIntentEnvelope('帮我写一条跟进，下周一上午 10 点联系', NOW));
+    const outcome = await session.submit(buildAgentIntentEnvelope('记录跟进：今天打电话没接，下周一上午 10 点再联系', NOW));
     if (outcome.kind !== 'write_proposal') throw new Error('expected grouped proposal');
+    expect(outcome.proposal.grouped_operations).toEqual([
+      expect.objectContaining({ operation_id: 'record-follow-up-now', tool_id: 'create_follow_up_record', selected: true }),
+      expect.objectContaining({ operation_id: 'update-next-follow-up', tool_id: 'update_next_follow_up_time', selected: true }),
+    ]);
     const updated = session.setGroupedOperationSelected(outcome.proposal.proposal_id, 'update-next-follow-up', false);
     await session.confirmWriteByRef({ proposal_id: updated.proposal_id, nonce: updated.nonce!, confirmed_at: '2026-07-15T09:31:00+08:00' }, boundary);
     expect(fixture.sqlite.prepare('SELECT COUNT(*) AS c FROM follow_up_records').get()).toEqual({ c: 1 });

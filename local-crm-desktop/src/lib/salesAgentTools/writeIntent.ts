@@ -3,6 +3,7 @@
  * Owned by Session/confirmed-write boundaries — React never classifies or invents dates.
  */
 
+import { classifyFollowUpVsSchedule, isCurrentTurnScheduleDecision, isScheduleOnlyFollowUpNote } from '../planner/followUpInteractionContract';
 import type { AgentWriteToolId } from './confirmedWrite';
 import {
   parseRelativeDateTimeInZone,
@@ -53,7 +54,7 @@ export interface WriteClarificationRequest {
 }
 
 const CREATE_FOLLOW_UP =
-  /(写\s*(?:(一\s*)?条\s*)?跟进\s*记录|写\s*(一\s*)?条\s*跟进|新增\s*(?:(一\s*)?条?)?[^。！？]{0,40}跟进\s*记录|新增\s*(一\s*)?条?\s*跟进|添加\s*(?:(一\s*)?条?)?[^。！？]{0,40}跟进\s*记录|添加\s*(一\s*)?条?\s*跟进|添加\s*follow\s*[- ]?up|记录\s*(一下|一\s*条)?\s*(本次|这次)?\s*(沟通|客户)?\s*跟进|记录\s*跟进\s*内容|(?:帮我\s*)?记\s*(一\s*)?条\s*(客户)?\s*跟进|跟进\s*记下|创建\s*.*跟进\s*记录|log\s+a\s+follow\s*[- ]?up|create\s+follow\s*[- ]?up)/i;
+  /(写\s*(?:(?:一\s*)?[条个]\s*)?跟进\s*记录|写\s*(?:一\s*)?[条个]\s*跟进(?!\s*(?:话术|文案|草稿|模板|措辞|说辞))|新增\s*(?:(?:一\s*)?[条个]?)?[^。！？]{0,40}跟进\s*记录|新增\s*(?:一\s*)?[条个]?\s*跟进(?!\s*(?:话术|文案|草稿|模板|措辞|说辞))|添加\s*(?:(?:一\s*)?[条个]?)?[^。！？]{0,40}跟进\s*记录|添加\s*(?:一\s*)?[条个]?\s*跟进(?!\s*(?:话术|文案|草稿|模板|措辞|说辞))|添加\s*follow\s*[- ]?up|记录\s*(一下|一\s*[条个])?\s*(本次|这次)?\s*(沟通|客户)?\s*跟进|记录\s*跟进\s*内容|(?:帮我\s*)?记\s*(?:一\s*)?[条个]\s*(客户)?\s*跟进|跟进\s*记下|创建\s*.*跟进\s*记录|log\s+a\s+follow\s*[- ]?up|create\s+follow\s*[- ]?up)/i;
 
 const CREATE_TASK =
   /(创建\s*(?:(一\s*)?个?\s*)?(?:[^。！？]{0,40})?(?:任务|提醒)|安排\s*(?:(一\s*)?个?)?[^。！？]{0,50}任务|新建\s*(?:任务|待办)|建\s*(?:个|一\s*个)?\s*(?:任务|待办)|任务\s*[:：]|提醒我|待办|create\s+task)/i;
@@ -79,12 +80,30 @@ export function classifyClosedWriteIntent(message: string): ClassifiedWriteInten
     };
   }
 
-  // Explicit follow-up record creation outranks weekday-only schedule language.
+  // Explicit follow-up record creation outranks weekday-only schedule language,
+  // except pure future-only scheduling which must not fabricate an occurred contact.
   if (CREATE_FOLLOW_UP.test(text)) {
+    const interaction = classifyFollowUpVsSchedule(text);
+    if (interaction.kind === 'future_only') {
+      return {
+        intent: 'UPDATE_CUSTOMER_REQUEST',
+        tool_id: 'update_next_follow_up_time',
+        reason: '用户要求安排未来跟进时间，而不是记录已经发生的联系。',
+      };
+    }
     return {
       intent: 'CREATE_FOLLOW_UP_REQUEST',
       tool_id: 'create_follow_up_record',
       reason: '用户明确要求新增跟进记录。',
+    };
+  }
+
+  const scheduleOnly = classifyFollowUpVsSchedule(text);
+  if (scheduleOnly.kind === 'future_only' && isFutureScheduleWriteCommand(text)) {
+    return {
+      intent: 'UPDATE_CUSTOMER_REQUEST',
+      tool_id: 'update_next_follow_up_time',
+      reason: '用户要求安排未来跟进时间，而不是记录已经发生的联系。',
     };
   }
 
@@ -106,14 +125,21 @@ export function draftWriteFields(message: string, nowIso: string): WriteFieldDra
   const schedule = parseRelativeDateTime(original_instruction, nowIso);
   const parsed_fields: Record<string, unknown> = {};
   const missing: string[] = [];
+  // Schedule shown in any time clarification. Follow-ups must use the
+  // future-contact schedule ("周三再联系"), NOT the naive full-message parse,
+  // which mis-reads the narrative "今天没回复" as today's date.
+  let clarificationSchedule: ParsedSchedule | null = schedule;
 
   if (classified.tool_id === 'create_follow_up_record') {
+    const interaction = classifyFollowUpVsSchedule(original_instruction);
     const notes = extractFollowUpNotes(original_instruction);
     parsed_fields.title = '跟进记录';
-    if (notes) parsed_fields.feedback_notes = notes;
-    else missing.push('feedback_notes');
-    // Only treat future contact language as next_follow_up_at — not past-comms “今天…” narratives.
+    if (notes && !isScheduleOnlyFollowUpNote(notes)) parsed_fields.feedback_notes = notes;
+    else if (interaction.occurred_notes && !isScheduleOnlyFollowUpNote(interaction.occurred_notes)) {
+      parsed_fields.feedback_notes = interaction.occurred_notes;
+    } else missing.push('feedback_notes');
     const futureSchedule = extractFutureContactSchedule(original_instruction, nowIso);
+    clarificationSchedule = futureSchedule;
     if (futureSchedule) {
       if (futureSchedule.has_explicit_time) parsed_fields.next_follow_up_at = futureSchedule.iso;
       else {
@@ -141,7 +167,7 @@ export function draftWriteFields(message: string, nowIso: string): WriteFieldDra
   }
 
   const question = missing.includes('next_follow_up_time') || missing.includes('due_at_time')
-    ? buildTimeClarificationQuestion(schedule)
+    ? buildTimeClarificationQuestion(clarificationSchedule)
     : missing.includes('feedback_notes')
       ? '请补充这次跟进的具体内容（已发生的沟通要点）。'
       : missing.includes('due_at') || missing.includes('next_follow_up_at')
@@ -216,7 +242,7 @@ export function mergeClarificationAnswer(
   }
 
   const nextQuestion = missing.includes('next_follow_up_time') || missing.includes('due_at_time')
-    ? '下周一几点联系？'
+    ? '几点联系？'
     : missing.length
       ? '请继续补充缺失信息。'
       : null;
@@ -241,6 +267,9 @@ export function proposedValuesFromDraft(draft: WriteFieldDraft): Readonly<Record
     return {
       title: String(draft.parsed_fields.title ?? '跟进记录'),
       feedback_notes: String(draft.parsed_fields.feedback_notes ?? draft.original_instruction),
+      ...(typeof draft.parsed_fields.next_follow_up_at === 'string'
+        ? { next_follow_up_at: draft.parsed_fields.next_follow_up_at }
+        : {}),
     };
   }
   if (draft.tool_id === 'create_task') {
@@ -270,18 +299,36 @@ function extractFutureContactSchedule(message: string, nowIso: string): ParsedSc
   return parseRelativeDateTime(clause, nowIso);
 }
 
+function isFutureScheduleWriteCommand(text: string): boolean {
+  if (/文案|话术|草稿|模板|措辞|说辞|拟一句|生成一段|起草/.test(text)) return false;
+  if (isCurrentTurnScheduleDecision(text)) return true;
+  const compact = text.replace(/^(?:请|麻烦)?(?:帮我|给我)?(?:安排|设置)?/, '').trim();
+  if (isScheduleOnlyFollowUpNote(compact)) return true;
+  return compact.length <= 24 && /(?:联系|找他|找她)$/.test(compact);
+}
+
 function extractFollowUpNotes(message: string): string | null {
-  const explicit = message.match(/跟进记录\s*[:：]\s*(.+)$/);
-  if (explicit?.[1]?.trim()) return explicit[1].trim();
+  const explicit = message.match(/(?:跟进记录|记录跟进)\s*[:：]\s*(.+)$/);
+  if (explicit?.[1]?.trim()) {
+    const notes = explicit[1].trim();
+    const interaction = classifyFollowUpVsSchedule(notes);
+    if (interaction.kind === 'mixed' && interaction.occurred_notes) return interaction.occurred_notes;
+    if (isScheduleOnlyFollowUpNote(notes)) return null;
+    return notes;
+  }
   const after = message
-    .replace(/^(帮我|请)?\s*(写|新增|添加|记录|创建)\s*(一\s*)?条?\s*(客户)?\s*跟进(记录)?\s*[:：,，]?\s*/i, '')
+    .replace(/^(帮我|请)?\s*(写|新增|添加|记录|创建)\s*(?:一\s*)?[条个]?\s*(客户)?\s*跟进(记录)?\s*[:：,，]?\s*/i, '')
     .replace(/^log\s+a\s+follow\s*[- ]?up\s*[:：,]?\s*/i, '')
     .replace(/^[，,、：:\s]+/u, '')
     .trim();
-  if (after && after !== message.trim()) return after;
-  if (/客户表示|今天|已确认|沟通|反馈/.test(message)) return message.trim();
-  // Planning-only follow-up (“写一条跟进，下周一联系”) — keep the schedule clause as note, not empty.
-  if (/联系|跟进/.test(after || message)) return (after || '安排后续联系').replace(/^[，,、：:\s]+/u, '').trim();
+  if (after && after !== message.trim()) {
+    if (isScheduleOnlyFollowUpNote(after)) return null;
+    const interaction = classifyFollowUpVsSchedule(after);
+    if (interaction.kind === 'future_only') return null;
+    if (interaction.kind === 'mixed' && interaction.occurred_notes) return interaction.occurred_notes;
+    return after;
+  }
+  if (/客户表示|今天|已确认|沟通|反馈|没接/.test(message)) return message.trim();
   return null;
 }
 
@@ -295,7 +342,7 @@ function extractTaskTitle(message: string): string {
 
 function buildTimeClarificationQuestion(schedule: ParsedSchedule | null): string {
   if (schedule?.display) return `${schedule.display}几点联系？`;
-  return '下周一几点联系？';
+  return '几点联系？';
 }
 
 function withDefaultLocalTime(dateOnly: string, hours: number, minutes: number, nowIso: string): string {

@@ -3,14 +3,17 @@ import { FACT_APPLICABILITY_LABELS } from '../../lib/battleCardUi/battleCardLabe
 import { FeishuTalkTrackBlock } from './FeishuTalkTrackBlock';
 import { PeerReferencesBlock } from './PeerReferencesBlock';
 import { toTalkTrackView } from '../../lib/battleCardUi/battleCardViewModels';
+import { t } from '../../lib/i18n/appLocale';
+import { useAppLocale } from '../../lib/i18n/LocaleProvider';
 
 export function SolutionReferenceCardView({ solution }: { solution: SolutionReferenceCard }) {
+  useAppLocale();
   const talk = toTalkTrackView(solution.feishu_value_statement);
 
   return (
-    <article className="bc-card" data-testid="bc-solution-card" aria-label="解决方案与同行参照卡">
+    <article className="bc-card" data-testid="bc-solution-card" aria-label={t('battle.solutionCard')}>
       <header className="bc-card-header">
-        <h2>解决方案与同行参照卡</h2>
+        <h2>{t('battle.solutionCard')}</h2>
         <span className="bc-card-sub">{solution.solution_scenarios.length} 个场景 · {solution.peer_references.length} 家同行</span>
       </header>
       <div className="bc-card-body">
@@ -18,11 +21,11 @@ export function SolutionReferenceCardView({ solution }: { solution: SolutionRefe
 
         <section className="bc-section" data-testid="bc-scenarios">
           <h3 className="bc-section-title">
-            解决方案场景
+            {t('battle.scenarios')}
             <span className="bc-section-count">{solution.solution_scenarios.length}</span>
           </h3>
           {solution.solution_scenarios.length === 0 ? (
-            <p className="bc-section-body">暂无解决方案场景。</p>
+            <p className="bc-section-body">{t('battle.scenariosEmpty')}</p>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {solution.solution_scenarios.map((scenario, index) => (
@@ -34,12 +37,12 @@ export function SolutionReferenceCardView({ solution }: { solution: SolutionRefe
                     </span>
                   </div>
                   <div className="bc-peer-body">
-                    <div className="bc-detail-item"><span className="bc-detail-label">问题假设</span><span>{scenario.problem_hypothesis}</span></div>
-                    <div className="bc-detail-item"><span className="bc-detail-label">飞书角色</span><span>{scenario.feishu_role}</span></div>
-                    <div className="bc-detail-item"><span className="bc-detail-label">AI 角色</span><span>{scenario.ai_role}</span></div>
-                    <div className="bc-detail-item"><span className="bc-detail-label">人工门禁</span><span>{scenario.human_gate}</span></div>
-                    <div className="bc-detail-item"><span className="bc-detail-label">不替代的系统</span><span>{scenario.systems_not_replaced.join('、') || '—'}</span></div>
-                    <div className="bc-detail-item"><span className="bc-detail-label">验收指标</span><span>{scenario.acceptance_metrics.join('、') || '—'}</span></div>
+                    <div className="bc-detail-item"><span className="bc-detail-label">{t('battle.scenario.problem')}</span><span>{scenario.problem_hypothesis}</span></div>
+                    <div className="bc-detail-item"><span className="bc-detail-label">{t('battle.scenario.feishuRole')}</span><span>{scenario.feishu_role}</span></div>
+                    <div className="bc-detail-item"><span className="bc-detail-label">{t('battle.scenario.aiRole')}</span><span>{scenario.ai_role}</span></div>
+                    <div className="bc-detail-item"><span className="bc-detail-label">{t('battle.scenario.humanGate')}</span><span>{scenario.human_gate}</span></div>
+                    <div className="bc-detail-item"><span className="bc-detail-label">{t('battle.scenario.notReplaced')}</span><span>{scenario.systems_not_replaced.join('、') || '—'}</span></div>
+                    <div className="bc-detail-item"><span className="bc-detail-label">{t('battle.scenario.metrics')}</span><span>{scenario.acceptance_metrics.join('、') || '—'}</span></div>
                   </div>
                   {scenario.business_objects.length > 0 ? (
                     <div className="bc-peer-sources">
@@ -54,9 +57,9 @@ export function SolutionReferenceCardView({ solution }: { solution: SolutionRefe
         </section>
 
         <section className="bc-section" data-testid="bc-human-boundaries">
-          <h3 className="bc-section-title">人工确认门禁</h3>
+          <h3 className="bc-section-title">{t('battle.humanBoundaries')}</h3>
           {solution.human_review_boundaries.length === 0 ? (
-            <p className="bc-section-body">暂无人工确认门禁。</p>
+            <p className="bc-section-body">{t('battle.humanBoundariesEmpty')}</p>
           ) : (
             <ul className="bc-list">{solution.human_review_boundaries.map((item, index) => <li key={index}><span className="bc-list-main">{item}</span></li>)}</ul>
           )}
@@ -65,25 +68,25 @@ export function SolutionReferenceCardView({ solution }: { solution: SolutionRefe
         <PeerReferencesBlock peers={solution.peer_references} />
 
         <section className="bc-section" data-testid="bc-counterexamples">
-          <h3 className="bc-section-title">反例与边界</h3>
+          <h3 className="bc-section-title">{t('battle.counterexamples')}</h3>
           {solution.counterexamples_and_boundaries.length === 0 ? (
-            <p className="bc-section-body">暂无反例与边界。</p>
+            <p className="bc-section-body">{t('battle.counterexamplesEmpty')}</p>
           ) : (
             <ul className="bc-list">{solution.counterexamples_and_boundaries.map((item, index) => <li key={index}><span className="bc-list-main">{item}</span></li>)}</ul>
           )}
         </section>
 
         <section className="bc-section" data-testid="bc-poc">
-          <h3 className="bc-section-title">POC 路径</h3>
+          <h3 className="bc-section-title">{t('battle.poc')}</h3>
           {solution.poc_path.length === 0 ? (
-            <p className="bc-section-body">暂无 POC 路径。</p>
+            <p className="bc-section-body">{t('battle.pocEmpty')}</p>
           ) : (
             <ul className="bc-list">{solution.poc_path.map((step, index) => <li key={index}><span className="bc-list-main">{step}</span></li>)}</ul>
           )}
         </section>
 
         <section className="bc-section" data-testid="bc-acceptance-metrics">
-          <h3 className="bc-section-title">验收指标</h3>
+          <h3 className="bc-section-title">{t('battle.acceptanceMetrics')}</h3>
           <ul className="bc-list">{solution.acceptance_metrics.map((metric, index) => <li key={index}><span className="bc-list-main">{metric}</span></li>)}</ul>
         </section>
       </div>

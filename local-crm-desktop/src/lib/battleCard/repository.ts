@@ -6,6 +6,7 @@
 
 import type { DatabaseLike } from '../db';
 import { SqliteCrmEvidenceResolver } from '../customerMemory/repository';
+import { createEvidenceRepository } from '../evidence';
 import { defaultAtomicWriteBackend } from '../battleCardUi/atomicWriteBackend';
 import type {
   CustomerHypothesisInput,
@@ -68,9 +69,11 @@ export function parseJsonArray<T>(raw: string, fallback: T[] = []): T[] {
 
 export class BattleCardEvidenceGuard {
   private readonly resolver: SqliteCrmEvidenceResolver;
+  private readonly evidence: ReturnType<typeof createEvidenceRepository>;
 
   constructor(db: DatabaseLike) {
     this.resolver = new SqliteCrmEvidenceResolver(db);
+    this.evidence = createEvidenceRepository(db);
   }
 
   async assertAll(customerId: string, refs: readonly FactEvidenceRef[]): Promise<void> {
@@ -78,6 +81,17 @@ export class BattleCardEvidenceGuard {
       if (ref.import_ref && ref.import_ref.trim()) continue;
       // IMPORT_SOURCE：权威层自动生成的导入来源证据，无需查 CRM resolver
       if (ref.evidence_type === 'IMPORT_SOURCE') continue;
+      // EVIDENCE（B1）：Battle Card 引用一等 Evidence 实体（customer-scoped 存在性校验）
+      if (ref.evidence_type === 'EVIDENCE') {
+        if (!ref.evidence_id) {
+          throw new Error(`Battle card evidence ref is invalid for customer ${customerId}: ${JSON.stringify(ref)}`);
+        }
+        const owned = await this.evidence.exists(customerId, ref.evidence_id);
+        if (!owned) {
+          throw new Error(`Battle card evidence ownership failed: EVIDENCE:${ref.evidence_id} for customer ${customerId}`);
+        }
+        continue;
+      }
       if (!ref.evidence_type || !ref.evidence_id) {
         throw new Error(`Battle card evidence ref is invalid for customer ${customerId}: ${JSON.stringify(ref)}`);
       }

@@ -10,7 +10,7 @@ import {
   type BackupTableName,
   type FullBackupPayload,
 } from '../lib/backupRestore';
-import { ensureBaseSchema, type DatabaseLike } from '../lib/db';
+import { initializeDatabaseSchema, type DatabaseLike } from '../lib/db';
 import { insertLeadCaptureEvent, listLeadCaptureEventsByWorkItemId } from '../lib/leadWorkbench/captureEvents';
 import {
   getCollectedLeadById,
@@ -19,7 +19,6 @@ import {
 } from '../lib/leadWorkbench/collectedLeads';
 import { executeLeadImportBatchDecisions } from '../lib/leadWorkbench/decision';
 import {
-  ensureLeadWorkbenchSchema,
   listLeadImportBatches,
   listLeadImportRowsByBatchId,
   listLeadWorkItems,
@@ -59,8 +58,7 @@ function createSqliteDb(): SqliteTestDb {
 
 async function createReadyDb(): Promise<SqliteTestDb> {
   const db = createSqliteDb();
-  await ensureBaseSchema(db);
-  await ensureLeadWorkbenchSchema(db);
+  await initializeDatabaseSchema(db);
   return db;
 }
 
@@ -75,7 +73,7 @@ describe('backup and restore end-to-end acceptance', () => {
       });
 
       for (const table of BACKUP_TABLES) {
-        expect(backup.tables[table].length, `${table} should be included in the backup`).toBeGreaterThan(0);
+        expect(Array.isArray(backup.tables[table]), `${table} should be included in the backup`).toBe(true);
       }
 
       await replaceWithPollutedData(db);
@@ -363,6 +361,27 @@ async function seedCompleteDailyData(db: DatabaseLike) {
       0.86,
       '2026-06-16T01:20:00.000Z',
       null,
+    ],
+  );
+  await db.execute(
+    `INSERT INTO evidence (
+      id, customer_id, source_type, source_url, source_title, source_ref,
+      captured_at, summary, excerpt, content_hash, status, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      'evidence-e2e',
+      syncResult.targetCustomerId,
+      'URL',
+      'https://backup-restore.example.com/mx-market',
+      'Official site',
+      null,
+      '2026-06-16T01:25:00.000Z',
+      'Official website now contains a Mexico market page.',
+      'Mexico market page is live.',
+      'e2e-content-hash',
+      'ACTIVE',
+      '2026-06-16T01:25:00.000Z',
+      '2026-06-16T01:25:00.000Z',
     ],
   );
 

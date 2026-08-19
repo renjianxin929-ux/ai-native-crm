@@ -1,4 +1,5 @@
 import type { AgentSessionResult } from '../salesAgentTools/agentSession';
+import { t } from '../i18n/appLocale';
 
 export interface ProjectedRiskOpportunity {
   readonly risks: readonly string[];
@@ -14,6 +15,11 @@ export interface ProjectedEvidenceSummary {
   readonly kinds: readonly string[];
 }
 
+export interface ProjectedResultSection {
+  readonly title: string;
+  readonly body: string;
+}
+
 export interface ProjectedResultCards {
   readonly understanding: string;
   readonly risks: readonly string[];
@@ -21,6 +27,7 @@ export interface ProjectedResultCards {
   readonly nextSteps: readonly ProjectedNextStep[];
   readonly evidence: ProjectedEvidenceSummary;
   readonly headline: string;
+  readonly sections: readonly ProjectedResultSection[];
 }
 
 function splitList(text: string, max: number): string[] {
@@ -76,20 +83,82 @@ function inferEvidenceKinds(refs: readonly string[]): string[] {
 /** Compact 3–4 card projection for the unified result stage. */
 export function projectResultCards(result: AgentSessionResult): ProjectedResultCards {
   const structured = result.structured;
+  const intent = result.plan?.intent ?? '';
   const understanding = (structured?.customer_understanding || result.response || '').trim().slice(0, 280);
   const { risks, opportunities } = projectRisksAndOpportunities(structured?.risks_and_opportunities ?? '');
   const nextRaw = structured?.recommended_next_step ?? '';
   const nextSteps = splitList(nextRaw, 3).map(label => ({ label }));
   const refs = structured?.evidence_refs?.length ? structured.evidence_refs : result.evidence_refs;
-  return {
-    understanding: understanding || '已生成客户洞察摘要。',
+  const evidence: ProjectedEvidenceSummary = {
+    count: refs.length,
+    kinds: inferEvidenceKinds(refs),
+  };
+  const base = {
+    understanding: understanding || t('result.understandingFallback'),
     risks,
     opportunities,
     nextSteps,
-    evidence: {
-      count: refs.length,
-      kinds: inferEvidenceKinds(refs),
-    },
-    headline: understanding.split(/[。！？\n]/)[0]?.slice(0, 64) || 'Sales Agent 为你生成了洞察',
+    evidence,
   };
+
+  if (intent === 'NEXT_ACTION_PREPARATION') {
+    const conclusion = stripClaimPrefix(understanding) || t('result.nextFallback');
+    const actionBody = nextSteps.map(item => item.label).filter(Boolean).slice(0, 3).join('\n')
+      || stripClaimPrefix(nextRaw);
+    const support = [stripClaimPrefix(structured?.recent_changes ?? ''), evidence.count ? `${evidence.count} ${t('result.records')}` : '']
+      .filter(Boolean)
+      .join('；');
+    return {
+      ...base,
+      headline: t('agent.nextAction.title'),
+      sections: [
+        { title: t('agent.section.conclusion'), body: conclusion },
+        { title: t('agent.section.suggestedNext'), body: actionBody || t('result.humanReview') },
+        { title: t('agent.section.evidence'), body: support || t('result.keepRhythm') },
+      ],
+    };
+  }
+
+  if (intent === 'INTERACTION_SUMMARY') {
+    const progress = stripClaimPrefix(understanding);
+    const notes = stripClaimPrefix(structured?.recent_changes ?? '');
+    const nextBody = nextStepBodyForReview(nextRaw, notes, nextSteps);
+    return {
+      ...base,
+      headline: t('agent.review.title'),
+      sections: [
+        { title: t('agent.section.progress'), body: progress || t('result.noProgress') },
+        { title: t('agent.section.notes'), body: notes || t('result.noNotes') },
+        { title: t('agent.section.next'), body: nextBody },
+      ],
+    };
+  }
+
+  return {
+    ...base,
+    headline: t('agent.analysis.title'),
+    sections: [
+      { title: t('agent.section.judgement'), body: base.understanding },
+      { title: t('agent.section.risks'), body: [
+        risks.length ? `${risks.length} ${t('result.riskCount')}：${risks.join('、')}` : `0 ${t('result.riskCount')}`,
+        opportunities.length ? `${opportunities.length} ${t('result.oppCount')}：${opportunities.join('、')}` : `0 ${t('result.oppCount')}`,
+      ].join('\n') },
+      { title: t('agent.section.advice'), body: nextSteps.map(item => item.label).join('\n') || t('result.keepRhythm') },
+    ],
+  };
+}
+
+function stripClaimPrefix(text: string): string {
+  return text.replace(/【[^】]*】/g, '').trim();
+}
+
+function nextStepBodyForReview(
+  nextRaw: string,
+  notes: string,
+  nextSteps: readonly ProjectedNextStep[],
+): string {
+  const generic = /请人工复核后再决定下一步|保持跟进节奏|Review the facts|Keep the follow-up cadence/.test(nextRaw);
+  if (!generic && nextSteps.length > 0) return nextSteps.map(item => item.label).join('\n');
+  const fromNotes = notes.split(/[;；\n]/).map(part => part.trim()).find(part => /下一步|next step/i.test(part));
+  return fromNotes || (!generic ? nextRaw.trim() : t('result.decideFromProgress'));
 }

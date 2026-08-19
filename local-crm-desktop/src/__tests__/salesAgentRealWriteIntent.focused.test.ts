@@ -16,11 +16,11 @@ const intent = (message: string) => createAgentIntentEnvelope(message, '2026-07-
 
 describe('REAL write intent NL closure', () => {
   it('1-3: 写一条跟进 beats summary/draft and customer broad regex', () => {
-    expect(classifyClosedWriteIntent('帮我写一条跟进，下周一联系')?.intent).toBe('CREATE_FOLLOW_UP_REQUEST');
+    expect(classifyClosedWriteIntent('帮我写一条跟进，下周一联系')?.intent).toBe('UPDATE_CUSTOMER_REQUEST');
     const envelope = createAgentIntentEnvelope('帮我写一条跟进，下周一联系', new Date().toISOString());
     expect(intentFromEnvelope(envelope)).not.toBe('CUSTOMER_SUMMARY');
     expect(intentFromEnvelope(envelope)).not.toBe('FOLLOW_UP_DRAFT');
-    expect(deterministicPlanForEnvelope('c1', intent('帮我写一条跟进 下周一联系')).intent).toBe('CREATE_FOLLOW_UP_REQUEST');
+    expect(deterministicPlanForEnvelope('c1', intent('帮我写一条跟进 下周一联系')).intent).toBe('UPDATE_CUSTOMER_REQUEST');
     expect(deterministicPlanForEnvelope('c1', intent('总结客户现状')).intent).toBe('CUSTOMER_SUMMARY');
   });
 
@@ -47,7 +47,7 @@ describe('REAL write intent NL closure', () => {
     if (first.kind !== 'clarification_required') throw new Error('expected clarification');
     expect(first.clarification.original_instruction).toContain('写一条跟进');
     expect(first.clarification.question).toMatch(/几点/);
-    expect(first.clarification.pending_write_intent).toBe('CREATE_FOLLOW_UP_REQUEST');
+    expect(first.clarification.pending_write_intent).toBe('UPDATE_CUSTOMER_REQUEST');
     const draft = draftWriteFields('帮我写一条跟进，下周一联系', '2026-07-15T12:00:00+08:00')!;
     const merged = mergeClarificationAnswer(draft, '上午10:00', '2026-07-15T12:00:00+08:00');
     expect(merged.missing_fields).toEqual([]);
@@ -55,7 +55,7 @@ describe('REAL write intent NL closure', () => {
     const second = await session.submit(intent('上午10:00'));
     expect(second.kind).toBe('write_proposal');
     if (second.kind !== 'write_proposal') throw new Error('expected proposal');
-    expect(second.proposal.tool_id).toBe('create_follow_up_record');
+    expect(second.proposal.tool_id).toBe('update_next_follow_up_time');
     expect(second.proposal.requires_confirmation).toBe(true);
     expect(second.proposal.executable).toBe(false);
   });
@@ -65,7 +65,7 @@ describe('REAL write intent NL closure', () => {
     expect(interactionSource).toContain('controller.submit');
     expect(interactionSource).toContain('agent-confirm-card');
     expect(interactionSource).toContain('取消');
-    expect(interactionSource).toContain('确认新增');
+    expect(interactionSource).toContain('projectConfirmationCard');
     expect(interactionSource).toContain('agent-clarification-card');
     expect(interactionSource).toContain('confirmSalesAgentProposal(session, confirmedProposal, async () =>');
     expect(resolveUnifiedAgentStageMode({
@@ -80,6 +80,8 @@ describe('REAL write intent NL closure', () => {
     await session.submit(intent('帮我写一条跟进，下周一联系'));
     const proposalTurn = await session.submit(intent('下午3:00'));
     expect(proposalTurn.kind).toBe('write_proposal');
+    if (proposalTurn.kind !== 'write_proposal') throw new Error('expected proposal');
+    expect(String(proposalTurn.proposal.proposed_values.next_follow_up_at)).toMatch(/T15:00/);
   });
 
   it('14-15: write path never emits English grade mock; visible write flow is Chinese', async () => {
@@ -109,18 +111,15 @@ describe('REAL write intent NL closure', () => {
     await session2.submit(intent('帮我写一条跟进，下周一联系'));
     const again = await session2.submit(intent('上午10:00'));
     if (again.kind !== 'write_proposal') throw new Error('proposal');
+    expect(again.proposal.tool_id).toBe('update_next_follow_up_time');
     const refresh = vi.fn(async () => undefined);
     await confirmSalesAgentProposal(session2, again.proposal, refresh, boundary);
     expect(refresh).toHaveBeenCalledTimes(1);
-    expect(fixture.sqlite.prepare('SELECT COUNT(*) AS c FROM follow_up_records WHERE customer_id=?').get('customer-1')).toEqual({ c: 1 });
-    const row = fixture.sqlite.prepare('SELECT customer_id,title,feedback_notes,next_follow_up_at FROM follow_up_records WHERE customer_id=?').get('customer-1') as {
-      customer_id: string; title: string; feedback_notes: string; next_follow_up_at: string;
-    };
-    expect(row.customer_id).toBe('customer-1');
-    expect(row.title).toBe('跟进记录');
-    expect(row.feedback_notes).toContain('下周一');
+    expect(fixture.sqlite.prepare('SELECT COUNT(*) AS c FROM follow_up_records WHERE customer_id=?').get('customer-1')).toEqual({ c: 0 });
+    const scheduled = fixture.sqlite.prepare('SELECT next_follow_up_at FROM customers WHERE id=?').get('customer-1') as { next_follow_up_at: string };
+    expect(scheduled.next_follow_up_at).toMatch(/T10:00/);
     await expect(confirmSalesAgentProposal(session2, again.proposal, refresh, boundary)).rejects.toThrow(/replay|Confirmation|nonce|Unknown/i);
-    expect(fixture.sqlite.prepare('SELECT COUNT(*) AS c FROM follow_up_records WHERE customer_id=?').get('customer-1')).toEqual({ c: 1 });
+    expect(fixture.sqlite.prepare('SELECT COUNT(*) AS c FROM follow_up_records WHERE customer_id=?').get('customer-1')).toEqual({ c: 0 });
     expect(interactionSource).toContain('onRefresh');
     const workspaceSource = readFileSync('src/components/aiNative/AINativeCRMWorkspace.tsx', 'utf8');
     expect(workspaceSource).toContain('createProductionRefreshCoordinator');
@@ -207,8 +206,8 @@ describe('REAL write intent NL closure', () => {
     expect(JSON.stringify(turn)).not.toContain('graded A with HIGH intent');
     const continued = await controller.submit('上午10:00');
     expect(continued.state.phase).toBe('proposal');
-    expect(continued.state.current_intent).toBe('CREATE_FOLLOW_UP_REQUEST');
-    expect(continued.state.latest_proposal?.tool_id).toBe('create_follow_up_record');
+    expect(continued.state.current_intent).toBe('UPDATE_CUSTOMER_REQUEST');
+    expect(continued.state.latest_proposal?.tool_id).toBe('update_next_follow_up_time');
     fixture.close();
   });
 });

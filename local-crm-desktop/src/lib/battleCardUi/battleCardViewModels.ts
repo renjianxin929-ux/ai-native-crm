@@ -297,3 +297,63 @@ export function evidenceFreshnessLabel(evidenceChanges: readonly string[]): stri
   if (evidenceChanges.length > 0) return '有变化';
   return '无变化';
 }
+
+const PRE_VISIT_STAGE_CODES = new Set([
+  'NEW_LEAD',
+  'CONTACTED',
+  'WECHAT_PASSED',
+  'REPLIED',
+  'VISIT_READY',
+]);
+
+export type BattleCardCoherence =
+  | { readonly kind: 'no_card' }
+  | { readonly kind: 'current' }
+  | { readonly kind: 'stale'; readonly reason: 'stage_mismatch' | 'visit_past_card_stage'; readonly user_message: string };
+
+/**
+ * Battle Card is a stage snapshot. CustomerStage remains the CRM authority.
+ * When CRM facts have moved past the card, the UI must mark the card outdated
+ * instead of presenting first-contact advice as current truth.
+ */
+export function evaluateBattleCardCoherence(input: {
+  readonly customerStage: string;
+  readonly cardStageCode: string | null;
+  readonly hasVisit: boolean;
+}): BattleCardCoherence {
+  if (!input.cardStageCode) return { kind: 'no_card' };
+  if (input.cardStageCode !== input.customerStage) {
+    return {
+      kind: 'stale',
+      reason: 'stage_mismatch',
+      user_message: '当前作战卡已过时：客户阶段已变化，请重新生成作战卡。',
+    };
+  }
+  if (input.hasVisit && PRE_VISIT_STAGE_CODES.has(input.cardStageCode)) {
+    return {
+      kind: 'stale',
+      reason: 'visit_past_card_stage',
+      user_message: '当前作战卡已过时：客户已有面访记录，不再处于首次触达阶段。请重新生成作战卡。',
+    };
+  }
+  return { kind: 'current' };
+}
+
+/** First-screen battle-card projection. Canonical payload is unchanged. */
+export const BATTLE_CARD_PRIMARY_SECTION_IDS = [
+  'bc-current-situation',
+  'bc-stage-goal',
+  'bc-risks',
+  'bc-next-best-action',
+  'bc-signals',
+] as const;
+
+export const BATTLE_CARD_SECONDARY_SECTION_IDS = [
+  'bc-stage-conditions',
+  'bc-confirmed-facts',
+  'bc-key-hypotheses',
+  'bc-target-roles',
+  'bc-must-ask',
+  'bc-do-not-say',
+  'bc-changes',
+] as const;

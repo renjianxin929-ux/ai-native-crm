@@ -49,6 +49,7 @@ class TransactionalRestoreDb implements DatabaseLike {
   public store: Store;
   public statements: string[] = [];
   public failOnSql?: (sql: string) => boolean;
+  private txnSnapshot: Store | null = null;
 
   constructor(initialStore: Store) {
     this.store = cloneStore(initialStore);
@@ -73,6 +74,23 @@ class TransactionalRestoreDb implements DatabaseLike {
 
     if (this.failOnSql?.(sql)) {
       throw new Error(`forced failure for ${sql}`);
+    }
+
+    if (/^BEGIN\b/i.test(sql)) {
+      this.txnSnapshot = cloneStore(this.store);
+      return { rowsAffected: 0 };
+    }
+    if (/^COMMIT\b/i.test(sql)) {
+      this.txnSnapshot = null;
+      return { rowsAffected: 0 };
+    }
+    if (/^ROLLBACK\b/i.test(sql)) {
+      if (this.txnSnapshot) this.store = cloneStore(this.txnSnapshot);
+      this.txnSnapshot = null;
+      return { rowsAffected: 0 };
+    }
+    if (/^PRAGMA\b/i.test(sql)) {
+      return { rowsAffected: 0 };
     }
 
     const deleteTable = sql.match(/^DELETE FROM (\w+)$/)?.[1] as BackupTableName | undefined;
@@ -124,20 +142,21 @@ describe('restoreBackupPayloadWithDb', () => {
     expect(result.restoredCounts.lead_sync_logs).toBe(1);
   });
 
-  it('uses delete and insert order without unsafe cross-connection transaction statements', async () => {
+  it('uses a same-connection transaction with dependency-safe delete then insert', async () => {
     const db = new TransactionalRestoreDb(createStore('old'));
 
     await restoreBackupPayloadWithDb(db, createCompletePayload());
 
-    expect(db.statements.slice(0, 12)).toEqual(
+    expect(db.statements[0]).toBe('BEGIN IMMEDIATE');
+    expect(db.statements[1]).toBe('PRAGMA defer_foreign_keys = ON');
+    const tableCount = getRestoreTableOrder().length;
+    expect(db.statements.slice(2, 2 + tableCount)).toEqual(
       getRestoreDeleteOrder().map((table) => `DELETE FROM ${table}`),
     );
-    expect(db.statements.slice(12, 24).map((sql) => sql.match(/^INSERT OR REPLACE INTO (\w+)/)?.[1])).toEqual(
+    expect(db.statements.slice(2 + tableCount, 2 + tableCount * 2).map((sql) => sql.match(/^INSERT OR REPLACE INTO (\w+)/)?.[1])).toEqual(
       getRestoreTableOrder(),
     );
-    expect(db.statements).not.toContain('BEGIN');
-    expect(db.statements).not.toContain('COMMIT');
-    expect(db.statements).not.toContain('ROLLBACK');
+    expect(db.statements.at(-1)).toBe('COMMIT');
   });
 
   it('restores legacy backups and treats missing new tables as empty arrays', async () => {
@@ -217,7 +236,7 @@ describe('restoreBackupPayloadWithDb', () => {
 
     await expect(restoreBackupPayloadWithDb(db, createCompletePayload())).rejects.toThrow('Restore failed and rolled back');
 
-    expect(db.statements).not.toContain('ROLLBACK');
+    expect(db.statements).toContain('ROLLBACK');
     expect(db.store).toEqual(before);
   });
 

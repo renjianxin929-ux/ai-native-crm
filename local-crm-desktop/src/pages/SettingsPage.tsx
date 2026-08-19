@@ -12,6 +12,8 @@ import {
   type NormalizedBackupPayload,
   type RestoreBackupResult,
 } from '../lib/backupRestore';
+import { getAppLocale, setAppLocale, t } from '../lib/i18n/appLocale';
+import { useAppLocale } from '../lib/i18n/LocaleProvider';
 
 export type RestorePreview = {
   rawPayload: unknown;
@@ -176,6 +178,7 @@ export async function runRestoreWithPreRestoreBackup(input: {
 
 export default function SettingsPage() {
   const navigate = useNavigate();
+  useAppLocale();
   const [msg, setMsg] = useState('');
   const [dbPath, setDbPath] = useState<string>('');
   const [restoreWarning, setRestoreWarning] = useState(false);
@@ -351,9 +354,21 @@ export default function SettingsPage() {
           <section className="glass-card" aria-label="外观与辅助功能">
             <h3 className="section-title"><Monitor size={16} style={{ marginRight: 6, verticalAlign: 'middle' }} />外观与辅助功能</h3>
             <p style={{ color: 'var(--text-secondary)', fontSize: 14, marginBottom: 12 }}>
-              界面采用 AI-native 浅色渐变设计系统，与 Sales Agent 工作台保持一致。
+              {t('settings.languageHelp')}
             </p>
-            <span className="status-pill ok">减少动态效果遵循系统偏好</span>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 14, color: 'var(--text-secondary)' }}>
+              {t('settings.language')}
+              <select
+                aria-label={t('settings.language')}
+                value={getAppLocale()}
+                onChange={event => setAppLocale(event.target.value === 'en-US' ? 'en-US' : 'zh-CN')}
+                style={{ minHeight: 40, padding: '0 12px', border: '1px solid var(--border)', borderRadius: 12, maxWidth: 240 }}
+              >
+                <option value="zh-CN">{t('settings.zh')}</option>
+                <option value="en-US">{t('settings.en')}</option>
+              </select>
+            </label>
+            <span className="status-pill ok" style={{ marginTop: 12 }}>减少动态效果遵循系统偏好</span>
             <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: '12px 0 0' }}>
               当操作系统开启「减少动态效果」时，Sales Agent 动效与过渡会自动降级。
             </p>

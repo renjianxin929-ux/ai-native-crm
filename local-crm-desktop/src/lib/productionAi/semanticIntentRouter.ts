@@ -1,10 +1,19 @@
 import type { SemanticIntentResolution } from '../salesAgentTools/agentIntentEnvelope';
 
+export interface SemanticIntentRoutingContext {
+  readonly has_selected_customer: boolean;
+  readonly has_previous_reasoning: boolean;
+  readonly has_previous_review: boolean;
+}
+
 export interface SemanticIntentHostCall {
   readonly capability: 'SEMANTIC_INTENT_ROUTING';
   readonly schema: 'semantic_intent_v1';
   readonly instruction: string;
   readonly envelope_id: string;
+  readonly has_selected_customer: boolean;
+  readonly has_previous_reasoning: boolean;
+  readonly has_previous_review: boolean;
 }
 
 export type SemanticIntentHost = (call: SemanticIntentHostCall, signal?: AbortSignal) => Promise<unknown>;
@@ -12,14 +21,28 @@ export type SemanticIntentHost = (call: SemanticIntentHostCall, signal?: AbortSi
 const INTENTS = [
   'CUSTOMER_SUMMARY', 'CUSTOMER_RISK_ANALYSIS', 'NEXT_ACTION_RECOMMENDATION', 'FOLLOW_UP_DRAFT',
   'INTERACTION_SUMMARY', 'COMPLEX_CUSTOMER_COMPARE', 'IMAGE_CAPTURE_ANALYSIS',
-  'CUSTOMER_PRIORITY_RANKING',
+  'CUSTOMER_PRIORITY_RANKING', 'CUSTOMER_TIMELINE_REVIEW', 'BATTLE_CARD_ANALYSIS',
+  'ACTION_FROM_PREVIOUS_RESULT',
   'CLARIFICATION_REQUIRED', 'UNSUPPORTED',
 ] as const;
 
 /** Closed, non-actionable semantic routing adapter. It cannot return tools, SQL, writes or proposals. */
 export function createSemanticIntentRouter(host: SemanticIntentHost) {
-  return async (instruction: string, envelopeId: string, signal?: AbortSignal): Promise<SemanticIntentResolution> => {
-    const call = { capability: 'SEMANTIC_INTENT_ROUTING' as const, schema: 'semantic_intent_v1' as const, instruction, envelope_id: envelopeId };
+  return async (
+    instruction: string,
+    envelopeId: string,
+    signal?: AbortSignal,
+    routingContext?: SemanticIntentRoutingContext,
+  ): Promise<SemanticIntentResolution> => {
+    const call: SemanticIntentHostCall = {
+      capability: 'SEMANTIC_INTENT_ROUTING',
+      schema: 'semantic_intent_v1',
+      instruction,
+      envelope_id: envelopeId,
+      has_selected_customer: routingContext?.has_selected_customer === true,
+      has_previous_reasoning: routingContext?.has_previous_reasoning === true,
+      has_previous_review: routingContext?.has_previous_review === true,
+    };
     const raw = signal ? await host(call, signal) : await host(call);
     return validateSemanticIntentResponse(raw);
   };

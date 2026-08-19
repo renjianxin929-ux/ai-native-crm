@@ -1,8 +1,11 @@
 ﻿/**
  * Explicit NL → CRM field normalization for Sales Agent customer search.
  * Maps product language onto real schema fields only (region, customer_grade, stage, …).
+ * Place-token vs name-search is owned by interpretCustomerQuery (one central seam).
  * Never equates grade with stage, city with invented columns, or A-class with NEW_LEAD.
  */
+
+import { interpretCustomerQuery, KNOWN_REGION_TOKENS, isLastContactQuestion } from '../planner/customerQueryInterpretation';
 
 export interface NormalizedCustomerSearchFilters {
   /** Name / alias substring match against customers.name */
@@ -39,12 +42,7 @@ export interface FilterNormalizationResult {
   readonly is_scoped_analysis: boolean;
 }
 
-const KNOWN_REGIONS = [
-  '东莞', '广州', '深圳', '佛山', '中山', '珠海', '惠州', '江门', '肇庆',
-  '上海', '北京', '杭州', '苏州', '南京', '成都', '武汉', '西安', '天津',
-  '重庆', '青岛', '大连', '厦门', '福州', '长沙', '郑州', '合肥', '宁波',
-  '华南', '华北', '华东', '华西', '华中', '西南', '东北',
-] as const;
+const KNOWN_REGIONS = KNOWN_REGION_TOKENS;
 
 const KNOWN_INDUSTRIES = [
   '机械设备', '新能源', '生物', '医疗', '制造', '贸易', '电子', '软件',
@@ -80,7 +78,7 @@ function extractIndustry(message: string): string | undefined {
 }
 
 function extractGrade(message: string): string | undefined {
-  const match = message.match(/([ABCD])\s*类/);
+  const match = message.match(/([ABCD])\s*[类级]/);
   if (match) return match[1];
   const english = message.match(/\bgrade\s*[=:]?\s*([ABCD])\b/i);
   if (english) return english[1]!.toUpperCase();
@@ -214,15 +212,16 @@ export function normalizeCustomerSearchFilters(message: string, nowIso?: string)
     unsupported.push('confidence_percent');
   }
 
-  let region = extractRegion(trimmed);
-  let industry = extractIndustry(trimmed);
-  const customer_grade = extractGrade(trimmed);
+  const place = interpretCustomerQuery(trimmed, { industry: extractIndustry(trimmed) });
+  let industry = place.industry ?? extractIndustry(trimmed);
+  const customer_grade = extractGrade(trimmed) ?? place.customer_grade;
   const intent_level = extractIntent(trimmed);
   const inactive_days = extractInactiveDays(trimmed);
   const stage = extractStage(trimmed);
   const is_explicit_switch = /切换到|切换至|切到(?:客户)?|切换客户到|把当前客户换成/.test(trimmed);
   const is_clear_scope = CLEAR_SCOPE.test(trimmed);
   const is_scoped_analysis = SCOPED_ANALYSIS.test(trimmed) && !LOOKUP_VERB.test(trimmed) && !is_explicit_switch;
+  const regionToken = extractRegion(trimmed);
 
   const extractedMarkedRaw = extractQuotedOrMarkedName(trimmed);
   // A whole utterance that is itself a company name (no lookup verb / no browse
@@ -236,7 +235,7 @@ export function normalizeCustomerSearchFilters(message: string, nowIso?: string)
     markedRaw
       && /(?:客户|公司|企业)\s*$/.test(markedRaw)
       && stripFilterTokens(markedRaw, {
-        region,
+        region: place.region,
         industry,
         customer_grade,
         intent_level,
@@ -247,39 +246,40 @@ export function normalizeCustomerSearchFilters(message: string, nowIso?: string)
   // Company-name lookups may embed region/industry tokens (华南生物) — do not treat those as structural filters.
   const markedNameEntityBoundary = wholeCompanyNameCandidate
     || LOOKUP_VERB.test(trimmed)
-    || Boolean(markedRaw && region && markedRaw.startsWith(region) && !/[的得做]/.test(markedRaw));
+    || Boolean(markedRaw && regionToken && markedRaw.startsWith(regionToken) && !/[的得做]/.test(markedRaw));
   if (markedRaw && markedNameEntityBoundary && !markedRawIsStructuredPortfolioTarget && !/[的得做]/.test(markedRaw)) {
-    // A whole utterance that is itself the company name is an explicit entity
-    // boundary: every embedded region/industry token belongs to the name
-    // ("广州生物科技有限公司" must not keep industry=生物 and AND it dead).
     if (wholeCompanyNameCandidate) {
-      region = undefined;
       industry = undefined;
-    } else {
-      if (region && markedRaw.length > region.length + 1
-        && (isDirectEntityLookup || markedRaw.startsWith(region))) {
-        region = undefined;
-      }
-      if (industry && markedRaw.length > industry.length + 1
-        && (isDirectEntityLookup || markedRaw.endsWith(industry))) {
-        industry = undefined;
-      }
+    } else if (industry && markedRaw.length > industry.length + 1
+      && (isDirectEntityLookup || markedRaw.endsWith(industry))) {
+      industry = undefined;
     }
   }
+  const region = place.explicit_region ? place.region : undefined;
+  if (place.industry && !wholeCompanyNameCandidate) industry = place.industry;
   const structural = Boolean(region || industry || customer_grade || intent_level || inactive_days || stage);
-  // Prefer structured filters — do not treat "广州做机械设备的" or "东莞的 A 类" as a customer name.
+  // Prefer the central interpretation seam for name vs region. Quoted / whole-company
+  // / direct-entity lookups may still override with the full entity span.
   let name_query: string | undefined;
+  if (place.name_query && !place.explicit_region) {
+    name_query = place.name_query;
+  }
   if ((hasExplicitQuotedName || isDirectEntityLookup || wholeCompanyNameCandidate) && markedRaw) {
     // Quotation / direct-entity verb / whole-utterance-company-name is an explicit
     // entity boundary. Preserve the full company name even when it contains
     // region/industry vocabulary (华南生物, 广州生物科技有限公司). A leading
     // analysis verb ("总结一下…") is not part of the entity name and must be
     // stripped, otherwise the LIKE match against customers.name can never hit.
-    name_query = wholeCompanyNameCandidate ? stripLeadingAnalysisPrefix(markedRaw) : markedRaw;
+    const cleaned = wholeCompanyNameCandidate ? stripLeadingAnalysisPrefix(markedRaw) : markedRaw;
+    // Trailing task language ("分析一下" / "，然后总结") is not part of the CRM name.
+    // Prefer the already-extracted company span when it is a prefix of the capture.
+    name_query = place.name_query && cleaned.startsWith(place.name_query)
+      ? place.name_query
+      : cleaned;
     if (name_query.length < 2) name_query = undefined;
-  } else if (!structural && markedRaw) {
+  } else if (!name_query && !structural && markedRaw && !markedRawIsStructuredPortfolioTarget) {
     name_query = markedRaw;
-  } else if (markedRaw && structural) {
+  } else if (!name_query && markedRaw && structural) {
     const leftover = stripFilterTokens(markedRaw, {
       region,
       industry,
@@ -292,7 +292,7 @@ export function normalizeCustomerSearchFilters(message: string, nowIso?: string)
     if (leftover.length >= 4 && !/^[的了吗呢着过做]+$/.test(leftover)) {
       name_query = leftover;
     }
-  } else if (!structural) {
+  } else if (!name_query && !structural) {
     const leftover = stripFilterTokens(trimmed, {});
     if (leftover.length >= 2 && LOOKUP_VERB.test(trimmed)) {
       name_query = leftover;
@@ -304,14 +304,15 @@ export function normalizeCustomerSearchFilters(message: string, nowIso?: string)
     name_query = undefined;
   }
 
-  // Portfolio = list/browse intent without a single company entity to bind.
-  // "帮我找一下广州的客户" / region+industry(+grade) without company name → portfolio.
-  const portfolioPhrase = PORTFOLIO.test(trimmed) || /有哪些客户|客户列表|哪些.*客户/.test(trimmed);
-  const hasStructuralBrowse = Boolean(region || industry || customer_grade || intent_level || inactive_days);
+  // List mode is independent of name_query: “广州客户有哪些” is a list WITH name_query.
+  const portfolioPhrase = PORTFOLIO.test(trimmed) || /有哪些客户|客户列表|哪些.*客户/.test(trimmed) || place.list_mode;
+  const hasStructuralBrowse = Boolean(region || industry || (!place.name_query && (customer_grade || intent_level || inactive_days)));
   const is_portfolio_query =
     !is_explicit_switch
-    && !name_query
-    && (portfolioPhrase || hasStructuralBrowse);
+    && place.mode !== 'direct_fact'
+    && !wholeCompanyNameCandidate
+    && !isDirectEntityLookup
+    && (place.list_mode || portfolioPhrase || (hasStructuralBrowse && !name_query));
 
   const filters: NormalizedCustomerSearchFilters = {
     ...(name_query ? { name_query } : {}),
@@ -329,7 +330,7 @@ export function normalizeCustomerSearchFilters(message: string, nowIso?: string)
     !is_clear_scope
     && !is_scoped_analysis
     && !is_portfolio_query
-    && (Boolean(name_query) || is_explicit_switch || (LOOKUP_VERB.test(trimmed) && Boolean(name_query)));
+    && (Boolean(name_query) || is_explicit_switch || place.mode === 'direct_fact' || (LOOKUP_VERB.test(trimmed) && Boolean(name_query)));
 
   // Portfolio filters still count as a customer-search action for routing
   const is_search_action =
@@ -357,14 +358,35 @@ export function normalizeCustomerSearchFilters(message: string, nowIso?: string)
   };
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function remainingInstructionAfterNamedBind(pending: string, nameQuery: string): string {
+  const escaped = escapeRegExp(nameQuery);
+  return pending.replace(
+    new RegExp(`^(?:请|麻烦)?(?:帮我|给我)?\\s*(?:打开客户?|打开|定位客户?|定位|切到客户?|切到|切换到|切换至|切换客户到|把当前客户换成|找一下|查找)?\\s*${escaped}[，,。.\\s]*(?:然后)?\\s*`),
+    '',
+  ).trim();
+}
+
 /** After bind, search-only prompts resume as a customer summary objective. */
 export function resumeInstructionAfterScope(pending: string): string {
   const trimmed = pending.trim();
+  if (isLastContactQuestion(trimmed)) return trimmed;
   // Never rewrite closed write intents into a generic summary.
   if (/(写\s*(一\s*)?条\s*跟进|新增\s*.*跟进|添加\s*.*跟进|创建\s*.*任务|提醒我|更新\s*下次|修改\s*下次|跟进记录|create\s+task|log\s+a\s+follow|set\s+next\s+follow)/i.test(trimmed)) {
     return trimmed;
   }
   const norm = normalizeCustomerSearchFilters(pending);
+  const nameQuery = norm.filters.name_query?.trim();
+  if (nameQuery) {
+    const remaining = remainingInstructionAfterNamedBind(trimmed, nameQuery);
+    if (remaining && remaining !== trimmed) {
+      if (/^(?:请)?(?:总结|分析|概括)(?:一下|下)?$/.test(remaining)) return '总结客户现状';
+      return remaining;
+    }
+  }
   if (norm.is_customer_lookup && !norm.is_scoped_analysis && !/总结|分析|整理|准备|下一步/.test(pending)) {
     return '总结客户现状';
   }

@@ -1,5 +1,7 @@
 import type { KeyHypothesisView } from '../../lib/battleCardUi/battleCardViewModels';
 import { FACT_APPLICABILITY_SHORT, HYPOTHESIS_STATUS_LABELS } from '../../lib/battleCardUi/battleCardLabels';
+import { t } from '../../lib/i18n/appLocale';
+import { useAppLocale } from '../../lib/i18n/LocaleProvider';
 
 export interface KeyHypothesisBlockProps {
   readonly hypotheses: readonly KeyHypothesisView[];
@@ -8,10 +10,11 @@ export interface KeyHypothesisBlockProps {
 }
 
 export function KeyHypothesisBlock({ hypotheses, onUpdateStatus }: KeyHypothesisBlockProps) {
+  useAppLocale();
   return (
-    <section className="bc-section" data-testid="bc-key-hypotheses" aria-label="三个关键假设">
+    <section className="bc-section" data-testid="bc-key-hypotheses" aria-label={t('battle.hypotheses')}>
       <h3 className="bc-section-title">
-        三个关键假设
+        {t('battle.hypotheses')}
         <span className="bc-section-count">{hypotheses.length}</span>
       </h3>
       <div className="bc-hypotheses">
@@ -43,13 +46,13 @@ export function KeyHypothesisBlock({ hypotheses, onUpdateStatus }: KeyHypothesis
               <>
                 <div className="bc-hypothesis-detail">
                   {hypothesis.why_it_matters ? (
-                    <div className="bc-detail-item"><span className="bc-detail-label">为什么重要</span><span>{hypothesis.why_it_matters}</span></div>
+                    <div className="bc-detail-item"><span className="bc-detail-label">{t('battle.hyp.why')}</span><span>{hypothesis.why_it_matters}</span></div>
                   ) : null}
                   {hypothesis.validation_question ? (
-                    <div className="bc-detail-item"><span className="bc-detail-label">怎么验证</span><span>{hypothesis.validation_question}</span></div>
+                    <div className="bc-detail-item"><span className="bc-detail-label">{t('battle.hyp.verify')}</span><span>{hypothesis.validation_question}</span></div>
                   ) : null}
                   {hypothesis.disconfirm_condition ? (
-                    <div className="bc-detail-item"><span className="bc-detail-label">什么情况会推翻</span><span>{hypothesis.disconfirm_condition}</span></div>
+                    <div className="bc-detail-item"><span className="bc-detail-label">{t('battle.hyp.disconfirm')}</span><span>{hypothesis.disconfirm_condition}</span></div>
                   ) : null}
                   <div className="bc-detail-item"><span className="bc-detail-label">Evidence</span><span>{hypothesis.evidence_count} 条</span></div>
                 </div>
@@ -61,13 +64,13 @@ export function KeyHypothesisBlock({ hypotheses, onUpdateStatus }: KeyHypothesis
                       data-testid={`bc-hyp-update-${index}`}
                       onClick={() => onUpdateStatus(hypothesis.hypothesis_id)}
                     >
-                      更新假设状态
+                      {t('battle.hyp.update')}
                     </button>
                   </div>
                 ) : null}
               </>
             ) : (
-              <p className="bc-hypothesis-detail">该占位不可编辑；请补充信息后重新生成作战卡。</p>
+              <p className="bc-hypothesis-detail">{t('battle.hyp.placeholder')}</p>
             )}
           </article>
         ))}
