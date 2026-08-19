@@ -6,8 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { buildFullBackupPayload, restoreBackupPayloadWithDb } from '../lib/backupRestore';
 import { createDraftFromCallAnalysis } from '../lib/aiDraft';
-import { ensureBaseSchema, ensureCustomerSchema, type DatabaseLike } from '../lib/db';
-import { ensureEvidenceSchema } from '../lib/evidence';
+import { initializeDatabaseSchema, type DatabaseLike } from '../lib/db';
 import { insertLeadCaptureEvent, listLeadCaptureEventsByWorkItemId } from '../lib/leadWorkbench/captureEvents';
 import {
   getCollectedLeadById,
@@ -16,7 +15,6 @@ import {
 } from '../lib/leadWorkbench/collectedLeads';
 import { executeLeadImportBatchDecisions } from '../lib/leadWorkbench/decision';
 import {
-  ensureLeadWorkbenchSchema,
   listLeadImportRowsByBatchId,
   listLeadWorkItems,
   listLeadWorkItemsByBatchId,
@@ -66,6 +64,8 @@ describe('CRM full release gate with independent on-disk SQLite connections', ()
         'tasks',
         'settings',
         'ai_drafts',
+        'ai_memory_entries',
+        'customer_stage_cards',
         'lead_import_batches',
         'lead_import_rows',
         'lead_work_items',
@@ -322,10 +322,7 @@ function createIndependentConnectionDb(): ReleaseGateDb {
 }
 
 async function initializeReleaseGateDb(db: DatabaseLike): Promise<void> {
-  await ensureBaseSchema(db);
-  await ensureCustomerSchema(db);
-  await ensureLeadWorkbenchSchema(db);
-  await ensureEvidenceSchema(db);
+  await initializeDatabaseSchema(db);
 }
 
 function createSparse80Rows(round: number) {

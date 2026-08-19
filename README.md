@@ -1,149 +1,206 @@
 # AI Native CRM
 
-Local-first, agent-oriented CRM foundation for building AI-native sales workflows.
+**An experimental Agent-First CRM where you work by intent, not by clicking through CRM screens.**
 
-## What It Is
+> Most CRMs make humans operate software.
+> AI Native CRM explores the opposite:
+> let the Agent operate the CRM, while humans stay in control.
 
-AI Native CRM 是一个本地优先的实验性开源 CRM，
-目标不是简单在 CRM 旁边增加聊天框，
-而是逐步探索 Agent 成为主要 CRM 操作者的产品架构。
+> 传统 CRM 让人操作系统。
+> AI Native CRM 想反过来：
+> 让 Agent 成为主要操作入口，人负责判断、确认与关系。
 
-V0.1 是基础版本。
+**Agent-First CRM · Local-First · Human-Controlled · Built for AI-native sales workflows**
 
-## Current V0.1 Capabilities
+## Why this project exists
 
-- Customer / Contact / Context
-- Timeline / Interaction
-- Follow-up
-- Battle Card
-- Evidence
-- Excel Import
-- Sales Agent
-- Provider configuration
-- Local SQLite
-- Encrypted credentials
+Traditional CRM workflow:
+
+```
+Human → find a page → click fields → fill data → hunt history → guess the next step
+```
+
+AI Native CRM explores:
+
+```
+Human Intent
+      ↓
+Sales Agent
+      ↓
+CRM Capabilities
+      ↓
+Evidence / Reasoning
+      ↓
+Human Confirmation
+      ↓
+CRM Action
+```
+
+**The Agent is not a chatbot bolted onto the CRM. It is becoming the primary control surface of the CRM.**
+
+## What V0.2 can do
+
+V0.2 is a local-first desktop CRM with a real Agent operating surface. The following exists in the product today:
+
+- Customer management, search, and entity resolution (including candidate disambiguation)
+- Agent-driven customer analysis, interaction review, and next-action preparation
+- Follow-up, visit, and task workflows
+- Battle Card and evidence-aware reasoning
+- Opportunity amount updates
+- Customer creation
+- Customer deletion with strong confirmation
+- Human-confirmed CRM writes
+- Natural-language CRM interaction on the Agent surface
+- zh-CN / en-US on core Agent / Board / Customer / Review surfaces
+- Local SQLite as CRM truth
+- Local-first desktop experience (Tauri)
+- Provider configuration with OS-level credential protection
+
+This is still experimental. Natural-language coverage is not complete, and not every sentence becomes a CRM action.
+
+## Agent-First Interaction
+
+Examples the current surface can take:
+
+- “分析一下这个客户”
+- “我之前跟这客户见过几次？”
+- “接下来该怎么跟？”
+- “那就周三再找他”
+- “新增一个广州星河科技客户，联系人张总”
+- “把商机金额改到 22 万”
+- “这个客户不用了，删掉”
+
+How writes work:
+
+- **Read-only reasoning** can answer directly from CRM evidence.
+- **CRM mutation** goes proposal / clarification → human confirmation → write.
+- **High-risk mutation** (especially delete) requires strong confirmation.
+
+The Agent does not get a free pass to the database. Ambiguous or incomplete intent should ask, not guess.
 
 ## Architecture
 
 ```
-React / TypeScript
-        ↓
-Sales Agent / Product Logic
-        ↓
-Tauri Rust Host
-        ↓
-SQLite / Native OS Security
+Human Intent
+      ↓
+Sales Agent Control Surface
+      ↓
+Intent / Semantic Routing
+      ↓
+Capability Registry
+      ↓
+Reasoning / Read / Write Planning
+      ↓
+Authority + Validation + Confirmation
+      ↓
+CRM Domain
+      ↓
+SQLite / Tauri Host
 ```
 
-Windows:
-DPAPI
+Agent ≠ database access free-for-all.
 
-macOS:
-Keychain
+Agent writes go through capability and confirmation boundaries.
+
+Product code lives in `local-crm-desktop/`.
+
+## Safety by design
+
+- Human-confirmed writes
+- Strong confirmation for destructive operations
+- Capability authority boundary
+- Input validation before CRM mutation
+- Fail-closed cross-customer continuation
+- Local-first CRM truth
+- No bundled API keys
 
 ## Local-first
 
-用户 CRM 数据保存在本机。
+CRM business data is stored locally in SQLite.
 
-AI Provider Key 使用系统安全能力保护。
+- Windows: `%APPDATA%/com.localcrm.desktop/`
+- macOS: `~/Library/Application Support/com.localcrm.desktop/`
 
-本产品不是完全离线应用：真实模型调用需要网络连接。
+Model requests need network connectivity when using a remote model provider.
+
+Provider credentials use native OS protection:
+
+- Windows: DPAPI (current-user)
+- macOS: Keychain (AES-256-GCM master key)
+
+You configure your own provider key. Keys are not shipped with the app.
+
+## Chinese + English
+
+Core product surfaces support **zh-CN** and **en-US** (Agent, Board, Customer, Review, and related chrome).
+
+Some secondary / deep configuration surfaces are still being internationalized.
 
 ## Getting Started
 
-产品代码位于 `local-crm-desktop/`，先进入该目录：
+Product code is in `local-crm-desktop/`:
 
 ```bash
 cd local-crm-desktop
 npm install
-npm test          # 运行测试套件
-npm run dev       # 开发模式（Vite + Tauri）
-npm run build     # 前端构建
-npx tauri build   # 桌面安装包（按当前平台生成 NSIS/MSI 或 DMG）
+npm test          # Vitest suite
+npm run dev       # Vite frontend (use with Tauri for the desktop client)
+npm run build     # Typecheck + frontend production build
+npx tauri build   # Desktop installer for the current platform
 ```
 
-## AI Provider
-
-用户自行配置 Provider API Key。
-
-Key 不随 Release 分发。
-
-## Downloads
-
-### macOS
-
-Apple Silicon (arm64):
-
-`local-crm_0.1.0_aarch64.dmg`
-
-Current macOS package is not Apple notarized.
-
-首次运行如被 Gatekeeper 拦截：
-
-右键应用 → 打开
-
-### Windows
-
-V0.1 does not publish a Windows installer.
-
-Windows support remains part of the cross-platform codebase
-and future releases will be validated separately.
-
-## Build
-
-### macOS（Apple Silicon）
-
-在 macOS 真机上：
+Desktop development:
 
 ```bash
 cd local-crm-desktop
-npm install
-npx tauri build
+npx tauri dev
 ```
 
-产物：
+## Current Status
 
-- `src-tauri/target/release/bundle/macos/local-crm.app`
-- `src-tauri/target/release/bundle/dmg/local-crm_0.1.0_aarch64.dmg`
+### V0.2 — Agent Control Surface
 
-### Windows（x64）
+V0.2 is the first version where Agent interaction becomes a real CRM operating surface rather than a demo chat layer.
 
-在 Windows 真机上（需要 WebView2）：
+This is still an experimental open-source project.
 
-```bash
-cd local-crm-desktop
-npm install
-npx tauri build
-```
+Natural-language coverage is not complete.
 
-产物：
-
-- `src-tauri/target/release/bundle/nsis/local-crm_0.1.0_x64-setup.exe`
-- `src-tauri/target/release/bundle/msi/local-crm_0.1.0_x64_en-US.msi`
-
-## Current Limitations
-
-- V0.1 仍属于 OSS Foundation，不是最终 Agent First 架构
-- macOS voice dictation 尚未完成原生实现
-- Excel batch Battle Card import 尚未实现
-- Windows/macOS 本地数据库默认不自动同步
-- Provider API Key 每台设备单独配置
-- macOS 当前 package 未 Apple notarized
+The architecture and product semantics will continue to evolve.
 
 ## Roadmap
 
-V0.2:
-Capability Complete + External Reach + UI Ready
+### V0.3
 
-V0.3:
-Agent First Foundation
+- simplify architecture
+- improve natural-language semantic coverage
+- reduce deterministic routing complexity
+- strengthen Agent-first workflows
+- continue internationalization
+- improve developer ergonomics
 
-## Security
+V0.3 is a direction, not a promise to rewrite the project.
 
-- Local-first：CRM 数据保存在本机
-- OS credential protection：Windows DPAPI / macOS Keychain
-- Human-confirmed high-risk writes
-- No bundled API keys
+## Engineering philosophy
+
+**Contracts before code.**
+
+1. Product semantics
+2. Architecture contract
+3. Golden journeys
+4. Fail-first tests
+5. Minimal implementation
+6. Foreground acceptance
+
+> We try to decide what the system means before deciding how the code should look.
+
+## What this project is NOT
+
+- Not a generic chatbot
+- Not an autonomous sales bot
+- Not a cloud CRM clone
+- Not a framework pretending to be a finished SaaS
+- Not a claim of zero-error AI or complete natural-language coverage
 
 ## License
 

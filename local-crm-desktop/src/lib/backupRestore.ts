@@ -1,4 +1,5 @@
 import type { DatabaseLike } from './db';
+import { invokeTauriAtomicCommand, isTauriRuntime } from './runtime/tauriRuntime';
 
 export const BACKUP_TABLES = [
   'customers',
@@ -8,6 +9,12 @@ export const BACKUP_TABLES = [
   'settings',
   'ai_drafts',
   'evidence',
+  'ai_memory_entries',
+  'ai_memory_evidence_links',
+  'intelligence_imports',
+  'reviewed_facts',
+  'customer_hypotheses',
+  'customer_stage_cards',
   'lead_import_batches',
   'lead_import_rows',
   'lead_work_items',
@@ -165,11 +172,17 @@ export function getRestoreTableOrder(): BackupTableName[] {
   return [
     'settings',
     'customers',
+    'customer_stage_cards',
+    'ai_memory_entries',
+    'ai_memory_evidence_links',
     'evidence',
     'follow_up_records',
     'visit_records',
     'tasks',
     'ai_drafts',
+    'intelligence_imports',
+    'reviewed_facts',
+    'customer_hypotheses',
     'lead_import_batches',
     'lead_import_rows',
     'lead_work_items',
@@ -206,7 +219,11 @@ export async function restoreBackupPayloadWithDb(
   });
 
   try {
-    await replaceDatabaseTables(db, normalized.tables);
+    if (isTauriRuntime()) {
+      await invokeTauriAtomicCommand('restore_full_backup_atomic', { payload: normalized.tables });
+    } else {
+      await applyRestoredTables(db, normalized.tables);
+    }
     const actualCounts = await getDatabaseTableCounts(db);
     for (const table of BACKUP_TABLES) {
       if (actualCounts[table] !== restoredCounts[table]) {
@@ -216,13 +233,16 @@ export async function restoreBackupPayloadWithDb(
       }
     }
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (isTauriRuntime()) {
+      throw new Error(`Restore failed: ${message}`, { cause: error });
+    }
     let rollbackError: unknown = null;
     try {
-      await replaceDatabaseTables(db, rollbackSnapshot.tables);
+      await applyRestoredTables(db, rollbackSnapshot.tables);
     } catch (restoreError) {
       rollbackError = restoreError;
     }
-    const message = error instanceof Error ? error.message : String(error);
     const rollbackSuffix = rollbackError
       ? `; rollback snapshot restore failed: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`
       : '';
@@ -237,18 +257,44 @@ export async function restoreBackupPayloadWithDb(
   };
 }
 
+function sqliteFilePathOf(db: object): string | undefined {
+  if (!('path' in db)) return undefined;
+  const path = (db as { path?: unknown }).path;
+  return typeof path === 'string' && path.length > 0 ? path : undefined;
+}
+
+async function applyRestoredTables(
+  db: Pick<DatabaseLike, 'execute'>,
+  tables: BackupTablesPayload,
+): Promise<void> {
+  const sqlitePath = sqliteFilePathOf(db);
+  if (sqlitePath) {
+    const { replaceDatabaseTablesOnSqliteFile } = await import('./backupRestore.sqliteFile');
+    replaceDatabaseTablesOnSqliteFile(sqlitePath, tables);
+    return;
+  }
+  await replaceDatabaseTables(db, tables);
+}
+
 async function replaceDatabaseTables(
   db: Pick<DatabaseLike, 'execute'>,
   tables: BackupTablesPayload,
 ): Promise<void> {
-  for (const table of getRestoreDeleteOrder()) {
-    await db.execute(`DELETE FROM ${table}`);
-  }
-
-  for (const table of getRestoreTableOrder()) {
-    for (const row of tables[table]) {
-      await db.execute(buildInsertSql(table, row), Object.values(row));
+  await db.execute('BEGIN IMMEDIATE');
+  try {
+    await db.execute('PRAGMA defer_foreign_keys = ON');
+    for (const table of getRestoreDeleteOrder()) {
+      await db.execute(`DELETE FROM ${table}`);
     }
+    for (const table of getRestoreTableOrder()) {
+      for (const row of tables[table]) {
+        await db.execute(buildInsertSql(table, row), Object.values(row));
+      }
+    }
+    await db.execute('COMMIT');
+  } catch (error) {
+    try { await db.execute('ROLLBACK'); } catch { /* ignore */ }
+    throw error;
   }
 }
 

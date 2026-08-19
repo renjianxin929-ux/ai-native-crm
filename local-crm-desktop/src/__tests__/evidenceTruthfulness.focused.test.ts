@@ -6,7 +6,7 @@ function envelope(): ModelContextEnvelope {
   return {
     request_id: 'r', intent: 'CUSTOMER_SUMMARY', customer_id: 'c1', customer_allowlist: ['c1'], portfolio_summary: null,
     selected_crm_facts: [{ customer_id: 'c1' }], recent_interactions: [], active_memory: [], relevant_tasks: [], user_instruction: '总结',
-    locale: 'zh-CN', timezone: 'Asia/Shanghai', safety_mode: 'human_review_required_no_crm_write', requested_output_schema: 'customer_summary_v1', truncated_fields: [],
+    locale: 'zh-CN', timezone: 'Asia/Shanghai', safety_mode: 'human_review_required_no_crm_write', requested_output_schema: 'customer_summary_v1', output_schema_spec: '', reasoning_task_instruction: '', truncated_fields: [],
     evidence_map: [{ evidence_id: 'ev1', customer_id: 'c1', source_type: 'customer', source_record_id: 'c1', fact_ids: ['profile'], created_at: '2026-07-16T00:00:00Z', integrity: 'i1', summary: 'fact', truncated: false }],
   };
 }

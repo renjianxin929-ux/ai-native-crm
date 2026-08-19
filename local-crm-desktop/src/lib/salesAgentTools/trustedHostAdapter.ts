@@ -10,6 +10,8 @@ import {
 import type { ModelContextEnvelope } from '../productionAi/modelContextEnvelope';
 import type { ProductionModelCallResult, ProductionModelCaller } from '../productionAi/productionReasoningPath';
 import type { SalesAgentHost } from './agentSession';
+import { createTrustedHostModelPlannerCaller } from '../planner/productionModelPlanner';
+import type { ModelPlannerCaller } from '../planner/runtimePlanner';
 import { createSemanticIntentRouter } from '../productionAi/semanticIntentRouter';
 
 export type TrustedHostExecutor = (input: {
@@ -36,7 +38,13 @@ export function createTrustedHostSalesAgentAdapter(input: {
   readonly cancel?: (requestId: string) => Promise<boolean>;
 }): SalesAgentHost & {
   readonly createProductionModelCaller: () => ProductionModelCaller;
-  readonly routeSemanticIntent: (instruction: string, envelopeId: string, signal?: AbortSignal) => Promise<import('./agentIntentEnvelope').SemanticIntentResolution>;
+  readonly createModelPlannerCaller: () => ModelPlannerCaller;
+  readonly routeSemanticIntent: (
+    instruction: string,
+    envelopeId: string,
+    signal?: AbortSignal,
+    routingContext?: import('../productionAi/semanticIntentRouter').SemanticIntentRoutingContext,
+  ) => Promise<import('./agentIntentEnvelope').SemanticIntentResolution>;
 } {
   const authorize = input.authorize ?? authorizeTrustedHostCapability;
   const execute = input.execute ?? executeTrustedHostCapability;
@@ -105,6 +113,23 @@ export function createTrustedHostSalesAgentAdapter(input: {
     };
   }
 
+  function createModelPlannerCaller(): ModelPlannerCaller {
+    return createTrustedHostModelPlannerCaller(async (prompt, signal) => {
+      const result = await executeCapability(
+        'planner',
+        'TEXT_REASONING',
+        {
+          message: `${prompt.system}\n\n${prompt.user}`,
+          planner_request: true,
+          required_schema: 'capability_planner_selection_v1',
+        },
+        signal,
+      );
+      if (typeof result.output === 'string') return result.output;
+      return JSON.stringify(result.output ?? {});
+    });
+  }
+
   return {
     reason: async ({ customer_id, message }) => (
       await executeCapability(customer_id, 'TEXT_REASONING', { message })
@@ -120,6 +145,7 @@ export function createTrustedHostSalesAgentAdapter(input: {
       }, signal)).output;
     },
     createProductionModelCaller,
+    createModelPlannerCaller,
     routeSemanticIntent,
   };
 }

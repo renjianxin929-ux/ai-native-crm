@@ -2,6 +2,7 @@ mod credential_migration;
 pub mod encrypted_credentials;
 mod battle_card_authoritative;
 mod battle_card_transactions;
+mod crm_lifecycle;
 mod secure_credentials;
 mod trusted_host;
 
@@ -14,6 +15,9 @@ pub fn run() {
     .invoke_handler(tauri::generate_handler![
       battle_card_transactions::confirm_battle_card_import_atomic_v1,
       battle_card_transactions::confirm_battle_card_stage_card_atomic_v1,
+      crm_lifecycle::restore_full_backup_atomic,
+      crm_lifecycle::delete_customer_atomic,
+      crm_lifecycle::persist_occurred_follow_up_atomic,
       trusted_host::authorize_model_capability,
       trusted_host::execute_model_capability,
       trusted_host::probe_trusted_host_provider_health,

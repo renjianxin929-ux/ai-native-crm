@@ -83,6 +83,9 @@ export function formatUserFacingError(cause: unknown, options?: { readonly advan
   if (/Confirmation does not match the exact proposal/i.test(message)) {
     message = '确认信息与待确认操作不一致，请重新生成后再确认。';
   }
+  if (/Confirmation timestamp is invalid/i.test(message)) {
+    message = '这项待确认操作已经失效，请重新生成后再确认。';
+  }
   if (/Write proposal identity is invalid/i.test(message)) {
     message = '待确认操作无效，请重新生成。';
   }

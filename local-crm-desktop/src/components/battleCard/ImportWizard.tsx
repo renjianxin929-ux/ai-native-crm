@@ -20,7 +20,7 @@ const SECTION_LABELS: Readonly<Record<string, string>> = {
   problem_hypotheses: '当前问题假设',
   landing_points: 'FDE/FDA 推荐落地点',
   why_validate: '为什么值得验证',
-  feishu_talk: '飞书话术',
+  feishu_talk: '价值复述',
   implementation: '具体实现路径',
   peers: '同行校准',
   first_questions: '首轮挖需问题',
@@ -355,7 +355,7 @@ export function ImportWizard({ customerId, customerName, onClose, onImported, on
             </div>
           ) : null}
           <p className="bc-banner-note" style={{ marginBottom: 8 }}>
-            支持大段长文本（飞书战前材料/客户背调）。将按 UTF-8 字节计数，单 Proposal 上限 256 KiB（262,144 字节），超限时禁止进入 Preview，且不会静默截断。Preview 不调用任何模型（本地确定性解析）。
+            粘贴战前材料或客户背调。超出长度上限时不会截断，也不会进入预览。
           </p>
           <textarea
             className={`bcw-textarea${overLimit ? ' over-limit' : ''}`}
@@ -429,7 +429,7 @@ export function ImportWizard({ customerId, customerName, onClose, onImported, on
           </div>
 
           <div className="bcw-preview-group" data-testid="bc-preview-talk">
-            <h4 className="bcw-preview-group-title">Feishu Talk Track（可直接复述的飞书话术）</h4>
+            <h4 className="bcw-preview-group-title">价值复述</h4>
             {preview.draft.feishu_talk_track.paragraphs.length === 0 ? <p className="bc-section-body">无话术段落。</p> : (
               preview.draft.feishu_talk_track.paragraphs.map((paragraph, index) => (
                 <div className="bcw-item" key={index}><span className="bcw-item-excerpt">{paragraph.slice(0, 180)}{paragraph.length > 180 ? '…' : ''}</span></div>
@@ -551,12 +551,12 @@ export function ImportWizard({ customerId, customerName, onClose, onImported, on
             </ul>
             <strong>不会写入：</strong>
             <ul>
-              <li>Solution Scenarios / Peer References / 话术（{preview.draft.solution_scenarios.length} 场景 · {preview.draft.peer_references.length} 同行）——仅在生成作战卡时从材料解析引用</li>
+              <li>解决方案场景 / 同行参照 / 价值复述（{preview.draft.solution_scenarios.length} 场景 · {preview.draft.peer_references.length} 家同行）——生成作战卡时才会引用</li>
               <li>不生成 Stage Card（本次仅导入，不产生作战卡）</li>
               <li>不修改客户阶段（保持 {stageLabel(stageCode)}）</li>
               <li>不修改客户等级（保持 {effectiveCustomer?.customer_grade} 类）</li>
             </ul>
-            <p style={{ marginTop: 8 }}>Confirm 必须走正式 Proposal/Confirm 链路（Canonical Proposal + SHA-256 + 单次消费防重放）。取消为零写入。</p>
+            <p style={{ marginTop: 8 }}>确认后才会写入。取消则不会改动 CRM。</p>
           </div>
           {proposalError ? <p role="alert" style={{ color: 'var(--bc-danger-text)', marginBottom: 10 }}>{proposalError}</p> : null}
           <div className="bcw-wizard-footer">

@@ -7,6 +7,7 @@ import {
   type ClipboardWriter,
 } from '../lib/clipboard';
 import { getDb } from '../lib/db';
+import { compareInstant } from '../lib/time/instantCompare';
 import {
   listLeadCaptureEventsByWorkItemId,
   type LeadCaptureEvent,
@@ -237,7 +238,7 @@ export function filterLeadWorkItemsByStatus(
 export function sortLeadWorkItemsForDisplay(items: LeadWorkItem[]): LeadWorkItem[] {
   return [...items].sort((left, right) => {
     if (left.priority !== right.priority) return right.priority - left.priority;
-    return left.created_at.localeCompare(right.created_at);
+    return compareInstant(left.created_at, right.created_at);
   });
 }
 

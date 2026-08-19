@@ -1580,7 +1580,7 @@ describe('INTEGRATION — representative real product chains through the unified
     try {
       await fixture.db.execute(
         `INSERT INTO follow_up_records (id, customer_id, title, is_completed, created_at, updated_at)
-         VALUES (?, ?, ?, 0, ?, ?)`,
+         VALUES (?, ?, ?, 1, ?, ?)`,
         ['fu-1', 'dg-a-jm', '首次电话跟进', '2026-07-10T00:00:00.000Z', '2026-07-10T00:00:00.000Z'],
       );
       await fixture.db.execute(
@@ -2234,11 +2234,11 @@ describe('REAL PRODUCT ADVERSARIAL — scope=A never returns B and never invokes
     __setDbInstanceForTests(fixture.db);
     try {
       await fixture.db.execute(
-        `INSERT INTO follow_up_records (id, customer_id, title, is_completed, created_at, updated_at) VALUES (?, ?, ?, 0, ?, ?)`,
+        `INSERT INTO follow_up_records (id, customer_id, title, is_completed, created_at, updated_at) VALUES (?, ?, ?, 1, ?, ?)`,
         ['fu-a', 'dg-a-jm', 'A 的跟进', '2026-07-10T00:00:00.000Z', '2026-07-10T00:00:00.000Z'],
       );
       await fixture.db.execute(
-        `INSERT INTO follow_up_records (id, customer_id, title, is_completed, created_at, updated_at) VALUES (?, ?, ?, 0, ?, ?)`,
+        `INSERT INTO follow_up_records (id, customer_id, title, is_completed, created_at, updated_at) VALUES (?, ?, ?, 1, ?, ?)`,
         ['fu-b', 'dg-c-other', 'B 的跟进', '2026-07-10T00:00:00.000Z', '2026-07-10T00:00:00.000Z'],
       );
 

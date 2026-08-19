@@ -5,7 +5,7 @@ export interface FeishuTalkTrackBlockProps {
   readonly talk: TalkTrackView;
 }
 
-/** 飞书价值复述：Original 永不覆盖；Current/短口语/完整口语/微信版可复制。 */
+/** 价值复述：Original 永不覆盖；Current/短口语/完整口语/微信版可复制。 */
 export function FeishuTalkTrackBlock({ talk }: FeishuTalkTrackBlockProps) {
   const variants: readonly { key: string; name: string; text: string | null; note?: string; original?: boolean }[] = [
     { key: 'original', name: 'Original（原始材料）', text: talk.original, original: true },
@@ -16,9 +16,9 @@ export function FeishuTalkTrackBlock({ talk }: FeishuTalkTrackBlockProps) {
   ];
 
   return (
-    <section className="bc-section" data-testid="bc-talk-track" aria-label="飞书价值复述">
+    <section className="bc-section" data-testid="bc-talk-track" aria-label="价值复述">
       <h3 className="bc-section-title">
-        飞书价值复述
+        价值复述
         <span className="bc-section-count">{variants.filter(variant => variant.text?.trim()).length} 个版本</span>
       </h3>
       <div className="bc-talk">
@@ -45,7 +45,7 @@ export function FeishuTalkTrackBlock({ talk }: FeishuTalkTrackBlockProps) {
           );
         })}
         {variants.every(variant => !variant.text?.trim()) ? (
-          <p className="bc-section-body">该客户暂无飞书话术材料。</p>
+          <p className="bc-section-body">该客户暂无价值表达材料。</p>
         ) : null}
       </div>
     </section>

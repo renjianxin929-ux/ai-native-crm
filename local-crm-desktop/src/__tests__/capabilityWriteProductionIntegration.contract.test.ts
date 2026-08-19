@@ -571,11 +571,14 @@ describe('T9 — FOLLOW-UP CREATE BINDING TRUTH: handoff registers the real prop
 
       // POST_CONFIRM：现有产品确认流（consumeExactConfirmation → approvedCrmWriteBoundary → db.createFollowUp）
       const result = await confirmViaExistingFlow(proposal!);
-      expect(result.fields).toEqual(['title', 'feedback_notes', 'next_follow_up_at']);
-      const after = await fixture.db.select<{ id: string; title: string; customer_id: string }>('SELECT id, title, customer_id FROM follow_up_records WHERE customer_id = ?', ['dg-a-jm']);
+      expect(result.fields).toEqual(['title', 'feedback_notes', 'is_completed', 'next_follow_up_at']);
+      const after = await fixture.db.select<{ id: string; title: string; customer_id: string; next_follow_up_at: string | null }>('SELECT id, title, customer_id, next_follow_up_at FROM follow_up_records WHERE customer_id = ?', ['dg-a-jm']);
       expect(after).toHaveLength(1);
       expect(after[0]?.customer_id).toBe('dg-a-jm');
       expect(after[0]?.title).toBe('确认后的跟进记录');
+      expect(after[0]?.next_follow_up_at).toBeNull();
+      const customer = await fixture.db.select<{ next_follow_up_at: string | null }>('SELECT next_follow_up_at FROM customers WHERE id = ?', ['dg-a-jm']);
+      expect(customer[0]?.next_follow_up_at).toBe('2026-08-05T09:00:00.000Z');
     } finally {
       __setDbInstanceForTests(null);
       fixture.close();

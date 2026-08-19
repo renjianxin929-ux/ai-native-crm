@@ -32,3 +32,9 @@ NEXT_TASK_*.md
 
 # Reasonix host state
 .reasonix/
+
+# Local pre-repair database copies (never commit)
+.pre-repair-backups/
+
+# Local UI QA dumps (never commit)
+tmp-v02-ui-visual/

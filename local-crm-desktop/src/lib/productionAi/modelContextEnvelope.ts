@@ -2,7 +2,7 @@ import type { CRMCustomerFact, CRMInteractionFact, ContextSnapshot } from '../co
 import type { CustomerMemoryContext, CustomerMemoryItem } from '../customerMemory';
 import type { SalesAgentToolResult } from '../salesAgentTools/registry';
 import type { OutputSchemaId, ProductionCapabilityIntent } from './capabilityRoutingMatrix';
-import { outputSchemaSpecFor } from './modelOutputSchemas';
+import { outputSchemaSpecFor, reasoningTaskInstructionFor } from './modelOutputSchemas';
 
 export const MODEL_CONTEXT_LIMITS = {
   max_recent_interactions: 20,
@@ -61,6 +61,8 @@ export interface ModelContextEnvelope {
   readonly requested_output_schema: OutputSchemaId;
   /** Closed-schema field specification shown to the provider so its output shape matches the parser contract. */
   readonly output_schema_spec: string;
+  /** Intent-specific reasoning task. Distinct from output_schema_spec field lists. */
+  readonly reasoning_task_instruction: string;
   readonly truncated_fields: readonly string[];
 }
 
@@ -119,6 +121,52 @@ function projectAllowedRecord(record: Record<string, unknown>, allowed: readonly
     if (value !== undefined) output[key] = value;
   }
   return output;
+}
+
+function pickString(record: Record<string, unknown>, keys: readonly string[]): string {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return '';
+}
+
+function pickEvidenceIds(record: Record<string, unknown>): string[] {
+  const fromArray = record.evidence_ids ?? record.evidenceIds;
+  if (Array.isArray(fromArray)) {
+    return fromArray.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
+  }
+  const single = pickString(record, ['evidenceId', 'evidence_id', 'evidence_reference']);
+  return single ? [single] : [];
+}
+
+/** Bounded projection of live get_customer_timeline rows into envelope recent_interactions. */
+function toolTimelineProjection(record: unknown, scopedCustomerId: string, allowlist: readonly string[]): Record<string, unknown> | null {
+  if (!record || typeof record !== 'object') return null;
+  const row = record as Record<string, unknown>;
+  const customerId = pickString(row, ['customer_id', 'customerId']) || scopedCustomerId;
+  if (!allowlist.includes(customerId)) return null;
+  const title = pickString(row, ['title']);
+  const detail = pickString(row, ['detail', 'summary', 'feedback_notes', 'visit_notes', 'customer_concerns', 'contact_result']);
+  const summary = [title, detail].filter(Boolean).join('：') || pickString(row, ['summary']);
+  const interactionId = pickString(row, ['interaction_id', 'interactionId', 'id']);
+  const occurredAt = pickString(row, ['occurred_at', 'occurredAt', 'visited_at', 'updated_at']);
+  const evidenceIds = pickEvidenceIds(row);
+  if (!summary && !interactionId) return null;
+  return projectAllowedRecord({
+    customer_id: customerId,
+    interaction_id: interactionId || evidenceIds[0] || `timeline:${scopedCustomerId}`,
+    kind: pickString(row, ['kind']) || 'interaction',
+    summary,
+    occurred_at: occurredAt,
+    evidence_ids: evidenceIds,
+    title,
+  }, ['customer_id', 'interaction_id', 'kind', 'summary', 'occurred_at', 'evidence_ids', 'title']);
+}
+
+function stringField(record: Record<string, unknown>, key: string): string {
+  const value = record[key];
+  return typeof value === 'string' ? value : '';
 }
 
 function customerProjection(customer: CRMCustomerFact): Record<string, unknown> {
@@ -218,9 +266,20 @@ export function buildModelContextEnvelope(input: ModelContextEnvelopeInput): Mod
     }
   }
 
-  const scopedInteractions = input.context.recentInteractions.filter(item => item.customerId !== null && allowlist.includes(item.customerId));
-  const interactions = scopedInteractions.slice(0, MODEL_CONTEXT_LIMITS.max_recent_interactions).map(interactionProjection);
-  if (scopedInteractions.length > interactions.length) truncated.add('recent_interactions');
+  const timelineTool = (input.tool_trace ?? []).find(tool => tool.tool_id === 'get_customer_timeline');
+  const scopedCustomerId = input.customer_id ?? allowlist[0] ?? '';
+  let interactions: Record<string, unknown>[];
+  if (timelineTool) {
+    const projected = timelineTool.records
+      .map(record => toolTimelineProjection(record, scopedCustomerId, allowlist))
+      .filter((item): item is Record<string, unknown> => item !== null);
+    interactions = projected.slice(0, MODEL_CONTEXT_LIMITS.max_recent_interactions);
+    if (projected.length > interactions.length) truncated.add('recent_interactions');
+  } else {
+    const scopedInteractions = input.context.recentInteractions.filter(item => item.customerId !== null && allowlist.includes(item.customerId));
+    interactions = scopedInteractions.slice(0, MODEL_CONTEXT_LIMITS.max_recent_interactions).map(interactionProjection);
+    if (scopedInteractions.length > interactions.length) truncated.add('recent_interactions');
+  }
 
   const scopedMemory = (input.memory?.items ?? []).filter(item => allowlist.includes(item.customer_id));
   if (input.memory && !allowlist.includes(input.memory.customer_id)) throw new Error('Memory context customer scope mismatch.');
@@ -248,12 +307,30 @@ export function buildModelContextEnvelope(input: ModelContextEnvelopeInput): Mod
       summary: `${customer.name} (${customer.grade})`,
     }, budget);
   }
-  for (const interaction of scopedInteractions) {
-    for (const evidenceId of interaction.evidenceIds) addEvidence(evidenceMap, {
-      evidence_id: evidenceId, customer_id: interaction.customerId, source_type: 'interaction',
-      source_record_id: interaction.interactionId, fact_ids: [interaction.kind], created_at: interaction.occurredAt,
-      summary: interaction.summary,
-    }, budget);
+  if (timelineTool) {
+    for (const interaction of interactions) {
+      const evidenceIds = Array.isArray(interaction.evidence_ids)
+        ? interaction.evidence_ids.filter((item): item is string => typeof item === 'string')
+        : [];
+      const customerId = stringField(interaction, 'customer_id') || scopedCustomerId;
+      const recordId = stringField(interaction, 'interaction_id') || evidenceIds[0] || scopedCustomerId;
+      const occurredAt = stringField(interaction, 'occurred_at') || input.context.capturedAt;
+      const summary = stringField(interaction, 'summary') || stringField(interaction, 'title');
+      for (const evidenceId of evidenceIds) addEvidence(evidenceMap, {
+        evidence_id: evidenceId, customer_id: customerId, source_type: 'interaction',
+        source_record_id: recordId, fact_ids: [stringField(interaction, 'kind') || 'interaction'],
+        created_at: occurredAt, summary,
+      }, budget);
+    }
+  } else {
+    const scopedInteractions = input.context.recentInteractions.filter(item => item.customerId !== null && allowlist.includes(item.customerId));
+    for (const interaction of scopedInteractions) {
+      for (const evidenceId of interaction.evidenceIds) addEvidence(evidenceMap, {
+        evidence_id: evidenceId, customer_id: interaction.customerId, source_type: 'interaction',
+        source_record_id: interaction.interactionId, fact_ids: [interaction.kind], created_at: interaction.occurredAt,
+        summary: interaction.summary,
+      }, budget);
+    }
   }
   for (const memory of scopedMemory) addEvidence(evidenceMap, {
     evidence_id: memory.evidence_reference, customer_id: memory.customer_id, source_type: 'memory',
@@ -283,6 +360,7 @@ export function buildModelContextEnvelope(input: ModelContextEnvelopeInput): Mod
     safety_mode: 'human_review_required_no_crm_write' as const,
     requested_output_schema: input.output_schema,
     output_schema_spec: outputSchemaSpecFor(input.output_schema),
+    reasoning_task_instruction: reasoningTaskInstructionFor(input.intent),
     truncated_fields: [] as string[],
   };
 

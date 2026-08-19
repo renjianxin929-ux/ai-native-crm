@@ -178,6 +178,21 @@ async function seedCustomerOwnedRecords(db: DatabaseLike, customerId: string): P
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [`card-${customerId}`, customerId, 'NEW_LEAD', 1, 'v1', 'DRAFT', `imp-${customerId}`, null, '{}', 'hash', 'DETERMINISTIC', null, NOW, null],
   );
+  await db.execute(
+    `INSERT INTO evidence (id, customer_id, source_type, source_url, source_title, source_ref, captured_at, summary, excerpt, content_hash, status, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [`ev-${customerId}`, customerId, 'MANUAL', null, 'seed', null, NOW, '证据摘要', null, `hash-${customerId}`, 'ACTIVE', NOW, NOW],
+  );
+  await db.execute(
+    `INSERT INTO ai_memory_entries (id, customer_id, memory_type, content, source_type, source_reference, confidence, validation_status, validation_source, human_verified, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [`mem-${customerId}`, customerId, 'FACT', '记忆内容', 'HUMAN_INPUT', `seed-${customerId}`, 0.9, 'ACTIVE', 'TEST', 1, NOW, NOW],
+  );
+  await db.execute(
+    `INSERT INTO ai_drafts (id, source_type, customer_id, raw_input_summary, ai_result_json, status, confidence, created_at, applied_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [`draft-${customerId}`, 'MANUAL', customerId, '草稿', '{}', 'DRAFT', 0, NOW, null],
+  );
 }
 
 /** 7 个产品级联目标表名（与 db.deleteCustomer 精确一致）。 */
@@ -189,6 +204,9 @@ const CASCADE_TABLES = [
   'customer_hypotheses',
   'reviewed_facts',
   'intelligence_imports',
+  'evidence',
+  'ai_memory_entries',
+  'ai_drafts',
 ] as const;
 
 /* ------------------------------------------------------------------ */

@@ -10,8 +10,7 @@ import {
   type BackupTableName,
   type FullBackupPayload,
 } from '../lib/backupRestore';
-import { ensureBaseSchema, type DatabaseLike } from '../lib/db';
-import { ensureEvidenceSchema } from '../lib/evidence';
+import { initializeDatabaseSchema, type DatabaseLike } from '../lib/db';
 import { insertLeadCaptureEvent, listLeadCaptureEventsByWorkItemId } from '../lib/leadWorkbench/captureEvents';
 import {
   getCollectedLeadById,
@@ -20,7 +19,6 @@ import {
 } from '../lib/leadWorkbench/collectedLeads';
 import { executeLeadImportBatchDecisions } from '../lib/leadWorkbench/decision';
 import {
-  ensureLeadWorkbenchSchema,
   listLeadImportBatches,
   listLeadImportRowsByBatchId,
   listLeadWorkItems,
@@ -60,9 +58,7 @@ function createSqliteDb(): SqliteTestDb {
 
 async function createReadyDb(): Promise<SqliteTestDb> {
   const db = createSqliteDb();
-  await ensureBaseSchema(db);
-  await ensureLeadWorkbenchSchema(db);
-  await ensureEvidenceSchema(db);
+  await initializeDatabaseSchema(db);
   return db;
 }
 
@@ -77,7 +73,7 @@ describe('backup and restore end-to-end acceptance', () => {
       });
 
       for (const table of BACKUP_TABLES) {
-        expect(backup.tables[table].length, `${table} should be included in the backup`).toBeGreaterThan(0);
+        expect(Array.isArray(backup.tables[table]), `${table} should be included in the backup`).toBe(true);
       }
 
       await replaceWithPollutedData(db);

@@ -5,6 +5,7 @@ import { buildTodaySummary, getRecommendedAction } from '../lib/rules';
 import { GRADE_LABELS, INTENT_LABELS } from '../lib/types';
 import type { AIDraft, Customer, Task } from '../lib/types';
 import { listAIDrafts } from '../lib/db';
+import { formatUserFacingScheduleDate } from '../lib/salesAgentUi/userFacingFieldFormatter';
 import CustomerForm from '../components/CustomerForm';
 import { SalesCommandCenter } from '../components/salesWorkspace/SalesCommandCenter';
 
@@ -184,7 +185,7 @@ export default function TodayView({ customers, tasks, onRefresh }: Props) {
                       <td><span className={`badge badge-${c.customer_grade.toLowerCase()}`}>{GRADE_LABELS[c.customer_grade]}</span></td>
                       <td style={{ fontSize: 13 }}>{c.phone_number || c.wechat_id || '-'}</td>
                       <td style={{ fontSize: 13 }}>{[c.industry, c.region].filter(Boolean).join(' / ') || '-'}</td>
-                      <td style={{ fontSize: 13 }}>{c.next_follow_up_at ? new Date(c.next_follow_up_at).toLocaleDateString('zh-CN') : '-'}</td>
+                      <td style={{ fontSize: 13 }}>{formatUserFacingScheduleDate(c.next_follow_up_at)}</td>
                       <td style={{ fontSize: 12, color: '#8b5cf6', maxWidth: 200 }}>{getRecommendedAction(c)}</td>
                     </tr>
                   ))}

@@ -33,3 +33,17 @@ export function resolveUnifiedAgentStageMode(input: ResolveUnifiedAgentStageMode
   if (input.hasResult || input.hasWriteSuccess) return 'result';
   return 'input';
 }
+
+/**
+ * Generic optional catalog picker is for unscoped idle Agent use.
+ * Candidate / portfolio cards are the only customer-selection authority
+ * while those result sets are on stage. Not a second selector.
+ */
+export function isGenericOptionalCustomerPickerEnabled(
+  stageMode: UnifiedAgentStageMode,
+  customerId: string,
+): boolean {
+  if (customerId) return false;
+  if (stageMode === 'candidate' || stageMode === 'portfolio') return false;
+  return true;
+}

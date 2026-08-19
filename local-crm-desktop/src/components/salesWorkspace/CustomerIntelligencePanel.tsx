@@ -3,6 +3,8 @@ import type { CustomerMemoryEntry } from '../../lib/customerMemory';
 import { GRADE_LABELS, INTENT_LABELS, STAGE_LABELS } from '../../lib/types';
 import { resolveVerticalAIProfile } from '../../lib/verticalAIProfiles/registry';
 import { createCustomerScopedSalesAgentEntry, type CustomerScopedSalesAgentEntry } from '../../lib/salesWorkspace/customerScopedSalesAgentEntry';
+import { isCompletedHistoricalFollowUp } from '../../lib/planner/followUpInteractionContract';
+import { sortByInstantDesc } from '../../lib/time/instantCompare';
 
 export type CustomerTimelineItem = {
   readonly id: string;
@@ -14,10 +16,11 @@ export type CustomerTimelineItem = {
 };
 
 export function buildCustomerTimeline(followUps: readonly FollowUpRecord[], visits: readonly VisitRecord[]): readonly CustomerTimelineItem[] {
-  return [
-    ...followUps.map<CustomerTimelineItem>(item => ({ id: `follow-up:${item.id}`, kind: item.contact_channel === 'phone' ? 'call' : item.contact_channel === 'wechat' ? 'interaction' : 'note', occurredAt: item.updated_at, title: item.title, detail: item.feedback_notes || item.contact_result || '已记录跟进', evidenceId: item.id })),
+  const historicalFollowUps = followUps.filter(isCompletedHistoricalFollowUp);
+  return sortByInstantDesc([
+    ...historicalFollowUps.map<CustomerTimelineItem>(item => ({ id: `follow-up:${item.id}`, kind: item.contact_channel === 'phone' ? 'call' : item.contact_channel === 'wechat' ? 'interaction' : 'note', occurredAt: item.updated_at, title: item.title, detail: item.feedback_notes || item.contact_result || '已记录跟进', evidenceId: item.id })),
     ...visits.map<CustomerTimelineItem>(item => ({ id: `visit:${item.id}`, kind: 'meeting', occurredAt: item.visited_at || item.updated_at, title: item.title, detail: item.visit_notes || item.customer_concerns || item.visit_outcome || '已记录面访', evidenceId: item.id })),
-  ].toSorted((left, right) => right.occurredAt.localeCompare(left.occurredAt));
+  ], item => item.occurredAt);
 }
 
 export function describeCustomerContext(customer: Customer, timeline: readonly CustomerTimelineItem[]): string {

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { ShieldCheck, Sparkles, X } from 'lucide-react';
+import { ShieldCheck, Sparkles, X, MoreHorizontal } from 'lucide-react';
 import { getDb, getCustomer, listCustomers } from '../../lib/db';
 import type { Customer } from '../../lib/types';
 import { getActiveVerticalProfile } from '../../lib/verticalProfiles';
@@ -31,7 +31,6 @@ import {
 import { formatUserFacingErrorMessage } from '../../lib/salesAgentUi/formatUserFacingError';
 import type { SearchableCustomer } from '../../lib/salesAgentTools/searchCustomers';
 import { SalesAgentInteractionWorkspace } from './SalesAgentInteractionWorkspace';
-import { SalesAgentBattleCardEntry } from './SalesAgentBattleCardEntry';
 
 const profile = getActiveVerticalProfile();
 const productionProfile = resolveVerticalAIProfile();
@@ -52,7 +51,11 @@ function toSearchable(customers: readonly Customer[]): SearchableCustomer[] {
 }
 
 /** The only production AI workspace. Mock/Copilot/live-debug branches are not imported here. */
-export default function AINativeCRMWorkspace() {
+export default function AINativeCRMWorkspace({
+  onProductCatalogRefresh,
+}: {
+  onProductCatalogRefresh?: () => Promise<void>;
+} = {}) {
   const location = useLocation();
   const navigate = useNavigate();
   const scopedEntry = readCustomerScopedSalesAgentEntry(location.state);
@@ -66,6 +69,7 @@ export default function AINativeCRMWorkspace() {
   const [controlledOpen, setControlledOpen] = useState(false);
   const [contextDrawerOpen, setContextDrawerOpen] = useState(false);
   const [processDrawerOpen, setProcessDrawerOpen] = useState(false);
+  const [chromeOpen, setChromeOpen] = useState(false);
   const [dailyFocusOpen, setDailyFocusOpen] = useState(false);
   const [dailyFocusItems, setDailyFocusItems] = useState<readonly DailyFocusItem[]>([]);
   const [initialInstruction, setInitialInstruction] = useState<string | null>(null);
@@ -161,11 +165,20 @@ export default function AINativeCRMWorkspace() {
     <div className="agent-shell product-page">
       <div className="agent-topbar agent-topbar-minimal">
         <div className="agent-top-actions">
-          <button type="button" className="btn btn-sm agent-daily-focus-btn" data-testid="daily-focus-reopen" onClick={() => setDailyFocusOpen(true)}>
-            <Sparkles size={14} aria-hidden="true" />今日重点
+          <button type="button" className="agent-icon-btn" aria-label="更多" onClick={() => setChromeOpen(value => !value)}>
+            <MoreHorizontal size={16} />
           </button>
-          <button type="button" className="btn btn-sm" onClick={() => newConversationHandler.current?.()}>新对话</button>
-          <button type="button" className="btn btn-sm" data-testid="controlled-mode-toggle" onClick={() => setControlledOpen(value => !value)}>受控模式</button>
+          {chromeOpen ? (
+            <div className="agent-chrome-menu">
+              <button type="button" className="btn btn-sm agent-daily-focus-btn" onClick={() => { setChromeOpen(false); setDailyFocusOpen(true); }}>
+                <Sparkles size={14} aria-hidden="true" />今日重点
+              </button>
+              <button type="button" className="btn btn-sm" onClick={() => { setChromeOpen(false); newConversationHandler.current?.(); }}>新对话</button>
+              <button type="button" className="btn btn-sm" onClick={() => setControlledOpen(value => !value)}>受控模式</button>
+            </div>
+          ) : null}
+          <button type="button" className="sr-only" data-testid="daily-focus-reopen" onClick={() => setDailyFocusOpen(true)}>今日重点</button>
+          <button type="button" className="sr-only" data-testid="controlled-mode-toggle" onClick={() => setControlledOpen(value => !value)}>受控模式</button>
         </div>
       </div>
 
@@ -180,7 +193,6 @@ export default function AINativeCRMWorkspace() {
       {error && <div role="alert" className="app-db-error">{error}</div>}
 
       <div className="agent-stage agent-stage-final">
-        <SalesAgentBattleCardEntry customerId={selectedCustomerId} customerName={customerName} />
         <SalesAgentInteractionWorkspace
           customerId={selectedCustomerId}
           customerName={customerName}
@@ -195,7 +207,13 @@ export default function AINativeCRMWorkspace() {
           host={host}
           memoryRepository={memoryRepository}
           loadCustomerSnapshot={getCustomer}
-          onRefresh={createProductionRefreshCoordinator(() => loadSelectedContext())}
+          onRefresh={createProductionRefreshCoordinator(
+            () => loadSelectedContext(),
+            async () => {
+              await loadCatalog();
+              await onProductCatalogRefresh?.();
+            },
+          )}
           contextLoading={loading}
           onOpenContextDrawer={() => setContextDrawerOpen(true)}
           processDrawerOpen={processDrawerOpen}
@@ -203,6 +221,7 @@ export default function AINativeCRMWorkspace() {
           initialInstruction={initialInstruction}
           onInitialInstructionConsumed={() => setInitialInstruction(null)}
           onRegisterNewConversation={handler => { newConversationHandler.current = handler; }}
+          userConversationKey={scopedEntry ? `${scopedEntry.customer_id}:${location.key}` : selectedCustomerId}
         />
       </div>
 
@@ -210,23 +229,28 @@ export default function AINativeCRMWorkspace() {
         <aside className="agent-drawer agent-drawer-context" data-testid="agent-context-drawer" aria-label="上下文">
           <header><h3>上下文</h3><button type="button" className="agent-icon-btn" aria-label="关闭上下文" onClick={() => setContextDrawerOpen(false)}><X size={16} /></button></header>
           <section><h4>当前客户</h4><p>{customerName || '未绑定'}</p></section>
-          <section><h4>ACTIVE Memory</h4><p>{memory?.items.length ?? 0} 条</p></section>
-          <section><h4>Timeline / Evidence</h4><p>{context?.recentInteractions.length ?? 0} 条近期互动</p></section>
-          <section><h4>Capture</h4><p>图片仅在显式 Analyze 后发送至 Trusted Host，并需事实复核。</p></section>
+          <section><h4>记忆</h4><p>{memory?.items.length ?? 0} 条</p></section>
+          <section><h4>近期互动</h4><p>{context?.recentInteractions.length ?? 0} 条</p></section>
         </aside>
       )}
 
       {dailyFocusOpen && (
         <div className="agent-modal-backdrop" role="presentation" onClick={closeDailyFocus}>
           <div className="agent-daily-focus-modal" role="dialog" aria-modal="true" aria-label="今日值得关注" data-testid="daily-focus-modal" onClick={event => event.stopPropagation()}>
-            <header><h3>今日值得关注 <small data-testid="daily-focus-execution-mode">LOCAL_DETERMINISTIC · 未调用模型 · 数据来源：本地 CRM · 生成时间：{dailyFocusItems[0]?.generated_at ?? SALES_AGENT_APP_CLOCK.now()}</small></h3><button type="button" className="agent-icon-btn" aria-label="关闭今日值得关注" onClick={closeDailyFocus}><X size={16} /></button></header>
-            {dailyFocusItems.length === 0 ? <p>今天暂无高价值提示。数据仅来自本地 CRM，不调用模型。</p> : (
+            <header>
+              <div>
+                <h3>今日值得关注</h3>
+                <p className="agent-daily-focus-kicker" data-testid="daily-focus-execution-mode">根据本地客户记录整理</p>
+              </div>
+              <button type="button" className="agent-icon-btn" aria-label="关闭今日值得关注" onClick={closeDailyFocus}><X size={16} /></button>
+            </header>
+            {dailyFocusItems.length === 0 ? <p className="agent-daily-focus-empty">今天没有特别需要先看的客户。</p> : (
               <ul className="agent-daily-focus-list">{dailyFocusItems.map(item => (
                 <li key={item.customer_id}>
-                  <strong>{item.customer_name}</strong><p>{item.why}</p>
-                  <small>{item.evidence.map(entry => `${entry.label}：${entry.detail}`).join(' · ')}</small>
+                  <strong>{item.customer_name}</strong>
+                  <p>{item.why}</p>
                   <div className="agent-daily-focus-actions">
-                    <button type="button" className="btn btn-sm" onClick={() => navigate(`/customers/${item.customer_id}`)}>查看客户</button>
+                    <button type="button" className="agent-link-btn" onClick={() => navigate(`/customers/${item.customer_id}`)}>查看客户</button>
                     <button type="button" className="btn btn-sm btn-primary" onClick={() => handToAgent(item)}>交给 Sales Agent 分析</button>
                   </div>
                 </li>

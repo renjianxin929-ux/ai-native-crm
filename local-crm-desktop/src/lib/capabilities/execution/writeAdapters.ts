@@ -143,6 +143,14 @@ function requireString(value: unknown, field: string): string {
   return value;
 }
 
+function requireCanonicalTimestamp(value: unknown, field: string): string {
+  const text = requireString(value, field);
+  if (!Number.isFinite(Date.parse(text))) {
+    throw new CapabilityInputValidationError(`${field} must be a canonical timestamp.`);
+  }
+  return text;
+}
+
 function optionalString(value: unknown, field: string): string | null {
   if (value === undefined || value === null) return null;
   return requireString(value, field);
@@ -170,12 +178,14 @@ function requireStringArray(value: unknown, field: string, maxItems = 500): read
   return value.map((item, index) => requireString(item, `${field}[${index}]`));
 }
 
-const CUSTOMER_STAGES: readonly string[] = [
+/** 客户阶段闭合枚举（battle_card.draft.create stage_code 唯一真源）。 */
+export const CUSTOMER_STAGES: readonly string[] = [
   'NEW_LEAD', 'CONTACTED', 'WECHAT_PASSED', 'REPLIED', 'VISIT_READY',
   'VISITED', 'CONTRACTING', 'PAYMENT_PENDING', 'PAID', 'WON', 'LOST',
 ];
 
-const HYPOTHESIS_STATUSES: readonly HypothesisStatus[] = [
+/** 作战卡假设状态闭合枚举（battle_card.hypothesis.status.update new_status 唯一真源）。 */
+export const HYPOTHESIS_STATUSES: readonly HypothesisStatus[] = [
   'PENDING', 'PARTIALLY_CONFIRMED', 'CONFIRMED', 'REJECTED', 'EXPIRED',
 ];
 
@@ -212,7 +222,7 @@ export interface FollowUpCreateInput {
   readonly next_follow_up_at: string | null;
 }
 
-const FOLLOW_UP_CREATE_KEYS: readonly string[] = ['title', 'feedback_notes', 'next_follow_up_at', ...CUSTOMER_SELECTOR_KEYS];
+export const FOLLOW_UP_CREATE_KEYS: readonly string[] = ['title', 'feedback_notes', 'next_follow_up_at', ...CUSTOMER_SELECTOR_KEYS];
 
 const followUpCreateBinding: CapabilityExecutorBinding = {
   executor_ref: 'salesAgentWriteTool:create_follow_up_record',
@@ -258,7 +268,7 @@ export interface TaskCreateInput {
   readonly due_at: string | null;
 }
 
-const TASK_CREATE_KEYS: readonly string[] = ['title', 'due_at', ...CUSTOMER_SELECTOR_KEYS];
+export const TASK_CREATE_KEYS: readonly string[] = ['title', 'due_at', ...CUSTOMER_SELECTOR_KEYS];
 
 const taskCreateBinding: CapabilityExecutorBinding = {
   executor_ref: 'salesAgentWriteTool:create_task',
@@ -301,7 +311,7 @@ export interface CustomerNextFollowUpTimeUpdateInput {
   readonly next_follow_up_at: string;
 }
 
-const CUSTOMER_NEXT_FOLLOW_UP_UPDATE_KEYS: readonly string[] = ['db', 'next_follow_up_at', ...CUSTOMER_SELECTOR_KEYS];
+export const CUSTOMER_NEXT_FOLLOW_UP_UPDATE_KEYS: readonly string[] = ['db', 'next_follow_up_at', ...CUSTOMER_SELECTOR_KEYS];
 
 const customerNextFollowUpTimeUpdateBinding: CapabilityExecutorBinding = {
   executor_ref: 'salesAgentWriteTool:update_next_follow_up_time',
@@ -315,7 +325,10 @@ const customerNextFollowUpTimeUpdateBinding: CapabilityExecutorBinding = {
     if (!isDatabaseLike(record.db)) {
       throw new CapabilityInputValidationError('customer.next_follow_up_time.update requires a DatabaseLike db handle (to read the stored current value for the proposal).');
     }
-    const next_follow_up_at = requireString(record.next_follow_up_at, 'customer.next_follow_up_time.update next_follow_up_at');
+    const next_follow_up_at = requireCanonicalTimestamp(
+      record.next_follow_up_at,
+      'customer.next_follow_up_time.update next_follow_up_at',
+    );
     return { db: record.db as DatabaseLike, next_follow_up_at };
   },
   handoff: async (validatedInput: unknown, scope: CapabilityInvocationScope): Promise<CapabilityConfirmationHandoff> => {
@@ -378,11 +391,16 @@ export const CUSTOMER_CREATE_INPUT_KEYS: readonly string[] = Object.freeze([
   'source',
 ]);
 
-const CONTACT_METHODS = ['WECHAT', 'PHONE', 'WECHAT_AND_PHONE'] as const;
-const WECHAT_SEARCH_STATUSES = ['FOUND', 'NOT_FOUND', 'ABNORMAL', 'UNCERTAIN'] as const;
-const WECHAT_ADD_STATUSES = ['NOT_ADDED', 'ADDED', 'PASSED', 'REJECTED', 'NO_RESPONSE'] as const;
-const INTENT_LEVELS = ['HIGH', 'MEDIUM', 'LOW', 'NONE', 'UNKNOWN'] as const;
-const PHONE_FEEDBACKS = ['NOT_NEEDED', 'CAN_LEARN', 'INTERESTED', 'CAN_MEET', 'NO_ANSWER', 'INVALID_NUMBER', 'UNKNOWN'] as const;
+/** 客户联系方式闭合枚举（customer.create / customer.profile.update contact_method 唯一真源）。 */
+export const CONTACT_METHODS = ['WECHAT', 'PHONE', 'WECHAT_AND_PHONE'] as const;
+/** 微信搜索状态闭合枚举（customer.create / customer.profile.update wechat_search_status 唯一真源）。 */
+export const WECHAT_SEARCH_STATUSES = ['FOUND', 'NOT_FOUND', 'ABNORMAL', 'UNCERTAIN'] as const;
+/** 微信添加状态闭合枚举（customer.create wechat_add_status 唯一真源）。 */
+export const WECHAT_ADD_STATUSES = ['NOT_ADDED', 'ADDED', 'PASSED', 'REJECTED', 'NO_RESPONSE'] as const;
+/** 意向度闭合枚举（customer.create intent_level / visit.create intent_after_visit 唯一真源）。 */
+export const INTENT_LEVELS = ['HIGH', 'MEDIUM', 'LOW', 'NONE', 'UNKNOWN'] as const;
+/** 电话反馈闭合枚举（customer.create phone_feedback 唯一真源）。 */
+export const PHONE_FEEDBACKS = ['NOT_NEEDED', 'CAN_LEARN', 'INTERESTED', 'CAN_MEET', 'NO_ANSWER', 'INVALID_NUMBER', 'UNKNOWN'] as const;
 
 /**
  * 规范化的 customer.create 输入（校验后；默认值已按产品语义应用）：
@@ -549,7 +567,7 @@ export interface CustomerProfileUpdateInput {
 }
 
 /** 输入允许键 = 16 个资料字段 + 执行句柄 db + 防御性客户选择字段（经相干校验后拒绝/放行）。 */
-const CUSTOMER_PROFILE_UPDATE_INPUT_KEYS: readonly string[] = Object.freeze([
+export const CUSTOMER_PROFILE_UPDATE_INPUT_KEYS: readonly string[] = Object.freeze([
   ...CUSTOMER_PROFILE_UPDATE_KEYS,
   'db',
   ...CUSTOMER_SELECTOR_KEYS,
@@ -694,7 +712,7 @@ export interface CustomerOpportunityAmountUpdateInput {
 }
 
 /** 输入允许键 = 执行句柄 db + 单字段 opportunity_amount + 防御性客户选择字段。 */
-const CUSTOMER_OPPORTUNITY_AMOUNT_UPDATE_INPUT_KEYS: readonly string[] = Object.freeze([
+export const CUSTOMER_OPPORTUNITY_AMOUNT_UPDATE_INPUT_KEYS: readonly string[] = Object.freeze([
   'db',
   'opportunity_amount',
   ...CUSTOMER_SELECTOR_KEYS,
@@ -771,7 +789,7 @@ export interface CustomerDeleteInput {
 }
 
 /** 输入允许键 = 执行句柄 db + 防御性客户选择字段（经相干校验后拒绝/放行）。 */
-const CUSTOMER_DELETE_INPUT_KEYS: readonly string[] = Object.freeze([
+export const CUSTOMER_DELETE_INPUT_KEYS: readonly string[] = Object.freeze([
   'db',
   ...CUSTOMER_SELECTOR_KEYS,
 ]);
@@ -852,7 +870,7 @@ export interface VisitCreateInput {
 }
 
 /** 输入允许键 = db 执行句柄 + 7 个面访表单字段 + 防御性客户选择字段（经相干校验后拒绝/放行）。 */
-const VISIT_CREATE_INPUT_KEYS_WITH_SELECTORS: readonly string[] = Object.freeze([
+export const VISIT_CREATE_INPUT_KEYS_WITH_SELECTORS: readonly string[] = Object.freeze([
   'db',
   ...VISIT_CREATE_INPUT_KEYS,
   ...CUSTOMER_SELECTOR_KEYS,
@@ -956,7 +974,7 @@ export interface BattleCardDraftCreateInput {
   readonly clock?: () => string;
 }
 
-const BATTLE_CARD_DRAFT_CREATE_KEYS: readonly string[] = ['db', 'stage_code', 'clock', ...CUSTOMER_SELECTOR_KEYS];
+export const BATTLE_CARD_DRAFT_CREATE_KEYS: readonly string[] = ['db', 'stage_code', 'clock', ...CUSTOMER_SELECTOR_KEYS];
 
 const battleCardDraftCreateBinding: CapabilityExecutorBinding = {
   executor_ref: 'battleCard:generateStageCardDraft',
@@ -996,7 +1014,7 @@ export interface BattleCardConfirmInput {
   readonly clock?: () => string;
 }
 
-const BATTLE_CARD_CONFIRM_KEYS: readonly string[] = ['db', 'card_id', 'expected_version', 'clock', ...CUSTOMER_SELECTOR_KEYS];
+export const BATTLE_CARD_CONFIRM_KEYS: readonly string[] = ['db', 'card_id', 'expected_version', 'clock', ...CUSTOMER_SELECTOR_KEYS];
 
 const battleCardConfirmBinding: CapabilityExecutorBinding = {
   executor_ref: 'battleCard:confirmStageCard',
@@ -1059,7 +1077,7 @@ export interface BattleCardHypothesisStatusUpdateInput {
   readonly clock?: () => string;
 }
 
-const BATTLE_CARD_HYPOTHESIS_UPDATE_KEYS: readonly string[] = ['db', 'hypothesis_id', 'new_status', 'reason', 'expected_version', 'clock', ...CUSTOMER_SELECTOR_KEYS];
+export const BATTLE_CARD_HYPOTHESIS_UPDATE_KEYS: readonly string[] = ['db', 'hypothesis_id', 'new_status', 'reason', 'expected_version', 'clock', ...CUSTOMER_SELECTOR_KEYS];
 
 const battleCardHypothesisStatusUpdateBinding: CapabilityExecutorBinding = {
   executor_ref: 'battleCard:updateHypothesisStatus',
@@ -1135,7 +1153,7 @@ export interface BattleCardIntelligenceImportConfirmInput {
   readonly clock?: () => string;
 }
 
-const BATTLE_CARD_IMPORT_CONFIRM_KEYS: readonly string[] = ['db', 'raw_content', 'keep_fact_ids', 'keep_hypothesis_ids', 'fact_overrides', 'fact_verifications', 'source_system', 'clock', ...CUSTOMER_SELECTOR_KEYS];
+export const BATTLE_CARD_IMPORT_CONFIRM_KEYS: readonly string[] = ['db', 'raw_content', 'keep_fact_ids', 'keep_hypothesis_ids', 'fact_overrides', 'fact_verifications', 'source_system', 'clock', ...CUSTOMER_SELECTOR_KEYS];
 
 const battleCardIntelligenceImportConfirmBinding: CapabilityExecutorBinding = {
   executor_ref: 'battleCard:confirmIntelligenceImport',

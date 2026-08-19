@@ -3,7 +3,9 @@ import { ensureLeadWorkbenchSchema } from './leadWorkbench/db';
 import { ensureCustomerMemorySchema } from './customerMemory/migration';
 import { ensureBattleCardSchema } from './battleCard/schema';
 import { ensureEvidenceSchema } from './evidence/schema';
+import { sortByInstantDesc } from './time/instantCompare';
 import { v4 as uuidv4 } from 'uuid';
+import { invokeTauriAtomicCommand, isTauriRuntime } from './runtime/tauriRuntime';
 
 // 数据库抽象层 - 包装 @tauri-apps/plugin-sql
 // 生产环境下必须使用真实 SQLite，不允许静默回退到内存存储
@@ -51,6 +53,7 @@ async function getDb(): Promise<DatabaseLike> {
             return Database.load('sqlite:personal-crm.db') as Promise<DatabaseLike>;
           })();
         await initializeDatabaseSchema(loadedDb);
+        await loadedDb.execute('PRAGMA foreign_keys = ON');
         dbInstance = loadedDb;
         return loadedDb;
       } catch (e: unknown) {
@@ -539,23 +542,112 @@ export async function updateCustomer(id: string, updates: Partial<Customer>): Pr
   await createCrmRepository(await getDb()).updateCustomer(id, updates);
 }
 
-export async function deleteCustomer(id: string): Promise<void> {
+export async function probeProductionForeignKeys(): Promise<number> {
   const db = await getDb();
-  await db.execute('DELETE FROM follow_up_records WHERE customer_id = ?', [id]);
-  await db.execute('DELETE FROM visit_records WHERE customer_id = ?', [id]);
-  await db.execute('DELETE FROM tasks WHERE customer_id = ?', [id]);
-  // Battle Card 数据与客户同生命周期（级联由应用层显式执行，与现有对象一致）
-  await db.execute('DELETE FROM customer_stage_cards WHERE customer_id = ?', [id]);
-  await db.execute('DELETE FROM customer_hypotheses WHERE customer_id = ?', [id]);
-  await db.execute('DELETE FROM reviewed_facts WHERE customer_id = ?', [id]);
-  await db.execute('DELETE FROM intelligence_imports WHERE customer_id = ?', [id]);
-  // First-Class Evidence（B1）与客户同生命周期
-  await db.execute('DELETE FROM evidence WHERE customer_id = ?', [id]);
-  await db.execute('DELETE FROM customers WHERE id = ?', [id]);
+  const rows = await db.select<{ foreign_keys?: number; foreign_keys_on?: number } | Record<string, number>>('PRAGMA foreign_keys');
+  const row = rows[0] ?? {};
+  const value = Object.values(row)[0];
+  return Number(value ?? 0);
+}
+
+export async function deleteCustomer(id: string): Promise<void> {
+  if (isTauriRuntime()) {
+    await invokeTauriAtomicCommand('delete_customer_atomic', { customerId: id });
+    return;
+  }
+  await deleteCustomerInSameConnectionTransaction(await getDb(), id);
+}
+
+export async function deleteCustomerInSameConnectionTransaction(db: DatabaseLike, id: string): Promise<void> {
+  await db.execute('BEGIN IMMEDIATE');
+  try {
+    await db.execute('PRAGMA defer_foreign_keys = ON');
+    await db.execute('UPDATE customers SET current_stage_card_id = NULL WHERE id = ?', [id]);
+    await db.execute(
+      `DELETE FROM ai_memory_evidence_links WHERE memory_id IN (SELECT id FROM ai_memory_entries WHERE customer_id = ?)`,
+      [id],
+    );
+    await db.execute('DELETE FROM ai_memory_entries WHERE customer_id = ?', [id]);
+    await db.execute('DELETE FROM ai_drafts WHERE customer_id = ?', [id]);
+    await db.execute('DELETE FROM evidence WHERE customer_id = ?', [id]);
+    await db.execute('DELETE FROM follow_up_records WHERE customer_id = ?', [id]);
+    await db.execute('DELETE FROM visit_records WHERE customer_id = ?', [id]);
+    await db.execute('DELETE FROM tasks WHERE customer_id = ?', [id]);
+    await db.execute('DELETE FROM customer_hypotheses WHERE customer_id = ?', [id]);
+    await db.execute('DELETE FROM reviewed_facts WHERE customer_id = ?', [id]);
+    await db.execute('DELETE FROM intelligence_imports WHERE customer_id = ?', [id]);
+    await db.execute('DELETE FROM customer_stage_cards WHERE customer_id = ?', [id]);
+    await db.execute('UPDATE lead_work_items SET customer_id = NULL WHERE customer_id = ?', [id]);
+    await db.execute('UPDATE collected_leads SET customer_id = NULL WHERE customer_id = ?', [id]);
+    await db.execute('UPDATE lead_sync_logs SET target_customer_id = NULL WHERE target_customer_id = ?', [id]);
+    await db.execute('DELETE FROM customers WHERE id = ?', [id]);
+    await db.execute('COMMIT');
+  } catch (error) {
+    try { await db.execute('ROLLBACK'); } catch { /* ignore rollback failure */ }
+    throw error;
+  }
 }
 
 export async function createFollowUp(record: FollowUpRecord): Promise<void> {
   await createCrmRepository(await getDb()).createFollowUp(record);
+}
+
+export interface OccurredFollowUpWrite {
+  readonly record: FollowUpRecord;
+  readonly last_contacted_at: string;
+  readonly next_follow_up_at?: string | null;
+}
+
+let failOccurredFollowUpAfterInsertForTests = false;
+
+export function __failOccurredFollowUpAfterInsertForTests(value = true): void {
+  failOccurredFollowUpAfterInsertForTests = value;
+}
+
+export async function persistOccurredFollowUpInSameConnection(
+  db: DatabaseLike,
+  input: OccurredFollowUpWrite,
+  now: () => string = () => new Date().toISOString(),
+): Promise<void> {
+  const repository = createCrmRepository(db, now);
+  await db.execute('BEGIN IMMEDIATE');
+  try {
+    await repository.createFollowUp(input.record);
+    if (failOccurredFollowUpAfterInsertForTests) {
+      throw new Error('injected second-effect failure');
+    }
+    const customerPatch: Record<string, unknown> = { last_contacted_at: input.last_contacted_at };
+    if (typeof input.next_follow_up_at === 'string' && input.next_follow_up_at.trim()) {
+      customerPatch.next_follow_up_at = input.next_follow_up_at;
+    }
+    await repository.updateCustomer(input.record.customer_id, customerPatch);
+    await db.execute('COMMIT');
+  } catch (error) {
+    try { await db.execute('ROLLBACK'); } catch { /* ignore rollback failure */ }
+    throw error;
+  }
+}
+
+export async function persistOccurredFollowUp(
+  input: OccurredFollowUpWrite,
+  now: () => string = () => new Date().toISOString(),
+): Promise<void> {
+  if (isTauriRuntime()) {
+    await invokeTauriAtomicCommand('persist_occurred_follow_up_atomic', {
+      payload: {
+        id: input.record.id,
+        customerId: input.record.customer_id,
+        title: input.record.title,
+        feedbackNotes: input.record.feedback_notes,
+        createdAt: input.record.created_at,
+        lastContactedAt: input.last_contacted_at,
+        nextFollowUpAt: typeof input.next_follow_up_at === 'string' ? input.next_follow_up_at : null,
+        isCompleted: input.record.is_completed,
+      },
+    });
+    return;
+  }
+  await persistOccurredFollowUpInSameConnection(await getDb(), input, now);
 }
 
 export interface CustomerSearchRepositoryFilters {
@@ -671,6 +763,9 @@ export function createCrmRepository(db: DatabaseLike, now: () => string = () => 
      record.next_follow_up_at, record.is_completed, record.created_at, record.updated_at],
       );
     },
+    async persistOccurredFollowUp(input: OccurredFollowUpWrite): Promise<void> {
+      await persistOccurredFollowUpInSameConnection(db, input, now);
+    },
     async createTask(task: Task): Promise<void> {
       await db.execute(
         `INSERT INTO tasks (id, customer_id, title, due_at, status, priority, source, created_at, updated_at)
@@ -700,15 +795,17 @@ export function createCrmRepository(db: DatabaseLike, now: () => string = () => 
 
 export async function listFollowUps(customerId: string): Promise<FollowUpRecord[]> {
   const db = await getDb();
-  return db.select<FollowUpRecord>(
-    'SELECT * FROM follow_up_records WHERE customer_id = ? ORDER BY created_at DESC',
+  const rows = await db.select<FollowUpRecord>(
+    'SELECT * FROM follow_up_records WHERE customer_id = ?',
     [customerId],
   );
+  return sortByInstantDesc(rows, row => row.created_at);
 }
 
 export async function listAllFollowUps(): Promise<FollowUpRecord[]> {
   const db = await getDb();
-  return db.select<FollowUpRecord>('SELECT * FROM follow_up_records ORDER BY created_at DESC');
+  const rows = await db.select<FollowUpRecord>('SELECT * FROM follow_up_records');
+  return sortByInstantDesc(rows, row => row.created_at);
 }
 
 export async function createVisit(record: VisitRecord): Promise<void> {
@@ -726,15 +823,17 @@ export async function createVisit(record: VisitRecord): Promise<void> {
 
 export async function listVisits(customerId: string): Promise<VisitRecord[]> {
   const db = await getDb();
-  return db.select<VisitRecord>(
-    'SELECT * FROM visit_records WHERE customer_id = ? ORDER BY created_at DESC',
+  const rows = await db.select<VisitRecord>(
+    'SELECT * FROM visit_records WHERE customer_id = ?',
     [customerId],
   );
+  return sortByInstantDesc(rows, row => row.created_at);
 }
 
 export async function listAllVisits(): Promise<VisitRecord[]> {
   const db = await getDb();
-  return db.select<VisitRecord>('SELECT * FROM visit_records ORDER BY created_at DESC');
+  const rows = await db.select<VisitRecord>('SELECT * FROM visit_records');
+  return sortByInstantDesc(rows, row => row.created_at);
 }
 
 export async function createTask(task: Task): Promise<void> {

@@ -33,6 +33,7 @@ describe('trusted-host-provider suite', () => {
     expect(hostBoundary).toContain('list_trusted_host_provider_status');
     expect(tauriLibrary).toContain('trusted_host::probe_trusted_host_provider_health');
     expect(adapter).toContain('createProductionModelCaller');
+    expect(adapter).toContain('createModelPlannerCaller');
     expect(adapter).not.toMatch(/\bfetch\s*\(/);
     expect(adapter).not.toContain('apiKey');
   });

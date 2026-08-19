@@ -4,6 +4,8 @@ import type { LoadedReadOnlyAgentSnapshot } from '../readOnlySnapshotLoaderReadi
 import { SEARCH_CUSTOMERS_TOOL_ID } from './searchCustomers';
 import { SEARCH_CUSTOMERS_TOOL_META } from './executeSearchCustomersTool';
 import { CUSTOMER_PRIORITY_RANKING_TOOL_ID } from './customerPriorityRanking';
+import { listFollowUps } from '../db';
+import { readCustomerTimeline, readCustomerVisits } from '../capabilities/timeline/readAdapter';
 
 export type SalesAgentCustomerScopedToolId =
   | 'get_customer'
@@ -97,19 +99,40 @@ export function executeSalesAgentReadTool(id: SalesAgentCustomerScopedToolId, in
   if (id === ('search_customers' as string)) {
     throw new Error('search_customers must run through executeSearchCustomersTool against the CRM repository.');
   }
+  if (id === 'get_customer_timeline' || id === 'list_customer_followups' || id === 'list_customer_visits') {
+    throw new Error('LEGACY_WRONG_TIMELINE_RUNTIME_RETIRED: use executeProductionReadTool / product timeline adapters.');
+  }
   const customer = input.snapshot.customers.filter(item => item.id === input.customer_id);
   const tasks = input.snapshot.tasks.filter(item => item.customer_id === input.customer_id);
-  const work = input.snapshot.work_items.filter(item => item.customer_id === input.customer_id);
   const records =
     id === 'get_customer' ? customer
       : id === 'get_customer_context' ? [input.context]
         : id === 'list_customer_tasks' ? tasks
-          : id === 'get_customer_timeline' || id === 'list_customer_followups' || id === 'list_customer_visits' ? [...tasks, ...work]
-            : id === 'get_active_memory' ? [...(input.memory?.items ?? [])]
-              : id === 'get_existing_ai_results' ? []
-                : [...customer, ...tasks];
+          : id === 'get_active_memory' ? [...(input.memory?.items ?? [])]
+            : id === 'get_existing_ai_results' ? []
+              : [...customer, ...tasks];
   const evidence_refs = [...new Set(records.flatMap(record => evidenceFor(record)))];
   return { tool_id: id, evidence_refs, records, read_only: true, writes_crm: false };
+}
+
+/** Production read path: timeline/follow-up/visit truth comes from CRM tables, not tasks+work_items. */
+export async function executeProductionReadTool(
+  id: SalesAgentCustomerScopedToolId,
+  input: SalesAgentReadToolContext,
+): Promise<SalesAgentToolResult> {
+  if (id === 'get_customer_timeline') {
+    const result = await readCustomerTimeline({ customer_id: input.customer_id });
+    return { tool_id: id, evidence_refs: result.evidence_refs, records: result.records, read_only: true, writes_crm: false };
+  }
+  if (id === 'list_customer_followups') {
+    const rows = await listFollowUps(input.customer_id);
+    return { tool_id: id, evidence_refs: rows.map(row => row.id), records: rows, read_only: true, writes_crm: false };
+  }
+  if (id === 'list_customer_visits') {
+    const result = await readCustomerVisits({ customer_id: input.customer_id });
+    return { tool_id: id, evidence_refs: result.evidence_refs, records: result.records, read_only: true, writes_crm: false };
+  }
+  return executeSalesAgentReadTool(id, input);
 }
 
 function evidenceFor(record: unknown): string[] {

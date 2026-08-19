@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Building2, Check, ChevronRight, FileText, Image, Mic, Paperclip, Sparkles, X } from 'lucide-react';
+import { Building2, Check, ChevronRight, FileText, Image, Inbox, Mic, Paperclip, Sparkles, X } from 'lucide-react';
 import type { ContextSnapshot } from '../../lib/context/types';
 import type { CustomerMemoryContext, MemoryRepository } from '../../lib/customerMemory';
 import type { LoadedReadOnlyAgentSnapshot } from '../../lib/readOnlySnapshotLoaderReadiness';
@@ -11,11 +11,21 @@ import type { WriteClarificationRequest } from '../../lib/salesAgentTools/writeI
 import { editFact, reviewedFacts, setFactReview, type CustomerCaptureReview } from '../../lib/customerCapture/review';
 import { readAndValidateVisionFile } from '../../lib/productionAi/visionInput';
 import { mapSalesAgentOrbState, type SalesAgentUiPhase } from '../../lib/salesAgentUi/orbState';
-import { buildAgentWorkProcess, summarizeWorkProcess } from '../../lib/salesAgentUi/workProcess';
-import { SALES_AGENT_QUICK_ACTIONS, type SalesAgentQuickAction } from '../../lib/salesAgentUi/quickActions';
+import { buildAgentWorkProcess, describeReadWork, describeReasoningWork, summarizeWorkProcess } from '../../lib/salesAgentUi/workProcess';
+import { AGENT_HOME_QUICK_ACTIONS, type SalesAgentQuickAction } from '../../lib/salesAgentUi/quickActions';
 import { formatUserFacingErrorMessage } from '../../lib/salesAgentUi/formatUserFacingError';
+import { formatProposalValues, formatUserTimeLabel, projectConfirmationCard, projectConfirmationTechnicalDetails } from '../../lib/salesAgentUi/userFacingFieldFormatter';
 import { projectResultCards } from '../../lib/salesAgentUi/resultCards';
-import { resolveUnifiedAgentStageMode } from '../../lib/salesAgentUi/stageMode';
+import { explainUnchangedCrmError, mapUserExecutionState } from '../../lib/salesAgentUi/executionState';
+import {
+  bindPendingPrompt,
+  decideCustomerBoundPendingResume,
+  isInternalCustomerBind,
+  type CustomerBoundPending,
+} from '../../lib/salesAgentUi/conversationPendingScope';
+import { t, tGrade, tStage } from '../../lib/i18n/appLocale';
+import { useAppLocale } from '../../lib/i18n/LocaleProvider';
+import { isGenericOptionalCustomerPickerEnabled, resolveUnifiedAgentStageMode } from '../../lib/salesAgentUi/stageMode';
 import {
   SalesAgentInteractionController,
   type SalesAgentInteractionState,
@@ -43,7 +53,12 @@ export function CaptureRuntimeMetadata({ details }: { details: ProductionRuntime
   </div>;
 }
 
-function semanticRouterFromHost(host: SalesAgentHost | null): ((instruction: string, envelopeId: string, signal?: AbortSignal) => Promise<SemanticIntentResolution>) | undefined {
+function semanticRouterFromHost(host: SalesAgentHost | null): ((
+  instruction: string,
+  envelopeId: string,
+  signal?: AbortSignal,
+  routingContext?: import('../../lib/productionAi/semanticIntentRouter').SemanticIntentRoutingContext,
+) => Promise<SemanticIntentResolution>) | undefined {
   if (!host || !('routeSemanticIntent' in host) || typeof host.routeSemanticIntent !== 'function') return undefined;
   return host.routeSemanticIntent as (instruction: string, envelopeId: string, signal?: AbortSignal) => Promise<SemanticIntentResolution>;
 }
@@ -87,49 +102,12 @@ function createSpeechRecognition(): SpeechRecognitionLike | null {
   return ctor ? new ctor() : null;
 }
 
-function formatProposalValues(values: Record<string, unknown>): string {
-  return Object.entries(values)
-    .map(([key, value]) => {
-      const label = key === 'next_follow_up_at' ? '下次跟进'
-        : key === 'feedback_notes' ? '跟进内容'
-          : key === 'title' ? '标题'
-            : key === 'due_at' ? '截止时间'
-              : key === 'status' ? '状态'
-                : key === 'customer_name' ? '客户名称'
-                  : key;
-      const text = typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
-        ? String(value)
-        : value == null ? '（空）' : formatUserFacingErrorMessage(value);
-      return `${label}：${text}`;
-    })
-    .join('\n');
-}
-
-function proposalTitle(proposal: AgentWriteProposal): string {
-  if (proposal.grouped_operations) return '组合写入建议';
-  if (proposal.tool_id === 'create_follow_up_record') return '新增跟进记录';
-  if (proposal.tool_id === 'create_task') return '创建任务';
-  if (proposal.tool_id === 'update_next_follow_up_time') return '更新下一次跟进时间';
-  if (proposal.tool_id === 'delete_customer') return '永久删除客户（不可逆）';
-  return '确认 CRM 写入';
-}
-
 function confirmButtonLabel(proposal: AgentWriteProposal): string {
-  if (proposal.grouped_operations) return '确认执行所选操作';
-  if (proposal.tool_id === 'create_follow_up_record') return '确认新增';
-  if (proposal.tool_id === 'create_task') return '确认创建';
-  if (proposal.tool_id === 'update_next_follow_up_time') return '确认更新';
-  if (proposal.tool_id === 'delete_customer') return '确认永久删除';
-  return '确认';
+  return projectConfirmationCard(proposal).confirm_label;
 }
 
 function successLabel(proposal: AgentWriteProposal): string {
-  if (proposal.grouped_operations) return '✓ 已执行所选组合操作';
-  if (proposal.tool_id === 'create_follow_up_record') return '✓ 已新增跟进记录';
-  if (proposal.tool_id === 'create_task') return '✓ 已创建任务';
-  if (proposal.tool_id === 'update_next_follow_up_time') return '✓ 已更新下一次跟进时间';
-  if (proposal.tool_id === 'delete_customer') return '✓ 已永久删除客户及其关联记录';
-  return '✓ 已完成写入';
+  return projectConfirmationCard(proposal).success_label;
 }
 
 function proposalIntent(proposal: AgentWriteProposal | null): 'CREATE_FOLLOW_UP_REQUEST' | 'CREATE_TASK_REQUEST' | 'UPDATE_CUSTOMER_REQUEST' | '' {
@@ -162,6 +140,7 @@ export function SalesAgentInteractionWorkspace({
   initialInstruction = null,
   onInitialInstructionConsumed,
   onRegisterNewConversation,
+  userConversationKey,
 }: {
   customerId: string;
   customerName?: string;
@@ -186,6 +165,8 @@ export function SalesAgentInteractionWorkspace({
   initialInstruction?: string | null;
   onInitialInstructionConsumed?: () => void;
   onRegisterNewConversation?: (handler: (() => void) | null) => void;
+  /** Changes when the user navigates into a customer from outside internal bind. */
+  userConversationKey?: string;
 }) {
   const sessionRef = useRef<SalesAgentSession | null>(null);
   const [sessionVersion, setSessionVersion] = useState(0);
@@ -244,9 +225,11 @@ export function SalesAgentInteractionWorkspace({
 
   const controllerRef = useRef<SalesAgentInteractionController | null>(null);
   const [controllerReady, setControllerReady] = useState(false);
-  const pendingContinue = useRef<string | null>(null);
+  const pendingContinue = useRef<CustomerBoundPending | null>(null);
   /** User prompt waiting for customer snapshot/session after bind or reload. */
-  const pendingUserSubmit = useRef<string | null>(null);
+  const pendingUserSubmit = useRef<CustomerBoundPending | null>(null);
+  const lastUserConversationKey = useRef<string | null>(null);
+  useAppLocale();
 
   const ensureController = useCallback(async () => {
     if (controllerRef.current) return controllerRef.current;
@@ -260,6 +243,9 @@ export function SalesAgentInteractionWorkspace({
         },
         clock: () => SALES_AGENT_APP_CLOCK.now(),
         semantic_intent_router: semanticRouterFromHost(host),
+        model_planner: host && 'createModelPlannerCaller' in host && typeof host.createModelPlannerCaller === 'function'
+          ? host.createModelPlannerCaller()
+          : undefined,
         customer_catalog: customerCatalog,
       });
       setControllerReady(true);
@@ -274,14 +260,41 @@ export function SalesAgentInteractionWorkspace({
 
   useEffect(() => {
     if (!controllerRef.current) return;
-    controllerRef.current.syncExternalScope(customerId || null, customerName);
-    controllerRef.current.createSession = (id: string) => {
+    const controller = controllerRef.current;
+    const navigationKey = userConversationKey ?? customerId;
+    const isInternalBind = isInternalCustomerBind(pendingContinue.current, customerId);
+    if (!customerId) {
+      if (decideCustomerBoundPendingResume(pendingUserSubmit.current, null).action === 'discard') {
+        pendingUserSubmit.current = null;
+      }
+      controller.syncExternalScope(null);
+      lastUserConversationKey.current = null;
+    } else if (isInternalBind) {
+      controller.syncExternalScope(customerId, customerName);
+      lastUserConversationKey.current = navigationKey;
+    } else if (lastUserConversationKey.current !== navigationKey) {
+      if (decideCustomerBoundPendingResume(pendingContinue.current, customerId).action === 'discard') {
+        pendingContinue.current = null;
+      }
+      if (decideCustomerBoundPendingResume(pendingUserSubmit.current, customerId).action === 'discard') {
+        pendingUserSubmit.current = null;
+      }
+      controller.enterCustomerConversation(customerId, customerName);
+      lastUserConversationKey.current = navigationKey;
+    } else {
+      controller.syncExternalScope(customerId, customerName);
+    }
+    controller.createSession = (id: string) => {
       const current = sessionRef.current;
       return current && current.getCustomerId() === id ? current : null;
     };
-    controllerRef.current.semanticIntentRouter = semanticRouterFromHost(host) ?? null;
-    controllerRef.current.customerCatalog = customerCatalog ?? [];
-  }, [customerId, customerName, customerCatalog, sessionVersion, host]);
+    controller.semanticIntentRouter = semanticRouterFromHost(host) ?? null;
+    controller.modelPlanner = host && 'createModelPlannerCaller' in host && typeof host.createModelPlannerCaller === 'function'
+      ? host.createModelPlannerCaller()
+      : null;
+    controller.setRuntimeContext({ snapshot, context, memory });
+    controller.customerCatalog = customerCatalog ?? [];
+  }, [customerId, customerName, customerCatalog, sessionVersion, host, snapshot, context, memory, userConversationKey]);
 
   const [message, setMessage] = useState('');
   const [result, setResult] = useState<AgentSessionResult | null>(null);
@@ -323,10 +336,17 @@ export function SalesAgentInteractionWorkspace({
   const [activePrompt, setActivePrompt] = useState('');
   const [historyOpen, setHistoryOpen] = useState(false);
   const [history, setHistory] = useState<readonly HistoryItem[]>([]);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [analysisExpanded, setAnalysisExpanded] = useState(false);
+  const [confirmExpanded, setConfirmExpanded] = useState(false);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const [interactionState, setInteractionState] = useState<SalesAgentInteractionState | null>(null);
   const initialInstructionConsumedRef = useRef<string | null>(null);
   const thinkingStartedAt = useRef(0);
+
+  useEffect(() => {
+    setConfirmExpanded(false);
+  }, [proposal?.proposal_id]);
 
   const holdThinkingMorph = async () => {
     const elapsed = Date.now() - thinkingStartedAt.current;
@@ -337,7 +357,7 @@ export function SalesAgentInteractionWorkspace({
 
   const orbState = mapSalesAgentOrbState({
     phase,
-    hasResult: Boolean(result),
+    hasResult: Boolean(result) || Boolean(interactionState?.latest_direct_answer),
     hasProposal: Boolean(proposal),
     voiceListening,
     sessionBusy,
@@ -350,7 +370,7 @@ export function SalesAgentInteractionWorkspace({
     candidateCount: candidates.length,
     hasPortfolio: portfolioMode,
     hasProposal: Boolean(proposal),
-    hasResult: Boolean(result),
+    hasResult: Boolean(result) || Boolean(interactionState?.latest_direct_answer),
     hasWriteSuccess: Boolean(writeResult),
     hasClarification: Boolean(clarification) || interactionState?.phase === 'clarification',
   });
@@ -359,6 +379,11 @@ export function SalesAgentInteractionWorkspace({
   const composerMorphOut = stageMode === 'thinking';
   const showQuickActions = stageMode === 'input';
   const thinkingVisible = stageMode === 'thinking';
+  const genericPickerEnabled = isGenericOptionalCustomerPickerEnabled(stageMode, customerId);
+
+  useEffect(() => {
+    if (!genericPickerEnabled) setPickerOpen(false);
+  }, [genericPickerEnabled]);
 
   const workSteps = buildAgentWorkProcess({
     customerSelected: Boolean(customerId),
@@ -377,6 +402,7 @@ export function SalesAgentInteractionWorkspace({
   const processSummary = summarizeWorkProcess(workSteps);
   const processExpanded = processDrawerOpen ?? false;
   const projected = result && !proposal && !clarification ? projectResultCards(result) : null;
+  const directAnswer = !proposal && !clarification ? interactionState?.latest_direct_answer : null;
 
   const pushHistory = (question: string, summary: string, status: string) => {
     setHistory(current => [
@@ -426,9 +452,8 @@ export function SalesAgentInteractionWorkspace({
   const finishTurn = (state: SalesAgentInteractionState, options?: { readonly userText?: string }) => {
     applyState(state);
     if (options?.userText) {
-      const summary = state.latest_result
-        ? projectResultCards(state.latest_result).headline
-        : (state.agent_message || '已完成本轮分析');
+      const summary = state.latest_direct_answer?.headline
+        ?? (state.latest_result ? projectResultCards(state.latest_result).headline : (state.agent_message || t('agent.turnComplete')));
       pushHistory(options.userText, summary, state.phase);
     }
   };
@@ -443,12 +468,14 @@ export function SalesAgentInteractionWorkspace({
   }, [customerId]);
 
   useEffect(() => {
-    const pending = pendingContinue.current;
-    if (!pending || !sessionRef.current || contextLoading) return;
-    // Binding a compare's primary customer replaces the prior Session
-    // asynchronously. Never consume the continuation against that stale Session.
+    const decision = decideCustomerBoundPendingResume(pendingContinue.current, customerId);
+    if (decision.action !== 'resume' || !sessionRef.current || contextLoading) {
+      if (decision.action === 'discard') pendingContinue.current = null;
+      return;
+    }
     if (sessionRef.current.getCustomerId() !== customerId) return;
     pendingContinue.current = null;
+    const pending = decision.prompt;
     void (async () => {
       const controller = await ensureController();
       setSessionBusy(true);
@@ -465,13 +492,16 @@ export function SalesAgentInteractionWorkspace({
   }, [sessionVersion, contextLoading, customerId]);
 
   useEffect(() => {
-    const pending = pendingUserSubmit.current;
-    if (!pending) return;
+    const decision = decideCustomerBoundPendingResume(pendingUserSubmit.current, customerId);
+    if (decision.action !== 'resume') {
+      if (decision.action === 'discard') pendingUserSubmit.current = null;
+      return;
+    }
     if (!customerId || contextLoading || !sessionRef.current || !snapshot || !context) return;
     if (sessionBusy) return;
     pendingUserSubmit.current = null;
     setLocatingCustomer(false);
-    void submit(pending);
+    void submit(decision.prompt);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionVersion, contextLoading, snapshot, context, customerId, sessionBusy]);
 
@@ -480,7 +510,7 @@ export function SalesAgentInteractionWorkspace({
     if (sessionBusy) return;
     // Queue scoped instructions until session identity + read context are ready (no lost writes).
     if (customerId && (contextLoading || !sessionRef.current || !snapshot || !context)) {
-      pendingUserSubmit.current = prompt.trim();
+      pendingUserSubmit.current = bindPendingPrompt(prompt.trim(), customerId);
       setMessage('');
       setError('');
       setWriteResult('');
@@ -529,7 +559,7 @@ export function SalesAgentInteractionWorkspace({
       finishTurn(turn.state, { userText: prompt });
 
       if (turn.event.type === 'bind_required') {
-        pendingContinue.current = turn.event.continue_prompt;
+        pendingContinue.current = bindPendingPrompt(turn.event.continue_prompt, turn.event.customer_id);
         onBindCustomer(turn.event.customer_id, { continuePrompt: turn.event.continue_prompt });
         setLocatingCustomer(true);
         setPhase('thinking');
@@ -577,13 +607,14 @@ export function SalesAgentInteractionWorkspace({
     // Prefer live session; if React remounted Session, rebuild one for the same customer —
     // canonical proposal still lives in the process-stable write-state store.
     let session = sessionRef.current;
+    const unscopedCreate = confirmedProposal.tool_id === 'create_customer';
     if (!session || session.getCustomerId() !== confirmedProposal.customer_id) {
-      if (!snapshot || !context || !confirmedProposal.customer_id) {
+      if (!unscopedCreate && (!snapshot || !context || !confirmedProposal.customer_id)) {
         setError('这项待确认操作已经失效，请重新生成后再确认。');
         setPhase('blocked');
         return;
       }
-      session = new SalesAgentSession(confirmedProposal.customer_id, host, () => SALES_AGENT_APP_CLOCK.now(), {
+      session = new SalesAgentSession(confirmedProposal.customer_id, host, () => SALES_AGENT_APP_CLOCK.now(), snapshot && context ? {
         snapshot,
         context,
         memory,
@@ -594,8 +625,8 @@ export function SalesAgentInteractionWorkspace({
         model_caller: host && 'createProductionModelCaller' in host && typeof host.createProductionModelCaller === 'function'
           ? host.createProductionModelCaller()
           : undefined,
-      });
-      sessionRef.current = session;
+      } : undefined);
+      if (!unscopedCreate) sessionRef.current = session;
     }
     try {
       const write = await confirmSalesAgentProposal(session, confirmedProposal, async () => {
@@ -657,6 +688,18 @@ export function SalesAgentInteractionWorkspace({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialInstruction, sessionBusy, contextLoading, customerId, sessionVersion]);
 
+  const cancelCandidateSelection = () => {
+    if (sessionBusy) return;
+    void ensureController().then(controller => {
+      pendingContinue.current = null;
+      const next = controller.cancelCandidateSelection();
+      applyState(next);
+      setActivePrompt('');
+      setError('');
+      setPhase('idle');
+    });
+  };
+
   const pickCandidate = async (candidate: CustomerSearchCandidate) => {
     if (sessionBusy) return;
     setSessionBusy(true);
@@ -668,7 +711,7 @@ export function SalesAgentInteractionWorkspace({
       applyState(turn.state);
 
       if (turn.event.type === 'bind_required') {
-        pendingContinue.current = turn.event.continue_prompt;
+        pendingContinue.current = bindPendingPrompt(turn.event.continue_prompt, turn.event.customer_id);
         onBindCustomer(turn.event.customer_id, { continuePrompt: turn.event.continue_prompt });
         return;
       }
@@ -830,7 +873,7 @@ export function SalesAgentInteractionWorkspace({
       {customerId ? (
         <div className="agent-scope-chip" data-testid="agent-scope-chip" role="status">
           <Building2 size={14} aria-hidden="true" />
-          <span>{customerName || '当前客户'}</span>
+          <span>{customerName || t('agent.currentCustomer')}</span>
           <button
             type="button"
             className="agent-scope-clear"
@@ -846,6 +889,36 @@ export function SalesAgentInteractionWorkspace({
             <X size={12} />
           </button>
         </div>
+      ) : genericPickerEnabled ? (
+        <div className="agent-optional-picker">
+          <button
+            type="button"
+            className="agent-scope-chip agent-scope-optional"
+            data-testid="agent-optional-customer"
+            onClick={() => setPickerOpen(open => !open)}
+          >
+            <Building2 size={14} aria-hidden="true" />
+            <span>{t('agent.selectCustomerOptional')}</span>
+          </button>
+          {pickerOpen && customerCatalog && customerCatalog.length > 0 ? (
+            <div className="agent-picker-menu" data-testid="agent-optional-customer-list">
+              {customerCatalog.slice(0, 8).map(item => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className="agent-picker-item"
+                  onClick={() => {
+                    if (!isGenericOptionalCustomerPickerEnabled(stageMode, customerId)) return;
+                    setPickerOpen(false);
+                    onBindCustomer(item.id);
+                  }}
+                >
+                  {item.name}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
       ) : null}
       <textarea
         aria-label="Sales Agent message"
@@ -860,7 +933,7 @@ export function SalesAgentInteractionWorkspace({
             void submit();
           }
         }}
-        placeholder="向 Sales Agent 提问或下达指令…"
+        placeholder={t('agent.composer.placeholder')}
         rows={1}
       />
       <div className="agent-composer-tools">
@@ -904,16 +977,19 @@ export function SalesAgentInteractionWorkspace({
           <SalesAgentGlassOrb state={orbState} compact={orbCompact} />
         </div>
 
+        {stageMode === 'input' ? (
+          <div className="agent-home-greeting" data-testid="agent-home-greeting">
+            <h1>{t('agent.home.title')}</h1>
+            <p>{t('agent.home.subtitle')}</p>
+          </div>
+        ) : null}
+
         {thinkingVisible ? (
           <div className="agent-thinking-panel" data-testid="agent-thinking-panel">
-            <p className="agent-live-status" data-testid="agent-live-status">{processSummary}…</p>
-            <ol className="agent-step-progress" aria-label="简要步骤">
-              {workSteps.slice(0, 4).map(step => (
-                <li key={step.id} className={step.status}>{step.label}</li>
-              ))}
-            </ol>
+            <p className="agent-live-status" data-testid="agent-live-status">{mapUserExecutionState({ sessionBusy: true })}</p>
+            <p className="agent-thinking-reason">{processSummary}</p>
             <button type="button" className="btn btn-sm" data-testid="agent-cancel-inflight" onClick={cancelInFlight}>
-              取消
+              {t('agent.cancel')}
             </button>
             <button
               type="button"
@@ -939,8 +1015,8 @@ export function SalesAgentInteractionWorkspace({
               {candidates.map(candidate => (
                 <button key={candidate.id} type="button" className="agent-candidate-card" onClick={() => void pickCandidate(candidate)} disabled={sessionBusy}>
                   <strong>{candidate.name}</strong>
-                  <span>{[candidate.region, candidate.industry, candidate.customer_grade ? `${candidate.customer_grade}类` : ''].filter(Boolean).join(' · ') || '地区/行业未标注'}</span>
-                  <span>阶段：{candidate.stage || '—'} · 最近互动：{candidate.last_contacted_at || '—'}</span>
+                  <span>{[candidate.region, candidate.industry, candidate.customer_grade ? tGrade(candidate.customer_grade) : ''].filter(Boolean).join(' · ') || t('agent.unspecifiedRegion')}</span>
+                  <span>{t('agent.stage')}：{candidate.stage ? tStage(candidate.stage) : '—'} · {t('agent.lastContact')}：{candidate.last_contacted_at ? formatUserTimeLabel(candidate.last_contacted_at) : '—'}</span>
                   {interactionState?.latest_priority_ranking?.items.find(item => item.customer_id === candidate.id) ? <span data-testid={`priority-reasons-${candidate.id}`}>第 {interactionState.latest_priority_ranking.items.find(item => item.customer_id === candidate.id)?.rank} 名 · {candidate.match_score} 分 · {interactionState.latest_priority_ranking.items.find(item => item.customer_id === candidate.id)?.deterministic_reasons.slice(0, 3).join('；')}</span> : null}
                 </button>
               ))}
@@ -955,28 +1031,37 @@ export function SalesAgentInteractionWorkspace({
 
         {stageMode === 'candidate' ? (
           <div className="agent-candidate-inline" data-testid="agent-candidate-grid" aria-label="客户候选">
-            <p className="agent-candidate-title">找到多个可能的客户，请选择一个继续</p>
-            {emptyExact && <p className="agent-candidate-note">没有找到准确客户，以下为近似候选。</p>}
+            <p className="agent-candidate-title">{t('agent.candidatesTitle')}</p>
+            {emptyExact && <p className="agent-candidate-note">{t('agent.candidatesEmptyExact')}</p>}
             <div className="agent-candidate-grid">
               {candidates.slice(0, 5).map(candidate => (
                 <button key={candidate.id} type="button" className="agent-candidate-card" onClick={() => void pickCandidate(candidate)} disabled={sessionBusy}>
                   <strong>{candidate.name}</strong>
-                  <span>{[candidate.region, candidate.industry, candidate.customer_grade ? `${candidate.customer_grade}类` : ''].filter(Boolean).join(' · ') || '地区/行业未标注'}</span>
-                  <span>阶段：{candidate.stage || '—'} · 最近互动：{candidate.last_contacted_at || '—'}</span>
+                  <span>{[candidate.region, candidate.industry, candidate.customer_grade ? tGrade(candidate.customer_grade) : ''].filter(Boolean).join(' · ') || t('agent.unspecifiedRegion')}</span>
+                  <span>{t('agent.stage')}：{candidate.stage ? tStage(candidate.stage) : '—'} · {t('agent.lastContact')}：{candidate.last_contacted_at ? formatUserTimeLabel(candidate.last_contacted_at) : '—'}</span>
                 </button>
               ))}
             </div>
+            <button
+              type="button"
+              className="btn btn-sm agent-candidate-cancel"
+              data-testid="agent-candidate-cancel"
+              onClick={cancelCandidateSelection}
+              disabled={sessionBusy}
+            >
+              {t('agent.cancel')}
+            </button>
           </div>
         ) : null}
 
         {stageMode === 'clarification' && clarification ? (
           <section className="agent-clarify-inline" aria-label="写入澄清" data-testid="agent-clarification-card">
-            <h3>需要补充信息</h3>
+            <h3>{t('agent.clarification.title')}</h3>
             <p className="agent-clarify-question">{clarification.question}</p>
-            <p className="agent-clarify-pending">待完成：{clarification.original_instruction}</p>
-            <p className="agent-clarify-scope">客户：{customerName || clarification.customer_id}</p>
+            <p className="agent-clarify-pending">{t('agent.clarification.pending')}：{clarification.original_instruction}</p>
+            <p className="agent-clarify-scope">{t('agent.clarification.customer')}：{customerName || clarification.customer_id}</p>
             {Object.keys(clarification.parsed_fields).length > 0 ? (
-              <p className="agent-clarify-parsed">已解析：{formatProposalValues(clarification.parsed_fields as Record<string, unknown>)}</p>
+              <p className="agent-clarify-parsed">{t('agent.clarification.parsed')}：{formatProposalValues(clarification.parsed_fields as Record<string, unknown>)}</p>
             ) : null}
             <div className="agent-clarify-actions">
               {clarification.quick_replies.map(reply => (
@@ -1001,96 +1086,125 @@ export function SalesAgentInteractionWorkspace({
           </section>
         ) : null}
 
-        {stageMode === 'result' && projected ? (
-          <div className="agent-result-stage" data-testid="agent-result-card" data-current-intent={result?.plan.intent ?? ''} aria-label="Sales Agent result">
-            <header className="agent-result-header">
-              <div className="agent-result-title-row">
-                <SalesAgentGlassOrb state={orbState} compact />
-                <div>
-                  <h3>Sales Agent 为你生成了洞察</h3>
-                  <p>依据最新数据 · 刚刚</p>
-                </div>
-              </div>
-              {result?.runtime_details ? (
-                <button
-                  type="button"
-                  className="agent-runtime-mode-badge"
-                  data-testid="agent-runtime-mode-badge"
-                  data-runtime-mode={result.runtime_details.runtime_mode}
-                  onClick={() => setRuntimeDetailsOpen(open => !open)}
-                >
-                  {import.meta.env.VITE_E2E_PROFILE === '1'
-                    ? 'E2E Fake Transport / 测试配置'
-                    : result.runtime_details.ui_label}
-                </button>
-              ) : null}
-            </header>
-            {runtimeDetailsOpen && result?.runtime_details ? (
-              <div className="agent-runtime-details" data-testid="agent-runtime-details">
-                <p>运行模式：{result.runtime_details.runtime_mode}</p>
-                <p>Provider：{result.runtime_details.provider ?? '无'}</p>
-                <p>Model：{result.runtime_details.model ?? '无'}</p>
-                <p>是否调用模型：{result.runtime_details.model_called ? '是' : '否'}</p>
-                <p>request_id：{result.runtime_details.request_id}</p>
-                <p>latency：{result.runtime_details.latency_ms == null ? '—' : `${result.runtime_details.latency_ms} ms`}</p>
-                <p>token usage：{result.runtime_details.token_usage?.total_tokens ?? '—'}</p>
-                <p>工具：{result.runtime_details.tools_used.join(' → ') || '无'}</p>
-                <p>Evidence 数量：{result.runtime_details.evidence_count}</p>
-                <p>是否降级：{result.runtime_details.degraded ? '是' : '否'}</p>
-                <p>降级原因：{result.runtime_details.degradation_reason ?? '无'}</p>
-                <p>输出验证：{result.runtime_details.validation_status}</p>
-                <p>Schema validation：{result.runtime_details.schema_validation_status}</p>
-                <p>Evidence validation：{result.runtime_details.evidence_validation_status}</p>
-                <p>Cancellation status：{result.runtime_details.cancellation_status}</p>
-              </div>
-            ) : null}
-            {result?.blocked_message ? (
-              <p className="agent-model-unavailable" data-testid="agent-model-unavailable" role="status">{result.blocked_message}</p>
-            ) : null}
-            <p className="agent-result-headline">{projected.headline}</p>
-            <div className="agent-insight-grid">
-              <article className="agent-insight-card">
-                <h4>客户理解</h4>
-                <p>{projected.understanding}</p>
-              </article>
-              <article className="agent-insight-card">
-                <h4>风险与机会</h4>
-                <p><strong>{projected.risks.length || 0} 项风险</strong>{projected.risks.length ? `：${projected.risks.join('、')}` : ''}</p>
-                <p><strong>{projected.opportunities.length || 0} 项机会</strong>{projected.opportunities.length ? `：${projected.opportunities.join('、')}` : ''}</p>
-              </article>
-              <article className="agent-insight-card">
-                <h4>建议下一步</h4>
-                <ul>
-                  {projected.nextSteps.length > 0
-                    ? projected.nextSteps.map(step => <li key={step.label}>{step.label}</li>)
-                    : <li>保持跟进节奏并核对证据。</li>}
-                </ul>
-              </article>
-              <article className="agent-insight-card">
-                <h4>证据</h4>
-                <p>{projected.evidence.count} 条 · {projected.evidence.kinds.join(' / ') || '记录'}</p>
-                <button type="button" className="agent-link-btn" onClick={() => onOpenContextDrawer?.()}>查看全部证据</button>
-              </article>
-            </div>
-            <button
-              type="button"
-              className="agent-process-line"
-              data-testid="agent-process-line"
-              onClick={() => onProcessDrawerOpenChange?.(true)}
-            >
-              <span>依据 {result?.evidence_refs.length ?? 0} 条记录 · 查看分析过程</span>
-              <ChevronRight size={16} />
-            </button>
+        {stageMode === 'result' && directAnswer ? (
+          <div className="agent-result-stage" data-testid="agent-result-card" aria-label="Sales Agent result">
+            <p className="agent-result-headline">{directAnswer.headline}</p>
+            <p className="agent-result-reason" style={{ whiteSpace: 'pre-wrap' }}>{directAnswer.message}</p>
           </div>
         ) : null}
 
-        {stageMode === 'proposal' && proposal ? (
-          <section className="agent-confirm-card agent-confirm-inline" aria-label="Exact CRM confirmation" data-testid="agent-confirm-card">
-            <h3>{proposalTitle(proposal)}</h3>
-            <p>客户：{customerName || proposal.customer_id}</p>
-            <p>操作：{proposal.tool_id}（{proposal.operation === 'create' ? '新增' : proposal.operation === 'delete' ? '删除' : '更新'}）</p>
-            <p className="agent-confirm-current">当前：{formatProposalValues(proposal.current_values as Record<string, unknown>) || '（无）'}</p>
-            <p className="agent-confirm-proposed">建议：{formatProposalValues(proposal.proposed_values as Record<string, unknown>) || '（无）'}</p>
+        {stageMode === 'result' && projected && !directAnswer ? (
+          <div className="agent-result-stage" data-testid="agent-result-card" data-current-intent={result?.plan.intent ?? ''} aria-label="Sales Agent result">
+            <p className="agent-result-headline">{projected.headline}</p>
+            <div className="agent-result-actions">
+              {projected.nextSteps.slice(0, 3).map(step => (
+                <button key={step.label} type="button" className="btn btn-sm" onClick={() => void submit(step.label)}>
+                  {step.label}
+                </button>
+              ))}
+              {customerId ? (
+                <button type="button" className="btn btn-sm" onClick={() => onOpenContextDrawer?.()}>查看详情</button>
+              ) : null}
+            </div>
+            <button type="button" className="agent-link-btn" data-testid="agent-expand-analysis" onClick={() => setAnalysisExpanded(open => !open)}>
+              {analysisExpanded ? '收起完整分析' : '展开完整分析'}
+            </button>
+            {analysisExpanded ? (
+              <>
+                <header className="agent-result-header">
+                  <div className="agent-result-title-row">
+                    <SalesAgentGlassOrb state={orbState} compact />
+                    <div>
+                      <h3>完整分析</h3>
+                      <p>依据最新数据</p>
+                    </div>
+                  </div>
+                  {result?.runtime_details ? (
+                    <button
+                      type="button"
+                      className="agent-runtime-mode-badge"
+                      data-testid="agent-runtime-mode-badge"
+                      data-runtime-mode={result.runtime_details.runtime_mode}
+                      onClick={() => setRuntimeDetailsOpen(open => !open)}
+                    >
+                      {import.meta.env.VITE_E2E_PROFILE === '1'
+                        ? 'E2E Fake Transport / 测试配置'
+                        : result.runtime_details.ui_label}
+                    </button>
+                  ) : null}
+                </header>
+                {runtimeDetailsOpen && result?.runtime_details ? (
+                  <div className="agent-runtime-details" data-testid="agent-runtime-details">
+                    <p>运行模式：{result.runtime_details.runtime_mode}</p>
+                    <p>Provider：{result.runtime_details.provider ?? '无'}</p>
+                    <p>Model：{result.runtime_details.model ?? '无'}</p>
+                    <p>是否调用模型：{result.runtime_details.model_called ? '是' : '否'}</p>
+                    <p>request_id：{result.runtime_details.request_id}</p>
+                    <p>latency：{result.runtime_details.latency_ms == null ? '—' : `${result.runtime_details.latency_ms} ms`}</p>
+                    <p>token usage：{result.runtime_details.token_usage?.total_tokens ?? '—'}</p>
+                    <p>工具：{result.runtime_details.tools_used.join(' → ') || '无'}</p>
+                    <p>Evidence 数量：{result.runtime_details.evidence_count}</p>
+                    <p>是否降级：{result.runtime_details.degraded ? '是' : '否'}</p>
+                    <p>降级原因：{result.runtime_details.degradation_reason ?? '无'}</p>
+                    <p>输出验证：{result.runtime_details.validation_status}</p>
+                    <p>Schema validation：{result.runtime_details.schema_validation_status}</p>
+                    <p>Evidence validation：{result.runtime_details.evidence_validation_status}</p>
+                    <p>Cancellation status：{result.runtime_details.cancellation_status}</p>
+                  </div>
+                ) : null}
+                {result?.blocked_message ? (
+                  <p className="agent-model-unavailable" data-testid="agent-model-unavailable" role="status">{result.blocked_message}</p>
+                ) : null}
+                <div className="agent-insight-grid">
+                  {projected.sections.map(section => (
+                    <article key={section.title} className="agent-insight-card">
+                      <h4>{section.title}</h4>
+                      <p style={{ whiteSpace: 'pre-wrap' }}>{section.body}</p>
+                    </article>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  className="agent-process-line"
+                  data-testid="agent-process-line"
+                  onClick={() => onProcessDrawerOpenChange?.(true)}
+                >
+                  <span>依据 {result?.evidence_refs.length ?? 0} 条 · 查看分析过程</span>
+                  <ChevronRight size={16} />
+                </button>
+              </>
+            ) : (
+              <button type="button" className="agent-link-btn" onClick={() => onOpenContextDrawer?.()}>
+                依据 {result?.evidence_refs.length ?? 0} 条
+              </button>
+            )}
+          </div>
+        ) : null}
+
+        {stageMode === 'proposal' && proposal ? (() => {
+          const projection = projectConfirmationCard(proposal);
+          return (
+          <section
+            className={`agent-confirm-card agent-confirm-inline${projection.strength === 'strong' ? ' is-strong' : ''}`}
+            aria-label="Exact CRM confirmation"
+            data-testid="agent-confirm-card"
+            data-confirm-strength={projection.strength}
+          >
+            <p className="agent-execution-state">{mapUserExecutionState({ awaitingConfirmation: true })}</p>
+            <h3 className="agent-confirm-title">{projection.title}</h3>
+            {projection.headline ? <p className="agent-confirm-headline">{projection.headline}</p> : null}
+            {projection.summary_lines.map(line => (
+              <p key={line}>{line}</p>
+            ))}
+            {customerName
+              && proposal.tool_id !== 'create_customer'
+              && !projection.summary_lines.some(line => line.startsWith(`${t('common.customer')}：`))
+              ? <p>{t('common.customer')}：{customerName}</p>
+              : null}
+            {projection.footnote ? <p className="agent-confirm-note">{projection.footnote}</p> : null}
+            {projection.destructive_note ? (
+              <p className="agent-confirm-strong-note">{projection.destructive_note}</p>
+            ) : null}
             {proposal.grouped_operations ? (
               <div className="agent-grouped-operations" data-testid="agent-grouped-proposal">
                 <p>本次明确包含以下子操作；可在确认前取消其中一项：</p>
@@ -1109,19 +1223,31 @@ export function SalesAgentInteractionWorkspace({
                 ))}
               </div>
             ) : null}
-            <p>原因：{proposal.reason}</p>
-            <p>依据：{proposal.evidence_refs.join('、') || '用户本次明确指令'}</p>
-            <p>可回滚：{proposal.reversible ? '是' : '否'}</p>
-            <p className="agent-confirm-note">此操作不会自动执行。请核对拟议内容后再确认。</p>
+            {confirmExpanded ? (() => {
+              const technical = projectConfirmationTechnicalDetails(proposal);
+              return (
+              <div className="agent-confirm-technical" data-testid="agent-confirm-technical">
+                <p className="agent-confirm-technical-heading">{technical.heading}</p>
+                {technical.lines.map(line => (
+                  <p key={line}>{line}</p>
+                ))}
+                <button type="button" className="agent-link-btn" onClick={() => setConfirmExpanded(false)}>{t('technicalDetails.hide')}</button>
+              </div>
+              );
+            })() : (
+              <button type="button" className="agent-link-btn" onClick={() => setConfirmExpanded(true)}>{t('technicalDetails.show')}</button>
+            )}
             <div className="agent-confirm-actions">
-              <button type="button" className="btn" onClick={cancelProposal}>取消</button>
-              <button type="button" className="btn btn-primary" onClick={() => void confirm()}>{confirmButtonLabel(proposal)}</button>
+              <button type="button" className="btn" onClick={cancelProposal}>{projection.cancel_label}</button>
+              <button type="button" className={`btn ${projection.strength === 'strong' ? 'btn-danger' : 'btn-primary'}`} onClick={() => void confirm()}>{confirmButtonLabel(proposal)}</button>
             </div>
           </section>
-        ) : null}
+          );
+        })() : null}
 
         {writeResult ? (
           <div className="agent-success" role="status" data-testid="agent-write-success" data-current-intent={proposalIntent(lastConfirmedProposal)} data-refresh-count={refreshCount}>
+            <p className="agent-execution-state">{mapUserExecutionState({ completed: true })}</p>
             <pre>{writeResult}</pre>
             {import.meta.env.VITE_E2E_PROFILE === '1' && lastConfirmedProposal ? (
               <>
@@ -1132,29 +1258,31 @@ export function SalesAgentInteractionWorkspace({
             {customerId ? (
               <button type="button" className="agent-link-btn" onClick={() => onOpenContextDrawer?.()}>查看客户详情</button>
             ) : null}
-            <button type="button" className="agent-link-btn" onClick={() => { setWriteResult(''); setPhase('idle'); }}>继续追问</button>
+            <button type="button" className="agent-link-btn" onClick={() => { setWriteResult(''); setPhase('idle'); }}>{t('agent.success.continue')}</button>
           </div>
         ) : null}
 
         {stageMode === 'error' ? (
           <div className="agent-error-inline" data-testid="agent-error" role="alert">
-            <p>{typeof error === 'string' ? error : formatUserFacingErrorMessage(error)}</p>
-            <button type="button" className="btn btn-sm" onClick={() => { setError(''); setPhase('idle'); }}>修改问题</button>
+            <p className="agent-execution-state">{mapUserExecutionState({ failed: true })}</p>
+            <p style={{ whiteSpace: 'pre-line' }}>{explainUnchangedCrmError(typeof error === 'string' ? error : formatUserFacingErrorMessage(error))}</p>
+            <button type="button" className="btn btn-sm" onClick={() => { setError(''); setPhase('idle'); }}>{t('agent.failure.retry')}</button>
           </div>
         ) : null}
 
         {composer}
 
         <div className={`agent-quick-grid${showQuickActions ? '' : ' is-morph-out'}`} aria-label="快捷动作" data-testid="agent-quick-grid">
-          {SALES_AGENT_QUICK_ACTIONS.map(action => (
+          {AGENT_HOME_QUICK_ACTIONS.map(action => (
             <button key={action.id} type="button" className="agent-quick-card" onClick={() => runQuickAction(action)} disabled={sessionBusy || !showQuickActions}>
-              <strong>{action.label}</strong>
+              {action.id === 'summary' ? <FileText size={14} aria-hidden="true" /> : action.id === 'interactions' ? <Inbox size={14} aria-hidden="true" /> : <Sparkles size={14} aria-hidden="true" />}
+              <strong>{action.id === 'summary' ? t('quick.summary') : action.id === 'interactions' ? t('quick.interactions') : t('quick.followUp')}</strong>
             </button>
           ))}
         </div>
 
         <div className="agent-stage-utility">
-          <button type="button" className="agent-link-btn" data-testid="agent-history-open" onClick={() => setHistoryOpen(true)}>历史记录</button>
+          <button type="button" className="agent-link-btn" data-testid="agent-history-open" onClick={() => setHistoryOpen(true)}>{t('agent.history')}</button>
           {customerId ? (
             <button type="button" className="agent-link-btn" onClick={() => onOpenContextDrawer?.()}>上下文</button>
           ) : null}
@@ -1162,12 +1290,12 @@ export function SalesAgentInteractionWorkspace({
       </div>
 
       {historyOpen && (
-        <aside className="agent-drawer agent-drawer-history" data-testid="agent-history-drawer" aria-label="历史记录">
+        <aside className="agent-drawer agent-drawer-history" data-testid="agent-history-drawer" aria-label={t('agent.history')}>
           <header>
-            <h3>历史记录</h3>
-            <button type="button" className="agent-icon-btn" aria-label="关闭历史记录" onClick={() => setHistoryOpen(false)}><X size={16} /></button>
+            <h3>{t('agent.history')}</h3>
+            <button type="button" className="agent-icon-btn" aria-label={t('agent.historyClose')} onClick={() => setHistoryOpen(false)}><X size={16} /></button>
           </header>
-          {history.length === 0 ? <p>暂无历史任务。</p> : (
+          {history.length === 0 ? <p>{t('agent.historyEmpty')}</p> : (
             <ul className="agent-history-list">
               {history.map(item => (
                 <li key={item.id}>
@@ -1200,13 +1328,13 @@ export function SalesAgentInteractionWorkspace({
           </ol>
           {result ? (
             <div className="agent-trace-extra">
-              <p>意图：{result.plan.intent}</p>
-              <p>工具：{result.tool_trace.map(t => t.tool_id).join(' → ') || '无'}</p>
-              <p>证据：{result.evidence_refs.slice(0, 8).join(' · ') || '无'}</p>
+              <p>{describeReasoningWork(result.plan.intent)}</p>
+              <p>{describeReadWork(result.tool_trace.map(item => item.tool_id)) || '已读取相关资料'}</p>
+              <p>依据 {result.evidence_refs.length} 条已核实记录</p>
             </div>
           ) : null}
           {interactionState?.latest_search ? (
-            <p className="agent-search-meta">search_customers · {interactionState.latest_search.candidates.length} 候选 · 只读</p>
+            <p className="agent-search-meta">已找到 {interactionState.latest_search.candidates.length} 家客户（只读）</p>
           ) : null}
         </aside>
       )}
@@ -1215,7 +1343,7 @@ export function SalesAgentInteractionWorkspace({
         <div className="agent-modal-backdrop" role="presentation" onClick={() => setCaptureOpen(false)}>
           <div className="agent-capture-modal" role="dialog" aria-modal="true" aria-label="Capture" data-testid="agent-capture-modal" data-current-intent="CAPTURE_REVIEW" onClick={event => event.stopPropagation()}>
             <header>
-              <h3>Capture</h3>
+              <h3>采集材料</h3>
               <button type="button" className="agent-icon-btn" aria-label="关闭 Capture" onClick={() => setCaptureOpen(false)}><X size={16} /></button>
             </header>
             <p className="agent-capture-hint">粘贴文本或选择图片；选择或粘贴本身不会自动 Analyze，审核后也不会自动写 CRM。</p>

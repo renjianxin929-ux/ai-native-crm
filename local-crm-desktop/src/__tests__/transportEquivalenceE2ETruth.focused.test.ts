@@ -82,7 +82,7 @@ describe('transport equivalence and E2E truth closure', () => {
   });
 
   it('router-cancellation forwards AbortSignal through controller and trusted host', () => {
-    expect(controller).toContain('this.semanticIntentRouter(trimmed, intentEnvelope.envelope_id, signal)');
+    expect(controller).toContain('this.semanticIntentRouter(trimmed, intentEnvelope.envelope_id, signal, routingContext)');
     expect(hostAdapter).toContain("call,\n      signal,");
     expect(driver).toContain('"router_cancellation_stops_reasoning"');
   });

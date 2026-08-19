@@ -153,6 +153,17 @@ describe('FeishuTalkTrackBlock', () => {
     expect(text).toContain('Current（当前话术）');
     expect(text).toContain('短口语版');
     expect(text).toContain('微信版');
+    expect(container.textContent).toContain('价值复述');
+    expect(container.textContent).not.toContain('飞书价值复述');
+  });
+
+  it('empty talk track uses product-neutral copy', () => {
+    render(<FeishuTalkTrackBlock talk={{
+      original: '', current: '', short_spoken_version: null, full_spoken_version: null, wechat_version: null,
+      original_is_current: true, version_count: 0, paragraphs: [],
+    }} />);
+    expect(container.textContent).toContain('暂无价值表达材料');
+    expect(container.textContent).not.toContain('暂无飞书话术材料');
   });
 });
 

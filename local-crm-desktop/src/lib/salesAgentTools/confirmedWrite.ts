@@ -586,7 +586,11 @@ export function validateAgentWriteProposal(proposal: AgentWriteProposal): void {
 export function consumeExactConfirmation(proposal: AgentWriteProposal, confirmation: ExactConfirmation): { readonly confirmation_id: string; readonly proposal: AgentWriteProposal } {
   validateAgentWriteProposal(proposal);
   if (consumed.has(confirmation.nonce)) throw new Error('Confirmation replay rejected.');
-  if (!Number.isFinite(Date.parse(confirmation.confirmed_at)) || confirmation.confirmed_at < proposal.created_at) throw new Error('Confirmation timestamp is invalid.');
+  const confirmedMs = Date.parse(confirmation.confirmed_at);
+  const createdMs = Date.parse(proposal.created_at);
+  if (!Number.isFinite(confirmedMs) || !Number.isFinite(createdMs) || confirmedMs < createdMs) {
+    throw new Error('Confirmation timestamp is invalid.');
+  }
   if (confirmation.proposal_id !== proposal.proposal_id || confirmation.proposal_hash !== proposal.proposal_hash || confirmation.tool_id !== proposal.tool_id || confirmation.customer_id !== proposal.customer_id || confirmation.entity_id !== proposal.entity_id || confirmation.payload_hash !== proposal.proposal_hash || (proposal.nonce !== undefined && confirmation.nonce !== proposal.nonce) || !confirmation.nonce.trim()) throw new Error('Confirmation does not match the exact proposal.');
   consumed.add(confirmation.nonce);
   return { confirmation_id: confirmation.nonce, proposal };

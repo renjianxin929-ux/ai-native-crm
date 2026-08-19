@@ -1,5 +1,5 @@
 import { v4 as uuid } from 'uuid';
-import { createFollowUp, createTask, deleteCustomer, getDb, updateCustomer } from '../db';
+import { createFollowUp, createTask, deleteCustomer, getDb, persistOccurredFollowUp, updateCustomer, type OccurredFollowUpWrite } from '../db';
 import type { AgentWriteProposal } from './confirmedWrite';
 import type { SafeWriteBoundary } from './agentSession';
 import type { FollowUpRecord, Task } from '../types';
@@ -10,7 +10,7 @@ import { updateCustomerProfile } from '../customerProfileUpdate';
 import { updateCustomerOpportunityAmount } from '../customerOpportunityAmountUpdate';
 import { createVisitWithProductRules, type VisitCreateInput } from '../visitCreate';
 
-export interface ApprovedCrmWriteRepository { createFollowUp(record: FollowUpRecord): Promise<void>; createTask(task: Task): Promise<void>; updateCustomer(id: string, values: Record<string, unknown>): Promise<void>; }
+export interface ApprovedCrmWriteRepository { createFollowUp(record: FollowUpRecord): Promise<void>; createTask(task: Task): Promise<void>; updateCustomer(id: string, values: Record<string, unknown>): Promise<void>; persistOccurredFollowUp?(input: OccurredFollowUpWrite): Promise<void>; }
 
 /**
  * Battle Card V1 写工具执行器（可选注入）。
@@ -32,6 +32,16 @@ export function createApprovedCrmWriteBoundary(repository: ApprovedCrmWriteRepos
       if (proposal.grouped_operations) {
         const selected = proposal.grouped_operations.filter(item => item.selected);
         if (selected.length === 0) throw new Error('组合建议没有选中的操作。');
+        const followUp = selected.find(item => item.tool_id === 'create_follow_up_record');
+        const schedule = selected.find(item => item.tool_id === 'update_next_follow_up_time');
+        if (followUp && schedule && selected.length === 2) {
+          const next = schedule.proposed_values.next_follow_up_at;
+          return persistOccurredFollowUpProposal(
+            { ...proposal, tool_id: 'create_follow_up_record', proposed_values: { ...followUp.proposed_values, next_follow_up_at: next }, grouped_operations: undefined },
+            repository,
+            clock,
+          );
+        }
         const entityIds: string[] = [];
         const fields: string[] = [];
         for (const item of selected) {
@@ -49,8 +59,7 @@ export function createApprovedCrmWriteBoundary(repository: ApprovedCrmWriteRepos
 async function executeOne(proposal: AgentWriteProposal, repository: ApprovedCrmWriteRepositoryWithBattleCard, clock: AppClock) {
       const now = clock.now(); const values = proposal.proposed_values;
       if (proposal.tool_id === 'create_follow_up_record') {
-        const record: FollowUpRecord = { id: uuid(), customer_id: proposal.customer_id, title: String(values.title), contact_channel: null, contact_result: null, feedback_notes: typeof values.feedback_notes === 'string' ? values.feedback_notes : null, intent_assessment: null, suggested_grade: null, next_action: null, next_follow_up_at: typeof values.next_follow_up_at === 'string' ? values.next_follow_up_at : null, is_completed: 0, created_at: now, updated_at: now };
-        await repository.createFollowUp(record); return { entity_id: record.id, fields: ['title', 'feedback_notes', 'next_follow_up_at'] };
+        return persistOccurredFollowUpProposal(proposal, repository, clock);
       }
       if (proposal.tool_id === 'create_task') {
         const task: Task = { id: uuid(), customer_id: proposal.customer_id, title: String(values.title), due_at: typeof values.due_at === 'string' ? values.due_at : null, status: typeof values.status === 'string' ? values.status as Task['status'] : 'OPEN', priority: 'MEDIUM', source: 'MANUAL', created_at: now, updated_at: now };
@@ -152,4 +161,42 @@ const productionBattleCardProxy: BattleCardWriteExecutor = {
 };
 
 /** Bounded adapter over existing manual CRM repository operations; no SQL is exposed to the Agent or UI. */
-export const approvedCrmWriteBoundary = createApprovedCrmWriteBoundary({ createFollowUp, createTask, updateCustomer, battleCard: productionBattleCardProxy });
+export const approvedCrmWriteBoundary = createApprovedCrmWriteBoundary({ createFollowUp, createTask, updateCustomer, persistOccurredFollowUp, battleCard: productionBattleCardProxy });
+
+async function persistOccurredFollowUpProposal(
+  proposal: AgentWriteProposal,
+  repository: ApprovedCrmWriteRepositoryWithBattleCard,
+  clock: AppClock,
+) {
+  const now = clock.now();
+  const values = proposal.proposed_values;
+  const record: FollowUpRecord = {
+    id: uuid(),
+    customer_id: proposal.customer_id,
+    title: String(values.title),
+    contact_channel: null,
+    contact_result: null,
+    feedback_notes: typeof values.feedback_notes === 'string' ? values.feedback_notes : null,
+    intent_assessment: null,
+    suggested_grade: null,
+    next_action: null,
+    next_follow_up_at: null,
+    is_completed: 1,
+    created_at: now,
+    updated_at: now,
+  };
+  const next = typeof values.next_follow_up_at === 'string' && values.next_follow_up_at.trim()
+    ? values.next_follow_up_at
+    : undefined;
+  const input: OccurredFollowUpWrite = {
+    record,
+    last_contacted_at: now,
+    ...(next ? { next_follow_up_at: next } : {}),
+  };
+  if (repository.persistOccurredFollowUp) await repository.persistOccurredFollowUp(input);
+  else await persistOccurredFollowUp(input, () => now);
+  return {
+    entity_id: record.id,
+    fields: next ? ['title', 'feedback_notes', 'is_completed', 'next_follow_up_at'] : ['title', 'feedback_notes', 'is_completed'],
+  };
+}

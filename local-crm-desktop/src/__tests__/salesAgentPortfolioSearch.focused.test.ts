@@ -68,11 +68,11 @@ function sessionFor(customerId: string, name: string) {
 }
 
 describe('Sales Agent portfolio search', () => {
-  it('normalizeCustomerSearchFilters: 帮我找一下广州的客户 → portfolio, region 广州, no name_query', () => {
+  it('normalizeCustomerSearchFilters: 帮我找一下广州的客户 → portfolio, name contains 广州', () => {
     const norm = normalizeCustomerSearchFilters('帮我找一下广州的客户', NOW);
     expect(norm.is_portfolio_query).toBe(true);
-    expect(norm.filters.region).toBe('广州');
-    expect(norm.filters.name_query).toBeUndefined();
+    expect(norm.filters.name_query).toBe('广州');
+    expect(norm.filters.region).toBeUndefined();
     expect(norm.is_customer_lookup).toBe(false);
   });
 
@@ -109,21 +109,20 @@ describe('Sales Agent portfolio search', () => {
     expect(norm.is_customer_lookup).toBe(true);
   });
 
-  it('browse phrase ending in company suffix stays a region portfolio query, not a name', () => {
+  it('browse phrase ending in company suffix is a name-contains list, not region=city', () => {
     for (const phrase of ['看看广州公司', '关注广州公司', '推荐广州公司']) {
       const norm = normalizeCustomerSearchFilters(phrase, NOW);
       expect(norm.is_portfolio_query).toBe(true);
-      expect(norm.filters).toMatchObject({ region: '广州' });
-      expect(norm.filters.name_query).toBeUndefined();
+      expect(norm.filters).toMatchObject({ name_query: '广州' });
+      expect(norm.filters.region).toBeUndefined();
     }
   });
 
-  it('bare known region/industry token + company suffix stays a portfolio query', () => {
-    for (const phrase of ['广州公司', '生物公司']) {
-      const norm = normalizeCustomerSearchFilters(phrase, NOW);
-      expect(norm.is_portfolio_query).toBe(true);
-      expect(norm.filters.name_query).toBeUndefined();
-    }
+  it('bare known region token + company suffix is a name-contains list', () => {
+    const norm = normalizeCustomerSearchFilters('广州公司', NOW);
+    expect(norm.is_portfolio_query).toBe(true);
+    expect(norm.filters.name_query).toBe('广州');
+    expect(norm.filters.region).toBeUndefined();
   });
 
   it('deictic "哪家公司" is not treated as an entity name', () => {
@@ -145,7 +144,7 @@ describe('Sales Agent portfolio search', () => {
       expect(search.list_kind).toBe('portfolio');
       expect(search.page_size).toBe(SEARCH_CUSTOMERS_PORTFOLIO_PAGE_SIZE);
       expect(search.total_matches).toBeGreaterThanOrEqual(2);
-      expect(search.candidates.every(item => item.region?.includes('广州'))).toBe(true);
+      expect(search.candidates.every(item => item.name.includes('广州'))).toBe(true);
       expect(search.read_only).toBe(true);
       expect(search.writes_crm).toBe(false);
     } finally {
@@ -165,7 +164,7 @@ describe('Sales Agent portfolio search', () => {
       const turn = await controller.submit('帮我找一下广州的客户');
       expect(turn.state.phase).toBe('portfolio_browse');
       expect(turn.state.phase).not.toBe('awaiting_candidate_selection');
-      expect(turn.state.agent_message).toMatch(/共找到/);
+      expect(turn.state.agent_message).toMatch(/广州机械|找到/);
       expect(turn.state.pending_original_instruction).toBeNull();
       expect(turn.state.scoped_customer_id).toBeNull();
       expect(turn.event.type).toBe('portfolio_list');
@@ -216,7 +215,9 @@ describe('Sales Agent portfolio search', () => {
         list_kind: 'portfolio',
         db: fixture.db,
       });
-      expect(mechSearch.candidates.every(item => item.region?.includes('广州'))).toBe(true);
+      expect(mechNorm.filters.region).toBeUndefined();
+      expect(mechNorm.filters.name_query).toBe('广州');
+      expect(mechSearch.candidates.every(item => item.name.includes('广州'))).toBe(true);
       expect(mechSearch.candidates.every(item => item.industry?.includes('机械'))).toBe(true);
       expect(mechSearch.candidates.map(item => item.id)).toContain('gz-a-mech');
     } finally {

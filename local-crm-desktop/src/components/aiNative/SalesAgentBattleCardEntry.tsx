@@ -4,6 +4,8 @@ import { FileText, Layers, ShieldAlert } from 'lucide-react';
 import { getBattleCardUiClient } from '../../lib/battleCardUi/battleCardClient';
 import { formatUserFacingErrorMessage } from '../../lib/salesAgentUi/formatUserFacingError';
 import { BATTLE_CARD_STATUS_LABELS, formatDateTime, stageLabel } from '../../lib/battleCardUi/battleCardLabels';
+import { evaluateBattleCardCoherence } from '../../lib/battleCardUi/battleCardViewModels';
+import { listVisits } from '../../lib/db';
 
 export interface SalesAgentBattleCardEntryProps {
   readonly customerId: string;
@@ -20,21 +22,34 @@ export function SalesAgentBattleCardEntry({ customerId, customerName }: SalesAge
   const client = getBattleCardUiClient();
   const [status, setStatus] = useState<{
     card: { stage_code: string; version: number; updated_at: string; card_status: string } | null;
+    customerStage: string | null;
+    stale: boolean;
+    staleMessage: string | null;
     openHypotheses: number;
     error: string;
-  }>({ card: null, openHypotheses: 0, error: '' });
+  }>({ card: null, customerStage: null, stale: false, staleMessage: null, openHypotheses: 0, error: '' });
   const [loading, setLoading] = useState(false);
 
   const load = useCallback(async () => {
     if (!customerId) return;
     setLoading(true);
     try {
-      const [current, context] = await Promise.all([
+      const [current, context, customer, visits] = await Promise.all([
         client.getCurrentStageCard(customerId),
         client.getCustomerBattleContext(customerId),
+        client.getCustomer(customerId),
+        listVisits(customerId),
       ]);
+      const coherence = evaluateBattleCardCoherence({
+        customerStage: customer?.stage ?? 'NEW_LEAD',
+        cardStageCode: current?.stage_code ?? null,
+        hasVisit: visits.length > 0,
+      });
       setStatus({
         card: current ? { stage_code: current.stage_code, version: current.version, updated_at: current.confirmed_at ?? current.created_at, card_status: current.card_status } : null,
+        customerStage: customer?.stage ?? null,
+        stale: coherence.kind === 'stale',
+        staleMessage: coherence.kind === 'stale' ? coherence.user_message : null,
         openHypotheses: context.hypotheses.filter(hypothesis => hypothesis.status === 'PENDING' || hypothesis.status === 'PARTIALLY_CONFIRMED').length,
         error: '',
       });
@@ -54,16 +69,17 @@ export function SalesAgentBattleCardEntry({ customerId, customerName }: SalesAge
   const hasCard = status.card !== null;
 
   return (
-    <div className="agent-battle-entry" data-testid="agent-battle-entry" data-has-card={hasCard ? 'true' : 'false'}>
+    <div className="agent-battle-entry" data-testid="agent-battle-entry" data-has-card={hasCard ? 'true' : 'false'} data-card-stale={status.stale ? 'true' : 'false'}>
       <div className="agent-battle-entry-info">
         <strong>作战卡{customerName ? ` · ${customerName}` : ''}</strong>
         {loading ? <span>加载中…</span> : status.error ? <span role="alert">{status.error}</span> : hasCard ? (
           <>
-            <span>阶段：{stageLabel(status.card!.stage_code)}</span>
-            <span>版本：v{status.card!.version}</span>
+            <span>阶段：{stageLabel(status.customerStage ?? status.card!.stage_code)}</span>
+            <span>版本：v{status.card!.version}{status.stale ? '（已过时）' : ''}</span>
             <span>更新：{formatDateTime(status.card!.updated_at)}</span>
             <span>待验证假设：{status.openHypotheses} 条</span>
-            <span>状态：{BATTLE_CARD_STATUS_LABELS[status.card!.card_status === 'DRAFT' ? 'DRAFT' : 'CONFIRMED']}</span>
+            <span>状态：{status.stale ? '已过时' : BATTLE_CARD_STATUS_LABELS[status.card!.card_status === 'DRAFT' ? 'DRAFT' : 'CONFIRMED']}</span>
+            {status.staleMessage ? <span role="status">{status.staleMessage}</span> : null}
           </>
         ) : (
           <span>尚未生成作战卡（不展示伪造作战建议）</span>

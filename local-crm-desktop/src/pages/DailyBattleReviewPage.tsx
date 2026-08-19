@@ -10,12 +10,15 @@ import { STAGE_LABELS } from '../lib/types';
 import { createCustomerScopedSalesAgentEntry } from '../lib/salesWorkspace/customerScopedSalesAgentEntry';
 import { createFollowUp, updateCustomer } from '../lib/db';
 import { v4 as uuidv4 } from 'uuid';
+import { t, tFormat, tStage } from '../lib/i18n/appLocale';
+import { useAppLocale } from '../lib/i18n/LocaleProvider';
 import '../components/battleCard/battleCard.css';
 
 type FollowUpDraftTarget = { customerId: string; customerName: string };
 
 export default function DailyBattleReviewPage() {
   const navigate = useNavigate();
+  useAppLocale();
   const client = getBattleCardUiClient();
   const [items, setItems] = useState<readonly DailyReviewRowView[]>([]);
   const [generatedAt, setGeneratedAt] = useState('');
@@ -29,6 +32,7 @@ export default function DailyBattleReviewPage() {
   const [savingFollowUp, setSavingFollowUp] = useState(false);
   const [followUpResult, setFollowUpResult] = useState('');
   const [pageNotice, setPageNotice] = useState('');
+  const [expanded, setExpanded] = useState(false);
   const loaded = useRef(false);
 
   const load = useCallback(async () => {
@@ -106,20 +110,89 @@ export default function DailyBattleReviewPage() {
     }
   }, [followUpTarget, followUpText, client, load]);
 
+  const overdue = items.filter(item => item.is_overdue).slice(0, 2);
+  const dueToday = items.filter(item => item.is_due_today).slice(0, 3);
+  const todayItems = items.slice(0, 3);
+  const conclusion = items.length === 0
+    ? t('review.emptyConclusion')
+    : tFormat('review.todayCount', { n: items.length });
+
+  const tomorrowItems = dueToday.length > 0 ? dueToday : todayItems.slice(0, 3);
+
   return (
-    <div className="bc-page" data-testid="bc-daily-review-page">
-      <div style={{ padding: '20px 24px 32px', maxWidth: 1280, margin: '0 auto' }}>
-        <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
+    <div className="bc-page review-page" data-testid="bc-daily-review-page">
+      <div className="review-short">
+        <header className="review-short-header">
+          <h2>{t('review.title')}</h2>
+          <p className="page-subtitle">{t('review.subtitle')}</p>
+        </header>
+
+        {error ? <BattleCardStatusBanner testId="bcr-error" tone="danger" title={t('review.loadFailed')} note={error} /> : null}
+        {pageNotice ? <div role="status" className="bc-banner review-notice" data-testid="bcr-page-notice">{pageNotice}</div> : null}
+
+        <section className="review-memo" data-testid="review-short-memo">
+          <p className="review-conclusion">{loading ? t('review.loading') : conclusion}</p>
+          <div className="review-block">
+            <h3>{t('review.today')}</h3>
+            {!loading && todayItems.length > 0 ? (
+              <ul>
+                {todayItems.map(item => (
+                  <li key={`today-${item.customer_id}`}>{item.customer_name} · {item.reasons[0] || tStage(item.stage) || item.stage}</li>
+                ))}
+              </ul>
+            ) : (
+              <p className="review-empty-line">{loading ? '…' : t('review.todayEmpty')}</p>
+            )}
+          </div>
+          <div className="review-block">
+            <h3>{t('review.watch')}</h3>
+            {!loading && overdue.length > 0 ? (
+              <ul>
+                {overdue.map(item => (
+                  <li key={`note-${item.customer_id}`}>{item.customer_name} {t('review.overdue')}</li>
+                ))}
+              </ul>
+            ) : (
+              <p className="review-empty-line">{loading ? '…' : t('review.watchEmpty')}</p>
+            )}
+          </div>
+          <div className="review-block">
+            <h3>{t('review.tomorrow')}</h3>
+            {!loading && tomorrowItems.length > 0 ? (
+              <ul>
+                {tomorrowItems.map(item => (
+                  <li key={`next-${item.customer_id}`}>{item.customer_name}</li>
+                ))}
+              </ul>
+            ) : (
+              <p className="review-empty-line">{loading ? '…' : t('review.tomorrowEmpty')}</p>
+            )}
+          </div>
+          <div className="review-actions">
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => navigate('/ai-workspace', { state: { initialInstruction: '请根据今天的客户队列生成一份短复盘：今天发生了什么、值得注意、明天先做什么。' } })}
+            >
+              {t('review.askAgent')}
+            </button>
+            <button type="button" className="agent-link-btn" data-testid="review-expand" onClick={() => setExpanded(open => !open)}>
+              {expanded ? t('review.collapse') : t('review.expand')}
+            </button>
+          </div>
+        </section>
+
+        {expanded ? (
+          <div className="review-full">
+        <header className="review-full-header">
           <div>
-            <h2 style={{ margin: 0, fontSize: 19, fontWeight: 700 }}>每日客户复盘</h2>
-            <p className="bc-banner-note" style={{ marginTop: 4 }}>
-              确定性规则队列 · 紧急度与排序来自后端计算（不本地重算）· {generatedAt ? `生成时间 ${new Date(generatedAt).toLocaleString('zh-CN')}` : ''}
-            </p>
+            <h2>完整队列</h2>
+            {generatedAt ? <p className="page-subtitle">生成于 {new Date(generatedAt).toLocaleString('zh-CN')}</p> : null}
           </div>
           <button type="button" className="bc-btn bc-btn-sm" onClick={() => void load()} data-testid="bcr-refresh">刷新队列</button>
         </header>
 
-        {error ? <BattleCardStatusBanner testId="bcr-error" tone="danger" title="复盘队列加载失败" note={error} /> : null}
+        {error ? <BattleCardStatusBanner testId="bcr-error" tone="danger" title={t('review.loadFailed')} note={error} /> : null}
         {pageNotice ? <div role="status" className="bc-banner" style={{ marginBottom: 14 }} data-testid="bcr-page-notice">{pageNotice}</div> : null}
 
         <div className="bcr-toolbar">
@@ -136,7 +209,6 @@ export default function DailyBattleReviewPage() {
             <option value="overdue">已逾期</option>
             <option value="due">今天到期</option>
           </select>
-          <span className="bc-banner-note">排序：后端 urgency_score 降序 → A&gt;B&gt;C&gt;D → 名称（前端不做重排序）</span>
         </div>
 
         {loading ? <p data-testid="bcr-loading">正在构建复盘队列…</p> : null}
@@ -180,6 +252,8 @@ export default function DailyBattleReviewPage() {
                 </div>
               </div>
             </aside>
+          </div>
+        ) : null}
           </div>
         ) : null}
       </div>

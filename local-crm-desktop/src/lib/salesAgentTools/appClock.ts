@@ -145,7 +145,7 @@ export function parseRelativeDateTimeInZone(message: string, nowIso: string, tim
   }
 
   const bareWeek = text.match(/(?:周|星期)([一二三四五六日天])/);
-  if (!matched && bareWeek && /联系|跟进|改|提醒|任务|待办/.test(text)) {
+  if (!matched && bareWeek && (clock || /联系|跟进|改|提醒|任务|待办|找/.test(text))) {
     const target = WEEKDAY[bareWeek[1]!]!;
     let delta = (target - baseWeekday(base) + 7) % 7;
     if (delta === 0) delta = 7;
@@ -207,7 +207,18 @@ function offsetMinutes(date: Date, timezone: string): number {
   return Math.round((Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second) - date.getTime()) / 60_000);
 }
 
+function applyMeridiem(hours: number, meridiem: string | undefined): number {
+  if ((meridiem === '下午' || meridiem === '晚上') && hours < 12) return hours + 12;
+  if (meridiem === '中午' && hours < 11) return hours + 12;
+  if (meridiem === '上午' && hours === 12) return 0;
+  return hours;
+}
+
 function extractClock(text: string): { hours: number; minutes: number } | null {
+  const meridiemHm = text.match(/(上午|下午|中午|晚上)\s*(\d{1,2}):(\d{2})(?!\d)/);
+  if (meridiemHm) {
+    return { hours: applyMeridiem(Number(meridiemHm[2]), meridiemHm[1]), minutes: Number(meridiemHm[3]) };
+  }
   const hm = text.match(/(?:^|\D)(\d{1,2}):(\d{2})(?!\d)/);
   if (hm) return { hours: Number(hm[1]), minutes: Number(hm[2]) };
   const cn = text.match(/(上午|下午|中午|晚上)?\s*([一二三四五六七八九十两\d]{1,3})\s*[点时](?:\s*([一二三四五六七八九十\d]{1,3})\s*分?)?/);
@@ -215,9 +226,7 @@ function extractClock(text: string): { hours: number; minutes: number } | null {
   let hours = chineseNumber(cn[2]!);
   const minutes = cn[3] ? chineseNumber(cn[3]) : 0;
   if (hours == null || minutes == null) return null;
-  if ((cn[1] === '下午' || cn[1] === '晚上') && hours < 12) hours += 12;
-  if (cn[1] === '中午' && hours < 11) hours += 12;
-  if (cn[1] === '上午' && hours === 12) hours = 0;
+  hours = applyMeridiem(hours, cn[1]);
   return { hours, minutes };
 }
 

@@ -147,7 +147,7 @@ describe('Sales Agent final interaction focused guards', () => {
     expect(workspace).not.toContain('Mock Provider Enabled');
     expect(workspace).toContain('受控模式');
     expect(workspace).toContain('controlled-mode-panel');
-    expect(app).toContain("label: 'Sales Agent'");
+    expect(app).toContain("label: 'Agent'");
   });
 
   it('23-25: quick actions enter session / proposal / open capture, no fake confidence', () => {

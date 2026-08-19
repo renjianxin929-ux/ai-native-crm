@@ -78,6 +78,8 @@ describe('model-context-envelope suite', () => {
       timezone: 'Asia/Shanghai',
       safety_mode: 'human_review_required_no_crm_write',
       requested_output_schema: 'customer_summary_v1',
+      output_schema_spec: '',
+      reasoning_task_instruction: '',
       truncated_fields: [],
     })).toThrow(/denied field/);
   });

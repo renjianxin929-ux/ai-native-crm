@@ -22,11 +22,11 @@ export function EvidenceDrawer({ open, title, evidence, onClose }: EvidenceDrawe
         className="bc-drawer"
         role="dialog"
         aria-modal="true"
-        aria-label="Evidence 证据"
+        aria-label="依据"
         onClick={event => event.stopPropagation()}
       >
         <header className="bc-drawer-header">
-          <h3>{title} · Evidence</h3>
+          <h3>{title} · 依据</h3>
           <button type="button" className="bc-sidecar-close" aria-label="关闭证据" onClick={onClose}>
             <X size={16} />
           </button>

@@ -308,3 +308,31 @@ export const OUTPUT_SCHEMA_SPECS: Readonly<Record<string, string>> = {
 export function outputSchemaSpecFor(schema: string): string {
   return OUTPUT_SCHEMA_SPECS[schema] ?? '';
 }
+
+/** Intent-specific reasoning task. Distinct from the closed JSON field spec. */
+export function reasoningTaskInstructionFor(intent: string): string {
+  if (intent === 'NEXT_ACTION_RECOMMENDATION' || intent === 'NEXT_ACTION_PREPARATION') {
+    return [
+      '任务：仅依据当前已核实的 CRM 上下文，判断销售人员下一步该做什么。',
+      '优先使用最近互动；区分事实与推断；不编造客户意图；不写入 CRM；不索要上下文已有信息。',
+      '证据弱时明确不确定点。不要写成客户画像。',
+      '输出结构：结论（1-2句）；建议下一步（最多3条）；依据（短事实）。',
+    ].join('');
+  }
+  if (intent === 'INTERACTION_SUMMARY') {
+    return [
+      '任务：根据该客户最近互动做销售复盘，先概括发生了什么，再判断。',
+      '时间线/拜访/跟进是主证据。不要写成客户画像或商机分析。不编造事件，不自动写入 CRM。',
+      '互动很少时如实说明。',
+      '输出结构：本次进展；需要注意；下一步。',
+    ].join('');
+  }
+  if (intent === 'CUSTOMER_SUMMARY' || intent === 'CUSTOMER_RISK_ANALYSIS') {
+    return [
+      '任务：仅依据已核实 CRM 事实，给出该客户的销售分析。',
+      '输出结构：核心判断；风险机会；建议。',
+      '不要写成互动复盘纪要，也不要只给下一步清单。不写入 CRM，不发明证据。',
+    ].join('');
+  }
+  return '任务：仅依据提供的已核实 CRM 事实作答。不写入 CRM，不发明证据，不索要上下文已有信息。';
+}

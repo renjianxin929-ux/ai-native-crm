@@ -38,7 +38,8 @@ describe('Sales Agent proposal ownership (session registry)', () => {
       nonce: proposalTurn.proposal.nonce!,
       confirmed_at: '2026-07-12T00:06:00.000Z',
     }, boundary);
-    expect(fixture.sqlite.prepare('SELECT COUNT(*) AS c FROM follow_up_records WHERE customer_id=?').get('customer-1')).toEqual({ c: 1 });
+    expect(fixture.sqlite.prepare('SELECT COUNT(*) AS c FROM follow_up_records WHERE customer_id=?').get('customer-1')).toEqual({ c: 0 });
+    expect(String((fixture.sqlite.prepare('SELECT next_follow_up_at FROM customers WHERE id=?').get('customer-1') as { next_follow_up_at: string }).next_follow_up_at)).toMatch(/T10:00/);
     fixture.close();
   });
 
@@ -137,7 +138,8 @@ describe('Sales Agent proposal ownership (session registry)', () => {
       nonce: proposalTurn.proposal.nonce!,
       confirmed_at: '2026-07-12T00:06:00.000Z',
     }, boundary);
-    expect(fixture.sqlite.prepare('SELECT COUNT(*) AS c FROM follow_up_records WHERE customer_id=?').get('customer-1')).toEqual({ c: 1 });
+    expect(fixture.sqlite.prepare('SELECT COUNT(*) AS c FROM follow_up_records WHERE customer_id=?').get('customer-1')).toEqual({ c: 0 });
+    expect(String((fixture.sqlite.prepare('SELECT next_follow_up_at FROM customers WHERE id=?').get('customer-1') as { next_follow_up_at: string }).next_follow_up_at)).toMatch(/T10:00/);
     fixture.close();
   });
 
@@ -168,7 +170,8 @@ describe('Sales Agent proposal ownership (session registry)', () => {
       nonce: proposalTurn.proposal.nonce!,
       confirmed_at: '2026-07-12T00:06:00.000Z',
     }, boundary);
-    expect(fixture.sqlite.prepare('SELECT COUNT(*) AS c FROM follow_up_records WHERE customer_id=?').get('customer-1')).toEqual({ c: 1 });
+    expect(fixture.sqlite.prepare('SELECT COUNT(*) AS c FROM follow_up_records WHERE customer_id=?').get('customer-1')).toEqual({ c: 0 });
+    expect(String((fixture.sqlite.prepare('SELECT next_follow_up_at FROM customers WHERE id=?').get('customer-1') as { next_follow_up_at: string }).next_follow_up_at)).toMatch(/T10:00/);
     fixture.close();
   });
 

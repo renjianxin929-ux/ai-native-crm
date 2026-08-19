@@ -263,7 +263,8 @@ describe('T4 — SEARCH CUSTOMER: adapter preserves existing search semantics (s
     const fixture = await openSalesAgentSqliteFixture();
     try {
       const normalization = normalizeCustomerSearchFilters('帮我找一下东莞的 A 类客户', NOW);
-      expect(normalization.filters.region).toBe('东莞');
+      expect(normalization.filters.name_query).toBe('东莞');
+      expect(normalization.filters.region).toBeUndefined();
       const result = await searchCustomersRead({
         filters: normalization.filters as NormalizedCustomerSearchFilters,
         unsupported_filters: normalization.unsupported,

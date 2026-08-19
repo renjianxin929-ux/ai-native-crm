@@ -49,7 +49,7 @@ class SqliteDatabaseLike implements DatabaseLike {
 const followUp = (overrides: Partial<FollowUpRecord>): FollowUpRecord => ({
   id: 'fu-1', customer_id: 'customer-1', title: '跟进价格', contact_channel: 'wechat', contact_result: null,
   feedback_notes: '客户询问价格', intent_assessment: 'HIGH', suggested_grade: 'A', next_action: null,
-  next_follow_up_at: null, is_completed: 0, created_at: '2026-07-10T00:00:00.000Z', updated_at: '2026-07-11T00:00:00.000Z', ...overrides,
+  next_follow_up_at: null, is_completed: 1, created_at: '2026-07-10T00:00:00.000Z', updated_at: '2026-07-11T00:00:00.000Z', ...overrides,
 });
 
 const visit = (overrides: Partial<VisitRecord>): VisitRecord => ({
@@ -74,7 +74,8 @@ async function openMemoryDbWithRecords(): Promise<SqliteDatabaseLike> {
   await db.execute('INSERT INTO customers (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)', ['customer-1', 'Ada', '2026-07-01T00:00:00.000Z', '2026-07-01T00:00:00.000Z']);
   await db.execute('INSERT INTO customers (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)', ['customer-2', 'Bob', '2026-07-01T00:00:00.000Z', '2026-07-01T00:00:00.000Z']);
   // customer-1：1 条跟进 + 1 条面访；customer-2：1 条面访（隔离哨兵）
-  await db.execute('INSERT INTO follow_up_records (id, customer_id, title, contact_channel, contact_result, feedback_notes, intent_assessment, suggested_grade, next_action, next_follow_up_at, is_completed, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', ['fu-1', 'customer-1', '跟进价格', 'wechat', null, '客户询问价格', 'HIGH', 'A', null, null, 0, '2026-07-10T00:00:00.000Z', '2026-07-11T00:00:00.000Z']);
+  await db.execute('INSERT INTO follow_up_records (id, customer_id, title, contact_channel, contact_result, feedback_notes, intent_assessment, suggested_grade, next_action, next_follow_up_at, is_completed, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', ['fu-1', 'customer-1', '跟进价格', 'wechat', null, '客户询问价格', 'HIGH', 'A', null, null, 1, '2026-07-10T00:00:00.000Z', '2026-07-11T00:00:00.000Z']);
+  await db.execute('INSERT INTO follow_up_records (id, customer_id, title, contact_channel, contact_result, feedback_notes, intent_assessment, suggested_grade, next_action, next_follow_up_at, is_completed, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', ['fu-future', 'customer-1', '周三联系', null, null, '周三联系', null, null, null, null, 0, '2026-08-17T10:14:00+08:00', '2026-08-17T10:14:00+08:00']);
   await db.execute('INSERT INTO visit_records (id, customer_id, title, visited_at, visit_notes, customer_concerns, intent_after_visit, visit_outcome, next_action, expected_contract_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', ['visit-1', 'customer-1', '面访演示', '2026-07-08T00:00:00.000Z', '演示顺利', null, 'HIGH', 'POSITIVE', null, null, '2026-07-09T00:00:00.000Z', '2026-07-09T00:00:00.000Z']);
   await db.execute('INSERT INTO visit_records (id, customer_id, title, visited_at, visit_notes, customer_concerns, intent_after_visit, visit_outcome, next_action, expected_contract_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', ['visit-2', 'customer-2', '客户 B 面访', '2026-07-07T00:00:00.000Z', 'B 记录', null, 'MEDIUM', 'NEUTRAL', null, null, '2026-07-08T00:00:00.000Z', '2026-07-08T00:00:00.000Z']);
   __setDbInstanceForTests(db);
@@ -181,7 +182,7 @@ describe('A4R timeline read capability contract (product parity)', () => {
     const dbSource = readFileSync(resolve(process.cwd(), 'src/lib/db.ts'), 'utf8');
     expect(dbSource).toMatch(/export async function listVisits\(customerId: string\)/);
     expect(dbSource).toMatch(/export async function listFollowUps\(customerId: string\)/);
-    expect(dbSource).toMatch(/WHERE customer_id = \? ORDER BY created_at DESC/);
+    expect(dbSource).toMatch(/sortByInstantDesc/);
   });
 
   // ── T4 / T5 / T13 ──────────────────────────────────────────────────────────
@@ -193,6 +194,7 @@ describe('A4R timeline read capability contract (product parity)', () => {
     expect(result.writes_crm).toBe(false);
     const ids = result.records.map(item => item.id);
     expect(ids).toEqual(expect.arrayContaining(['follow-up:fu-1', 'visit:visit-1']));
+    expect(ids).not.toContain('follow-up:fu-future');
     expect(ids).not.toContain('visit:visit-2'); // customer-2 哨兵
     // 产品投影字段保留
     const visitItem = result.records.find(item => item.id === 'visit:visit-1');
@@ -311,12 +313,10 @@ describe('A4R timeline read capability contract (product parity)', () => {
     // (c) LEGACY_AGENT_TOOL_SEMANTIC_MISMATCH 证据：legacy get_customer_timeline 快照投影
     //     不含真实产品记录（fu-1 / visit-1），与产品路径输出不同——A4R 未以 legacy 为 oracle
     const legacySnapshot = makeSnapshot([{ id: 'task-a1', customer_id: 'customer-1', title: 'A1 报价' }], [{ id: 'work-a1', customer_id: 'customer-1', company_name: 'Ada Co' }]);
-    const legacyResult = executeSalesAgentReadTool('get_customer_timeline', { customer_id: 'customer-1', snapshot: legacySnapshot, context: legacyContext });
-    const legacyIds = legacyResult.records.map(r => (r as { id: string }).id);
-    expect(legacyIds).toEqual(['task-a1', 'work-a1']);
-    expect(legacyIds).not.toContain('fu-1');
-    expect(legacyIds).not.toContain('visit-1');
-    expect(viaAdapter.records).not.toEqual(legacyResult.records);
+    // (c) legacy snapshot tools are retired from the production runtime
+    expect(() => executeSalesAgentReadTool('get_customer_timeline', { customer_id: 'customer-1', snapshot: legacySnapshot, context: legacyContext })).toThrow(/LEGACY_WRONG_TIMELINE_RUNTIME_RETIRED/);
+    expect(() => executeSalesAgentReadTool('list_customer_followups', { customer_id: 'customer-1', snapshot: legacySnapshot, context: legacyContext })).toThrow(/LEGACY_WRONG_TIMELINE_RUNTIME_RETIRED/);
+    expect(() => executeSalesAgentReadTool('list_customer_visits', { customer_id: 'customer-1', snapshot: legacySnapshot, context: legacyContext })).toThrow(/LEGACY_WRONG_TIMELINE_RUNTIME_RETIRED/);
   });
 
   it('T13: unknown/invalid scope fails closed — no accidental global read', async () => {
