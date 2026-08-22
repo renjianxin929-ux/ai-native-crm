@@ -2,10 +2,10 @@
 name = "app"
 default-run = "app"
 autobins = false
-version = "0.2.0"
-description = "A Tauri App"
-authors = ["you"]
-license = ""
+version = "0.2.1"
+description = "A local-first, Agent-first CRM desktop application"
+authors = ["renjianxin929-ux"]
+license = "MIT"
 repository = ""
 edition = "2021"
 rust-version = "1.77.2"

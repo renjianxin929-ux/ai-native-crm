@@ -1,5 +1,9 @@
 # AI Native CRM
 
+[![Release](https://img.shields.io/github/v/release/renjianxin929-ux/ai-native-crm)](https://github.com/renjianxin929-ux/ai-native-crm/releases)
+[![Quality Gate](https://github.com/renjianxin929-ux/ai-native-crm/actions/workflows/lint.yml/badge.svg)](https://github.com/renjianxin929-ux/ai-native-crm/actions/workflows/lint.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 **An experimental Agent-First CRM where you work by intent, not by clicking through CRM screens.**
 
 > Most CRMs make humans operate software.
@@ -11,6 +15,12 @@
 > 让 Agent 成为主要操作入口，人负责判断、确认与关系。
 
 **Agent-First CRM · Local-First · Human-Controlled · Built for AI-native sales workflows**
+
+AI Native CRM is for maintainers, builders, and sales teams exploring a safer interaction model for AI-operated business software: the Agent can reason and propose actions, but domain capabilities, validation, and human confirmation remain explicit boundaries.
+
+![AI Native CRM Agent daily focus](docs/images/agent-daily-focus-v0.2.1.png)
+
+_The Tauri desktop client’s Agent daily-focus workflow, captured from an isolated E2E workspace with seeded demo records (no real customer data)._
 
 ## Why this project exists
 
@@ -38,9 +48,9 @@ CRM Action
 
 **The Agent is not a chatbot bolted onto the CRM. It is becoming the primary control surface of the CRM.**
 
-## What V0.2 can do
+## What V0.2.1 can do
 
-V0.2 is a local-first desktop CRM with a real Agent operating surface. The following exists in the product today:
+V0.2.1 is a local-first desktop CRM with a real Agent operating surface. The following exists in the product today:
 
 - Customer management, search, and entity resolution (including candidate disambiguation)
 - Agent-driven customer analysis, interaction review, and next-action preparation
@@ -138,11 +148,18 @@ Some secondary / deep configuration surfaces are still being internationalized.
 
 ## Getting Started
 
+### Prerequisites
+
+- Node.js 22 or newer
+- Rust 1.77.2 or newer
+- The [Tauri 2 system prerequisites](https://v2.tauri.app/start/prerequisites/) for your operating system
+
 Product code is in `local-crm-desktop/`:
 
 ```bash
 cd local-crm-desktop
-npm install
+npm ci
+npm run lint      # ESLint quality gate
 npm test          # Vitest suite
 npm run dev       # Vite frontend (use with Tauri for the desktop client)
 npm run build     # Typecheck + frontend production build
@@ -156,11 +173,28 @@ cd local-crm-desktop
 npx tauri dev
 ```
 
+## Verified Quality Gate
+
+The v0.2.1 release was verified with:
+
+- ESLint: 0 errors, 0 warnings
+- Vitest: 241 files passed, 1 skipped; 3,433 tests passed, 16 skipped
+- Rust: 55 tests passed
+- TypeScript and Vite production build: passed
+
+CI runs lint, frontend tests/build, and Rust tests for pushes and pull requests that affect the desktop app.
+
+## Contributing and Security
+
+Issues and focused pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, quality gates, and the project’s human-confirmed write boundaries.
+
+Please report vulnerabilities through GitHub’s private vulnerability reporting flow described in [SECURITY.md](SECURITY.md), rather than opening a public issue.
+
 ## Current Status
 
-### V0.2 — Agent Control Surface
+### V0.2.1 — Agent Control Surface quality release
 
-V0.2 is the first version where Agent interaction becomes a real CRM operating surface rather than a demo chat layer.
+V0.2 introduced the first real Agent operating surface. V0.2.1 makes that baseline easier to evaluate and maintain by restoring the full quality gate, clearing lint debt, and documenting contribution and security workflows.
 
 This is still an experimental open-source project.
 
@@ -207,3 +241,8 @@ V0.3 is a direction, not a promise to rewrite the project.
 License: MIT
 
 See [LICENSE](LICENSE) for the full text.
+
+## Maintainer Notes
+
+- [v0.2.1 release notes](RELEASE_NOTES_v0.2.1.md)
+- [OpenAI Codex for Open Source application draft](OPENAI_OSS_APPLICATION.md)

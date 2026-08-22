@@ -1,4 +1,4 @@
-name: Lint
+name: Quality Gate
 
 on:
   pull_request:
@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 jobs:
-  eslint:
+  frontend:
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -29,3 +29,26 @@ jobs:
         run: npm ci
       - name: Run ESLint
         run: npm run lint
+      - name: Run frontend tests and production build
+        run: npm test
+
+  rust:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: local-crm-desktop
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Install Tauri system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: local-crm-desktop/src-tauri
+      - name: Run Rust tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml
