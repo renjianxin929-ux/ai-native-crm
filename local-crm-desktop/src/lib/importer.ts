@@ -141,7 +141,7 @@ export function mapToWechatSearchStatus(value: string): WechatSearchStatus {
 function normalizeHeader(header: string): string {
   return header
     .replace(/[\u3000\u00A0]/g, ' ')       // 全角/不间断空格 → 半角
-    .replace(/[（(【\[]([^）)】\]]*)[）)】\]]/g, '') // 括号标注（如“客户名称（必填）”）
+    .replace(/[（(【[]([^）)】\]]*)[）)】\]]/g, '') // 括号标注（如“客户名称（必填）”）
     .replace(/[*＊]/g, '')                 // 星号标注
     .trim()
     .toLowerCase();

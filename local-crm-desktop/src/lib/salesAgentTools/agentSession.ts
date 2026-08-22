@@ -695,8 +695,9 @@ export class SalesAgentSession {
 function formatReasoningResponse(
   intent: AgentIntentEnvelope['intent'],
   path: Awaited<ReturnType<typeof runProductionReasoningPath>>,
-  _tool_trace: readonly SalesAgentToolResult[],
+  toolTrace: readonly SalesAgentToolResult[],
 ): string {
+  void toolTrace;
   const footer = [
     `【依据】${path.evidence_refs.length} 条已核实记录`,
   ];

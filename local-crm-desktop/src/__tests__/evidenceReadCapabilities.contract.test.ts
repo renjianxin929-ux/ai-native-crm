@@ -117,7 +117,7 @@ describe('T3 — PRODUCT INVENTORY TRUTH: only real product Evidence capabilitie
     expect(VERIFIED_EVIDENCE_READ_CANDIDATES).toEqual([]);
     expect(EVIDENCE_READ_CAPABILITY_IDS).toEqual(VERIFIED_EVIDENCE_READ_CANDIDATES);
     // 无 repository-helper-only 能力、无未来 V0.2B 能力注册（清单为空即证明）。
-    expect(EVIDENCE_READ_CAPABILITY_MANIFEST.every((d) => false)).toBe(true);
+    expect(EVIDENCE_READ_CAPABILITY_MANIFEST.every(() => false)).toBe(true);
   });
 
   it('EVIDENCE_FIRST_CLASS_ENTITY is truthfully false in the current product', () => {

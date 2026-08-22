@@ -45,8 +45,6 @@ import {
   PRODUCTION_CAPABILITY_IDS,
   PRODUCTION_CAPABILITY_REGISTRY,
   type CapabilityExecutorBinding,
-  type CapabilityExecutionOutcome,
-  type CapabilityInvocation,
   type CapabilityInvocationScope,
 } from '../lib/capabilities/execution';
 import { SALES_AGENT_CONFIRMATION_MECHANISM } from '../lib/capabilities/execution/writeAdapters';
@@ -59,7 +57,6 @@ import {
   createCustomer,
   createTask,
   getCustomer,
-  initializeDatabaseSchema,
   updateCustomer,
   type DatabaseLike,
 } from '../lib/db';
@@ -128,6 +125,7 @@ function makeSnapshotFixture(): LoadedReadOnlyAgentSnapshot {
 }
 
 function makeContextFixture(snapshot: LoadedReadOnlyAgentSnapshot): ContextSnapshot {
+  void snapshot;
   return {
     kind: 'CRM_CONTEXT_SNAPSHOT',
     profile_id: 'foreign_trade_geo',

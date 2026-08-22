@@ -19,7 +19,7 @@ import {
 import { createAgentIntentEnvelope } from '../lib/salesAgentTools/agentIntentEnvelope';
 import { SalesAgentSession } from '../lib/salesAgentTools/agentSession';
 import { mapProviderError } from '../lib/productionAi/providerErrorMapping';
-import { confirmSalesAgentProposal } from '../components/aiNative/SalesAgentInteractionWorkspace';
+import { confirmSalesAgentProposal } from '../lib/salesAgentTools/confirmSalesAgentProposal';
 import { createApprovedCrmWriteBoundary } from '../lib/salesAgentTools/approvedCrmWriteBoundary';
 import {
   seedCustomer,

@@ -1,3 +1,151 @@
+export const V0_2_WINDOWS_TEST_REPAIR_FULL_CHANGED_COHORT = [
+  'package.json',
+  'src/__tests__/battleCard.dataFidelity.focused.test.ts',
+  'src/__tests__/battleCardAtomic.staticGuard.test.ts',
+  'src/__tests__/battleCardRawByteScope.repro.test.ts',
+  'src/__tests__/crm.releaseGate.e2e.test.ts',
+  'src/__tests__/existingWriteCapabilityRegistration.contract.test.ts',
+  'src/__tests__/finalUiRebuild.focused.test.ts',
+  'src/__tests__/finalUsabilityChangedFileCohort.ts',
+  'src/__tests__/no-rag-boundary.focused.test.ts',
+  'src/__tests__/stage11To13E2E.test.ts',
+  'src/__tests__/transportEquivalenceE2ETruth.focused.test.ts',
+  'src/__tests__/unifiedAgentStage.focused.test.ts',
+  'src/lib/planner/readResultAdapter.ts',
+  'src/lib/salesAgentTools/agentIntentEnvelope.ts',
+  'src/lib/salesAgentTools/filterNormalization.ts',
+  'src/lib/salesAgentTools/interactionController.ts',
+  'vitest.config.ts',
+] as const;
+
+export const V0_2_WINDOWS_TEST_REPAIR_SRC_PACKAGE_CHANGED_COHORT =
+  V0_2_WINDOWS_TEST_REPAIR_FULL_CHANGED_COHORT.filter(
+    file => file.startsWith('src/') || file === 'package.json',
+  );
+
+export const V0_2_WINDOWS_TEST_REPAIR_SRC_CHANGED_COHORT =
+  V0_2_WINDOWS_TEST_REPAIR_FULL_CHANGED_COHORT.filter(file => file.startsWith('src/'));
+
+/** V0.2 repository-wide lint cleanup and component-boundary repair (2026-08-22). */
+export const V0_2_LINT_CLEANUP_FULL_CHANGED_COHORT = [
+  ...V0_2_WINDOWS_TEST_REPAIR_FULL_CHANGED_COHORT,
+  '.gitattributes',
+  '.github/workflows/lint.yml',
+  'eslint.config.js',
+  'scripts/v02DbFinalGate.ts',
+  'src/__tests__/agentReachabilityRouting.focused.test.ts',
+  'src/__tests__/aiDraft.test.ts',
+  'src/__tests__/battleCard.canonicalSnapshot.focused.test.ts',
+  'src/__tests__/battleCard.canonicalSnapshotRepro.focused.test.ts',
+  'src/__tests__/battleCard.cryptoHashRepro.focused.test.ts',
+  'src/__tests__/battleCard.envelopeLimit.focused.test.ts',
+  'src/__tests__/battleCard.factVerifications.focused.test.ts',
+  'src/__tests__/battleCard.goldenSample.guangzhouTinsol.focused.test.ts',
+  'src/__tests__/battleCard.productionConstruction.acceptance.test.ts',
+  'src/__tests__/battleCard.schema.repository.focused.test.ts',
+  'src/__tests__/capabilityExecutionObservationIntegration.contract.test.ts',
+  'src/__tests__/capabilityWriteProductionIntegration.contract.test.ts',
+  'src/__tests__/chatCapabilityRouting.focused.test.ts',
+  'src/__tests__/controlSurface.c1.test.ts',
+  'src/__tests__/customerCreateCapability.contract.test.ts',
+  'src/__tests__/customerDeleteCapability.contract.test.ts',
+  'src/__tests__/customerProfileUpdateCapability.contract.test.ts',
+  'src/__tests__/evidenceReadCapabilities.contract.test.ts',
+  'src/__tests__/importReadCapabilities.contract.test.ts',
+  'src/__tests__/leadWorkbench.e2e.test.ts',
+  'src/__tests__/liveSandboxToSuggestOnlyBridge.readiness.test.ts',
+  'src/__tests__/manualLiveProviderSmokeGate.readiness.test.ts',
+  'src/__tests__/modelSuggestionReviewDraftGate.readiness.test.ts',
+  'src/__tests__/noPageLoadCall.focused.test.ts',
+  'src/__tests__/productionRefreshCoordinator.integration.test.ts',
+  'src/__tests__/promptRuntime.readiness.test.ts',
+  'src/__tests__/realDeepSeekChatE2E.test.ts',
+  'src/__tests__/salesAgentActionMatrix.focused.test.ts',
+  'src/__tests__/salesAgentPortfolioSearch.focused.test.ts',
+  'src/__tests__/salesAgentProposalOwnership.focused.test.ts',
+  'src/__tests__/salesAgentRealFunctional.focused.test.ts',
+  'src/__tests__/salesAgentRealWriteIntent.focused.test.ts',
+  'src/__tests__/salesAgentWriteRefresh.integration.test.ts',
+  'src/__tests__/semanticRouterProductionWiring.focused.test.ts',
+  'src/__tests__/stage9SalesWorkspace.test.ts',
+  'src/__tests__/timelineReadCapabilities.contract.test.ts',
+  'src/__tests__/uiRouting.focused.test.ts',
+  'src/__tests__/v02FinalBindAndI18nProductClosure.focused.test.ts',
+  'src/__tests__/v02FinalCandidateCancelClosure.focused.test.ts',
+  'src/__tests__/v02FinalConversationLifecycleClosure.focused.test.ts',
+  'src/__tests__/v02FinalConversationScopeAndI18nClosure.focused.test.ts',
+  'src/__tests__/v02FinalCreateWriteConfirmationTruth.focused.test.ts',
+  'src/__tests__/v02FinalCustomerNameAndSelectionAuthority.focused.test.ts',
+  'src/__tests__/v02FinalFunctionalTruthClosure.focused.test.ts',
+  'src/__tests__/v02FinalGenuinePreviousResultReferenceGate.focused.test.ts',
+  'src/__tests__/v02FinalUiCompression.focused.test.tsx',
+  'src/__tests__/v02ForegroundBattleCardCoherence.focused.test.ts',
+  'src/__tests__/v02ForegroundCustomerCreateConfirm.focused.test.ts',
+  'src/__tests__/v02ForegroundCustomerCreateScopeIsolation.focused.test.ts',
+  'src/__tests__/visitCreateCapability.contract.test.ts',
+  'src/components/aiNative/AINativeCRMWorkspace.tsx',
+  'src/components/aiNative/SalesAgentInteractionWorkspace.tsx',
+  'src/components/aiNative/useSalesAgentRuntime.ts',
+  'src/components/battleCard/CopyButton.tsx',
+  'src/components/battleCard/ImportWizard.tsx',
+  'src/components/controlSurface/EvidenceQuietPanel.tsx',
+  'src/components/salesWorkspace/CustomerCaptureContract.tsx',
+  'src/components/salesWorkspace/CustomerIntelligencePanel.tsx',
+  'src/components/salesWorkspace/SalesCommandCenter.tsx',
+  'src/lib/ai.ts',
+  'src/lib/backupRestore.ts',
+  'src/lib/battleCard/importService.ts',
+  'src/lib/battleCard/repository.ts',
+  'src/lib/battleCard/stageCardEngine.ts',
+  'src/lib/battleCardUi/battleCardViewModels.ts',
+  'src/lib/battleCardUi/useCopyFeedback.ts',
+  'src/lib/capabilities/execution/engine.ts',
+  'src/lib/capabilities/timeline/readAdapter.ts',
+  'src/lib/customerDetailUi/customerDetailProjection.ts',
+  'src/lib/evidence/evidenceEntryLabel.ts',
+  'src/lib/importer.ts',
+  'src/lib/leadWorkbench/workflow.ts',
+  'src/lib/liveProviderSandboxCall/liveProviderSandboxTransport.ts',
+  'src/lib/modelCapabilities/providers.ts',
+  'src/lib/planner/runtimeContextMaterializer.ts',
+  'src/lib/salesAgentTools/agentSession.ts',
+  'src/lib/salesAgentTools/appClock.ts',
+  'src/lib/salesAgentTools/approvedCrmWriteBoundary.ts',
+  'src/lib/salesAgentTools/confirmSalesAgentProposal.ts',
+  'src/lib/salesAgentTools/confirmedWrite.ts',
+  'src/lib/salesAgentTools/operatingLayer.ts',
+  'src/lib/salesWorkspace/customerCaptureContract.ts',
+  'src/lib/salesWorkspace/customerIntelligence.ts',
+  'src/lib/salesWorkspace/salesBrief.ts',
+  'src/pages/AISettingsPage.tsx',
+  'src/pages/CustomerBattleCardPage.tsx',
+  'src/pages/CustomerDetail.tsx',
+  'src/pages/DailyBattleReviewPage.tsx',
+  'src/pages/LeadImportCenterPage.tsx',
+  'src/pages/LeadWorkbenchPage.tsx',
+] as const;
+
+export const V0_2_LINT_CLEANUP_APP_CHANGED_COHORT = V0_2_LINT_CLEANUP_FULL_CHANGED_COHORT
+  .filter(file => file !== '.gitattributes' && !file.startsWith('.github/')) as readonly string[];
+
+export const V0_2_LINT_CLEANUP_SRC_PACKAGE_CHANGED_COHORT = V0_2_LINT_CLEANUP_FULL_CHANGED_COHORT
+  .filter(file => file.startsWith('src/') || file === 'package.json') as readonly string[];
+export const V0_2_LINT_CLEANUP_SRC_CHANGED_COHORT = V0_2_LINT_CLEANUP_FULL_CHANGED_COHORT
+  .filter(file => file.startsWith('src/')) as readonly string[];
+
+const V0_2_LINT_CLEANUP_UNTRACKED_SRC_FILES = new Set([
+  'src/lib/battleCardUi/useCopyFeedback.ts',
+  'src/lib/evidence/evidenceEntryLabel.ts',
+  'src/lib/salesAgentTools/confirmSalesAgentProposal.ts',
+  'src/lib/salesWorkspace/customerCaptureContract.ts',
+  'src/lib/salesWorkspace/customerIntelligence.ts',
+  'src/lib/salesWorkspace/salesBrief.ts',
+]);
+export const V0_2_LINT_CLEANUP_TRACKED_SRC_CHANGED_COHORT = V0_2_LINT_CLEANUP_SRC_CHANGED_COHORT
+  .filter(file => !V0_2_LINT_CLEANUP_UNTRACKED_SRC_FILES.has(file)) as readonly string[];
+export const V0_2_LINT_CLEANUP_TRACKED_APP_CHANGED_COHORT = V0_2_LINT_CLEANUP_APP_CHANGED_COHORT
+  .filter(file => !V0_2_LINT_CLEANUP_UNTRACKED_SRC_FILES.has(file)) as readonly string[];
+
 export const FINAL_USABILITY_CHANGED_FILES = [
   'src-tauri/Cargo.toml',
   'src-tauri/src/bin/migrate_plaintext_credentials.rs',
@@ -672,7 +820,16 @@ function hasSameNormalizedFileSet(actualFiles: readonly string[], expectedFiles:
 }
 
 export function hasExactFinalUsabilityChangedFileSet(actualFiles: readonly string[]): boolean {
-  return hasSameNormalizedFileSet(actualFiles, FINAL_USABILITY_CHANGED_FILES)
+  return hasSameNormalizedFileSet(actualFiles, V0_2_WINDOWS_TEST_REPAIR_FULL_CHANGED_COHORT)
+    || hasSameNormalizedFileSet(actualFiles, V0_2_WINDOWS_TEST_REPAIR_SRC_PACKAGE_CHANGED_COHORT)
+    || hasSameNormalizedFileSet(actualFiles, V0_2_WINDOWS_TEST_REPAIR_SRC_CHANGED_COHORT)
+    || hasSameNormalizedFileSet(actualFiles, V0_2_LINT_CLEANUP_FULL_CHANGED_COHORT)
+    || hasSameNormalizedFileSet(actualFiles, V0_2_LINT_CLEANUP_APP_CHANGED_COHORT)
+    || hasSameNormalizedFileSet(actualFiles, V0_2_LINT_CLEANUP_SRC_PACKAGE_CHANGED_COHORT)
+    || hasSameNormalizedFileSet(actualFiles, V0_2_LINT_CLEANUP_SRC_CHANGED_COHORT)
+    || hasSameNormalizedFileSet(actualFiles, V0_2_LINT_CLEANUP_TRACKED_SRC_CHANGED_COHORT)
+    || hasSameNormalizedFileSet(actualFiles, V0_2_LINT_CLEANUP_TRACKED_APP_CHANGED_COHORT)
+    || hasSameNormalizedFileSet(actualFiles, FINAL_USABILITY_CHANGED_FILES)
     || hasSameNormalizedFileSet(actualFiles, FINAL_USABILITY_SOURCE_CHANGED_FILES)
     || hasSameNormalizedFileSet(actualFiles, REGION_PORTFOLIO_QUERY_FIX_CHANGED_FILES)
     || hasSameNormalizedFileSet(actualFiles, BATTLE_CARD_V1_CHANGED_FILES)

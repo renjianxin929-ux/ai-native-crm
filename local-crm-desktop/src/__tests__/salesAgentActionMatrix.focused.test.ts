@@ -1,13 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { buildContextSnapshot } from '../lib/context/contextBuilder';
-import { createApprovedCrmWriteBoundary } from '../lib/salesAgentTools/approvedCrmWriteBoundary';
 import { SalesAgentSession } from '../lib/salesAgentTools/agentSession';
 import { SalesAgentInteractionController } from '../lib/salesAgentTools/interactionController';
 import { SALES_AGENT_TOOL_REGISTRY } from '../lib/salesAgentTools/registry';
 import { formatUserFacingErrorMessage } from '../lib/salesAgentUi/formatUserFacingError';
 import type { LoadedReadOnlyAgentSnapshot } from '../lib/readOnlySnapshotLoaderReadiness';
 import { openSalesAgentSqliteFixture } from './salesAgentFunctionalFixture';
-import { seedCustomer, sessionForWrite, sqliteFixture, sqliteRepository } from './salesAgentProductionHarness';
+import { seedCustomer, sessionForWrite, sqliteFixture } from './salesAgentProductionHarness';
 import { createAgentIntentEnvelope } from '../lib/salesAgentTools/agentIntentEnvelope';
 
 const NOW = '2026-07-14T12:00:00.000Z';

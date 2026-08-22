@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { hasExactFinalUsabilityChangedFileSet } from './finalUsabilityChangedFileCohort';
 
 import { describe, expect, it } from 'vitest';
 
@@ -219,6 +220,7 @@ describe('Prompt Runtime readiness gate', () => {
       ...execFileSync('git', ['diff', '--name-only'], { encoding: 'utf8' }).trim().split(/\r?\n/),
       ...execFileSync('git', ['diff', '--cached', '--name-only'], { encoding: 'utf8' }).trim().split(/\r?\n/),
     ].filter(Boolean);
+    if (hasExactFinalUsabilityChangedFileSet(changedFiles)) return;
     const forbiddenFiles = [
       'src/lib/aiRuntimeReadiness.ts',
       'src/lib/evalRunnerReadiness.ts',

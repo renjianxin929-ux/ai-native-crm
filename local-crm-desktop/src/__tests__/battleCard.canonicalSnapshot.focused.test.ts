@@ -5,7 +5,7 @@
  */
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { buildWriteProposal, computeProposalHash, PROPOSAL_SCHEMA_VERSION, sha256HexSync } from '../lib/salesAgentTools/confirmedWrite';
+import { buildWriteProposal, computeProposalHash, sha256HexSync } from '../lib/salesAgentTools/confirmedWrite';
 import { SalesAgentSession } from '../lib/salesAgentTools/agentSession';
 import { approvedCrmWriteBoundary } from '../lib/salesAgentTools/approvedCrmWriteBoundary';
 import {

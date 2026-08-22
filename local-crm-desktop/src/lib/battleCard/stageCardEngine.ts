@@ -426,7 +426,7 @@ export function parsePayload(raw: string): BattleCardPayload {
     }
     return value;
   } catch (error) {
-    throw new Error(`Stage card payload is invalid: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(`Stage card payload is invalid: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
   }
 }
 

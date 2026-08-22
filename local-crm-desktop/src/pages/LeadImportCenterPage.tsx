@@ -444,7 +444,9 @@ export default function LeadImportCenterPage() {
   }, []);
 
   useEffect(() => {
-    void loadBatches();
+    let active = true;
+    queueMicrotask(() => { if (active) void loadBatches(); });
+    return () => { active = false; };
   }, [loadBatches]);
 
   const handleFillSample = () => {

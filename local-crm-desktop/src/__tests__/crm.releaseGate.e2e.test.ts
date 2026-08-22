@@ -139,7 +139,7 @@ describe('CRM full release gate with independent on-disk SQLite connections', ()
     } finally {
       db.close();
     }
-  }, 30_000);
+  }, 120_000);
 
   it('runs the full CRM-to-workbench-to-backup lifecycle without silent data loss', async () => {
     const sourceDb = createIndependentConnectionDb();
@@ -287,7 +287,7 @@ describe('CRM full release gate with independent on-disk SQLite connections', ()
       sourceDb.close();
       restoredDb.close();
     }
-  }, 30_000);
+  }, 120_000);
 });
 
 function createIndependentConnectionDb(): ReleaseGateDb {

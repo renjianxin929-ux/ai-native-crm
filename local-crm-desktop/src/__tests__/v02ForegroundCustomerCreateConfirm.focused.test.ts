@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { confirmSalesAgentProposal } from '../components/aiNative/SalesAgentInteractionWorkspace';
+import { confirmSalesAgentProposal } from '../lib/salesAgentTools/confirmSalesAgentProposal';
 import { __setDbInstanceForTests, createCrmRepository } from '../lib/db';
 import { createApprovedCrmWriteBoundary } from '../lib/salesAgentTools/approvedCrmWriteBoundary';
 import { SalesAgentInteractionController } from '../lib/salesAgentTools/interactionController';

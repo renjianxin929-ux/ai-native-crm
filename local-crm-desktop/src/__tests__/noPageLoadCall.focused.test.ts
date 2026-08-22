@@ -12,7 +12,7 @@ describe('no-page-load-call suite', () => {
     expect(workspace).not.toMatch(/useEffect\([\s\S]{0,400}authorizeTrustedHostCapability/);
     expect(interaction).not.toMatch(/useEffect\([\s\S]{0,400}createProductionModelCaller\(\)\(\{/);
     expect(settings).toContain('listTrustedHostProviderStatus');
-    expect(settings).toContain('useEffect(() => { void refresh(); }');
+    expect(settings).toContain('queueMicrotask(() => { if (active) void refresh(); });');
     expect(settings).not.toMatch(/useEffect\([\s\S]{0,500}testTrustedHostProviderConnection/);
     expect(settings).not.toContain('executeTrustedHostCapability');
     expect(settings).not.toContain('authorizeTrustedHostCapability');

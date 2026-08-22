@@ -1,14 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { confirmSalesAgentProposal } from '../components/aiNative/SalesAgentInteractionWorkspace';
+import { confirmSalesAgentProposal } from '../lib/salesAgentTools/confirmSalesAgentProposal';
 import { createApprovedCrmWriteBoundary } from '../lib/salesAgentTools/approvedCrmWriteBoundary';
 import { SalesAgentInteractionController } from '../lib/salesAgentTools/interactionController';
-import { deterministicPlanForEnvelope, SalesAgentSession } from '../lib/salesAgentTools/agentSession';
+import { deterministicPlanForEnvelope } from '../lib/salesAgentTools/agentSession';
 import { classifyClosedWriteIntent, draftWriteFields, mergeClarificationAnswer, parseRelativeDateTime } from '../lib/salesAgentTools/writeIntent';
 import { intentFromEnvelope } from '../lib/salesAgentTools/operatingLayer';
 import { createAgentIntentEnvelope } from '../lib/salesAgentTools/agentIntentEnvelope';
 import { resolveUnifiedAgentStageMode } from '../lib/salesAgentUi/stageMode';
-import { confirmationFor, proposalFor, seedCustomer, sessionForWrite, sqliteFixture, sqliteRepository } from './salesAgentProductionHarness';
+import { proposalFor, seedCustomer, sessionForWrite, sqliteFixture, sqliteRepository } from './salesAgentProductionHarness';
 import { formatUserFacingErrorMessage } from '../lib/salesAgentUi/formatUserFacingError';
 
 const interactionSource = readFileSync('src/components/aiNative/SalesAgentInteractionWorkspace.tsx', 'utf8');

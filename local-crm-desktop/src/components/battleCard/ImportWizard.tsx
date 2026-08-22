@@ -48,7 +48,7 @@ interface ReviewState {
   readonly product_line: string;
 }
 
-function defaultReviewFor(_fact: DraftFact): ReviewState {
+function defaultReviewFor(): ReviewState {
   return { keep: true, verify: false, applicable_scope: '', product_line: '' };
 }
 
@@ -76,7 +76,10 @@ export function ImportWizard({ customerId, customerName, onClose, onImported, on
   const [wizardError, setWizardError] = useState('');
   const searched = useRef(false);
 
-  const effectiveCustomer = selectedCustomer ?? (customerId ? { id: customerId, name: customerName ?? '' } as Customer : null);
+  const effectiveCustomer = useMemo(
+    () => selectedCustomer ?? (customerId ? { id: customerId, name: customerName ?? '' } as Customer : null),
+    [selectedCustomer, customerId, customerName],
+  );
   const stageCode: CustomerStage = (effectiveCustomer?.stage as CustomerStage) ?? 'NEW_LEAD';
 
   // ── Step 1: 客户搜索 ──
@@ -123,7 +126,7 @@ export function ImportWizard({ customerId, customerName, onClose, onImported, on
       const result = await client.previewImport(rawContent, { customer_id: effectiveCustomer?.id });
       setPreview(result);
       const reviews: Record<string, ReviewState> = {};
-      for (const fact of result.draft.extracted_facts) reviews[fact.fact_id] = defaultReviewFor(fact);
+      for (const fact of result.draft.extracted_facts) reviews[fact.fact_id] = defaultReviewFor();
       setFactReviews(reviews);
       const kept: Record<string, boolean> = {};
       for (const hypothesis of result.draft.extracted_hypotheses) kept[hypothesis.hypothesis_id] = true;
@@ -134,7 +137,7 @@ export function ImportWizard({ customerId, customerName, onClose, onImported, on
     } finally {
       setPreviewLoading(false);
     }
-  }, [rawContent, overLimit, client]);
+  }, [rawContent, overLimit, client, effectiveCustomer]);
 
   // ── Step 3/4: 审核决策 ──
   const setFactDecision = (factId: string, patch: Partial<ReviewState>) => {
@@ -245,7 +248,7 @@ export function ImportWizard({ customerId, customerName, onClose, onImported, on
   );
 
   const renderFactItem = (fact: DraftFact, index: number, prefix: string) => {
-    const review = factReviews[fact.fact_id] ?? defaultReviewFor(fact);
+    const review = factReviews[fact.fact_id] ?? defaultReviewFor();
     const isConditional = fact.applicability === 'CONDITIONAL';
     const needsGate = review.verify && isConditional && !review.applicable_scope.trim() && !review.product_line.trim();
     return (

@@ -307,7 +307,7 @@ describe('T1 — Fresh Session + Advice Question', () => {
       const turn = await controller.submit(ADVICE);
       const message = combinedMessage(turn);
       // Fail-first evidence for the foreground sentence.
-      // eslint-disable-next-line no-console
+
       console.log([
         'INPUT=我周一联系他合适吗',
         `ACTUAL_CLASSIFIER=${classified ? classified.kind : 'null'}`,

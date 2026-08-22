@@ -123,7 +123,7 @@ describe('ui-routing suite', () => {
   });
 
   it('session model lock prevents duplicate in-flight model requests', async () => {
-    const { snapshot, context, now } = fixture();
+    const { snapshot, now } = fixture();
     let release!: () => void;
     const gate = new Promise<void>(resolveGate => { release = resolveGate; });
     const fake = createFakeTrustedHostTransport(async () => {

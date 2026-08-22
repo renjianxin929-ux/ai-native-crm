@@ -13,7 +13,6 @@ import {
   validateModelSuggestionReviewDraftGateRequest,
   validateModelSuggestionReviewDraftGateResult,
   validateSourceAdapterBoundaryResult,
-  validateSourceBoundaryCandidate,
   type ModelSuggestionReviewDraftCandidate,
   type ModelSuggestionReviewDraftGateBlockedReason,
   type ModelSuggestionReviewDraftGateResult,

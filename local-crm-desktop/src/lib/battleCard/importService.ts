@@ -325,7 +325,8 @@ export async function buildImportWriteSet(input: {
 }
 
 /** 单连接事务写入（测试/无 Tauri 传输；withTransaction 仅对单连接适配器语义正确）。 */
-export async function cancelIntelligenceImport(_preview: ImportPreviewResult): Promise<CancelImportResult> {
+export async function cancelIntelligenceImport(preview: ImportPreviewResult): Promise<CancelImportResult> {
+  void preview;
   // Cancel 零写入：不产生任何业务数据，不落 parse_status。
   return { cancelled: true, writes: 0 };
 }

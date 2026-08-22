@@ -66,7 +66,11 @@ export function useSalesAgentRuntime(customerId: string): SalesAgentRuntime {
     }
   }, []);
 
-  useEffect(() => { void loadCatalog(); }, [loadCatalog]);
+  useEffect(() => {
+    let active = true;
+    queueMicrotask(() => { if (active) void loadCatalog(); });
+    return () => { active = false; };
+  }, [loadCatalog]);
 
   const loadSelectedContext = useCallback(async (targetId: string) => {
     if (!targetId) return;

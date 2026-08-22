@@ -216,7 +216,7 @@ describe('TEST GROUP A — customer.create name integrity', () => {
       const turn = await controller.submit(INPUT_1);
       const name = turn.state.latest_proposal?.proposed_values.name;
       const contact = turn.state.latest_proposal?.proposed_values.contact_person;
-      // eslint-disable-next-line no-console
+
       console.log([
         'FAIL_FIRST_T1_CUSTOMER_NAME',
         `INPUT=${INPUT_1}`,
@@ -258,7 +258,7 @@ describe('TEST GROUP A — customer.create name integrity', () => {
       });
       const turn = await controller.submit(INPUT_2);
       const name = turn.state.latest_proposal?.proposed_values.name;
-      // eslint-disable-next-line no-console
+
       console.log([
         'FAIL_FIRST_T2_CUSTOMER_SUCCESS',
         `DETERMINISTIC_NAME=${selected.kind === 'invoke' ? String(selected.selection.arguments.name ?? '') : ''}`,
@@ -283,7 +283,7 @@ describe('TEST GROUP A — customer.create name integrity', () => {
     try {
       const turn = await controller.submit(INPUT_3);
       const name = turn.state.latest_proposal?.proposed_values.name;
-      // eslint-disable-next-line no-console
+
       console.log(`FAIL_FIRST_T3_WECOM_NAME ACTUAL_NAME=${String(name ?? '')}`);
       expect(name).toBe('企业微信服务有限公司');
       expect(turn.state.latest_proposal?.proposed_values.contact_person).toBe('李总');

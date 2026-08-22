@@ -12,7 +12,8 @@ export class DeepSeekCompatibleProvider implements CapabilityProvider<TextReason
   readonly modelId = 'deepseek-compatible-skeleton-v1';
   readonly executionMode = 'SKELETON' as const;
 
-  async execute(_input: TextReasoningInput): Promise<TextReasoningOutput> {
+  async execute(input: TextReasoningInput): Promise<TextReasoningOutput> {
+    void input;
     return { text: '' };
   }
 }
@@ -23,7 +24,8 @@ export class QwenVisionCompatibleProvider implements CapabilityProvider<VisionAn
   readonly modelId = 'qwen-vision-compatible-skeleton-v1';
   readonly executionMode = 'SKELETON' as const;
 
-  async execute(_input: VisionAnalysisInput): Promise<VisionAnalysisOutput> {
+  async execute(input: VisionAnalysisInput): Promise<VisionAnalysisOutput> {
+    void input;
     return { visual_facts: [] };
   }
 }

@@ -47,7 +47,6 @@ import {
   PRODUCTION_CAPABILITY_IDS,
   PRODUCTION_CAPABILITY_REGISTRY,
   type CapabilityExecutorBinding,
-  type CapabilityExecutionOutcome,
   type CapabilityInvocationScope,
 } from '../lib/capabilities/execution';
 import { SALES_AGENT_CONFIRMATION_MECHANISM } from '../lib/capabilities/execution/writeAdapters';
@@ -63,11 +62,10 @@ import {
   __setDbInstanceForTests,
   createCustomer,
   getCustomer,
-  initializeDatabaseSchema,
   updateCustomer,
   type DatabaseLike,
 } from '../lib/db';
-import type { Customer, VisitOutcome } from '../lib/types';
+import type { VisitOutcome } from '../lib/types';
 import { applyVisitOutcome } from '../lib/rules';
 import { SalesAgentSession } from '../lib/salesAgentTools/agentSession';
 import { approvedCrmWriteBoundary } from '../lib/salesAgentTools/approvedCrmWriteBoundary';
@@ -79,8 +77,6 @@ import { SALES_AGENT_APP_CLOCK } from '../lib/salesAgentTools/appClock';
 import { validateAgentWriteProposal, type AgentWriteProposal } from '../lib/salesAgentTools/confirmedWrite';
 import {
   VISIT_CREATE_INPUT_KEYS,
-  VISIT_NEXT_ACTIONS,
-  VISIT_OUTCOMES,
   createVisitWithProductRules,
   type VisitCreateInput,
 } from '../lib/visitCreate';

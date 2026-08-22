@@ -28,7 +28,8 @@ export interface ApprovedCrmWriteRepositoryWithBattleCard extends ApprovedCrmWri
 
 export function createApprovedCrmWriteBoundary(repository: ApprovedCrmWriteRepositoryWithBattleCard, clock: AppClock = SALES_AGENT_APP_CLOCK): SafeWriteBoundary {
   return {
-    async execute(proposal: AgentWriteProposal, _confirmationId: string) {
+    async execute(proposal: AgentWriteProposal, confirmationId: string) {
+      void confirmationId;
       if (proposal.grouped_operations) {
         const selected = proposal.grouped_operations.filter(item => item.selected);
         if (selected.length === 0) throw new Error('组合建议没有选中的操作。');

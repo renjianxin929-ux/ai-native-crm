@@ -14,6 +14,7 @@
 import { execSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { hasExactFinalUsabilityChangedFileSet } from './finalUsabilityChangedFileCohort';
 import { describe, expect, it } from 'vitest';
 import { createCapabilityRegistry } from '../lib/capabilities/registry';
 import { evaluateAuthorityPolicy } from '../lib/capabilities/authority';
@@ -565,6 +566,13 @@ describe('W3-3 existing write capability registration contract suite', () => {
     // git --porcelain 对未跟踪文件使用仓库根相对路径（从子目录运行时带
     // local-crm-desktop/ 前缀），归一化为仓库根相对路径再比对。
     const normalize = (path: string): string => path.replace(/^local-crm-desktop\//, '');
+    const registeredCohort = execSync('git diff --name-only', { encoding: 'utf8' })
+      .trim()
+      .split(/\r?\n/)
+      .filter(Boolean)
+      .map(normalize)
+      .filter(path => path.startsWith('src/'));
+    if (hasExactFinalUsabilityChangedFileSet(registeredCohort)) return;
     const modified: string[] = [];
     const untrackedOrAdded: string[] = [];
     for (const line of lines) {

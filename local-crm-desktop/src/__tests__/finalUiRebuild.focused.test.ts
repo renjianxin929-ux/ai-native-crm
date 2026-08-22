@@ -42,7 +42,7 @@ describe('Sales Agent final interaction focused guards', () => {
     expect(workspace).toContain('scopedEntry');
     expect(workspace).toContain('setSelectedCustomerId(scopedEntry.customer_id)');
     expect(workspace).not.toContain('runCopilot');
-    expect(customerDetail).toContain('Ask Sales Agent');
+    expect(customerDetail).toContain("t('customer.detail.askAgent')");
     expect(customerDetail).toContain("navigate('/ai-workspace'");
   });
 
@@ -147,7 +147,7 @@ describe('Sales Agent final interaction focused guards', () => {
     expect(workspace).not.toContain('Mock Provider Enabled');
     expect(workspace).toContain('受控模式');
     expect(workspace).toContain('controlled-mode-panel');
-    expect(app).toContain("label: 'Agent'");
+    expect(app).toContain("label: t('nav.agent')");
   });
 
   it('23-25: quick actions enter session / proposal / open capture, no fake confidence', () => {

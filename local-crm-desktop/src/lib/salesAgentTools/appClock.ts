@@ -189,9 +189,8 @@ function partsInZone(date: Date, timezone: string): DateParts {
 function zonedWallTimeIso(year: number, month: number, day: number, hour: number, minute: number, second: number, timezone: string): string {
   const wallUtc = Date.UTC(year, month - 1, day, hour, minute, second);
   let offset = offsetMinutes(new Date(wallUtc), timezone);
-  let instant = new Date(wallUtc - offset * 60_000);
+  const instant = new Date(wallUtc - offset * 60_000);
   offset = offsetMinutes(instant, timezone);
-  instant = new Date(wallUtc - offset * 60_000);
   const sign = offset >= 0 ? '+' : '-';
   const abs = Math.abs(offset);
   return `${dateText(year, month, day)}T${pad(hour)}:${pad(minute)}:${pad(second)}${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`;

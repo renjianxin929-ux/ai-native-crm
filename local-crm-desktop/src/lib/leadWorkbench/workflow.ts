@@ -112,7 +112,7 @@ export async function readLeadClipboard(clipboard: ClipboardReader): Promise<{
   text: string;
   preview: LeadClipboardPreview;
 }> {
-  let text = '';
+  let text: string;
   try {
     text = await clipboard.readText();
   } catch {

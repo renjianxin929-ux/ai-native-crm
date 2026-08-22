@@ -6,7 +6,7 @@
  * Do not make the main proof a direct helper/parser/adapter call.
  */
 import { afterEach, describe, expect, it } from 'vitest';
-import { confirmSalesAgentProposal } from '../components/aiNative/SalesAgentInteractionWorkspace';
+import { confirmSalesAgentProposal } from '../lib/salesAgentTools/confirmSalesAgentProposal';
 import { buildContextSnapshot } from '../lib/context/contextBuilder';
 import { buildCustomerMemoryContext } from '../lib/customerMemory';
 import { __setDbInstanceForTests, createCrmRepository } from '../lib/db';
@@ -223,7 +223,7 @@ describe('V0.2 foreground — customer.create selected-scope isolation', () => {
         proposal_customer_id: proposal?.customer_id ?? null,
         pre_confirm_writes: customerCount(fixture.sqlite) - before,
       };
-      // eslint-disable-next-line no-console
+
       console.log('TRACE_T1_CUSTOMER_CREATE_SCOPE', JSON.stringify(trace, null, 2));
       expect(trace.deterministic_capability).toBe('customer.create');
     } finally {

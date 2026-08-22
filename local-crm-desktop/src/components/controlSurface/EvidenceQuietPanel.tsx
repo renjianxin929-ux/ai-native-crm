@@ -1,6 +1,5 @@
 import { X } from 'lucide-react';
 import type { EvidenceRow } from '../../lib/evidence/types';
-import { t, tFormat } from '../../lib/i18n/appLocale';
 import { useAppLocale } from '../../lib/i18n/LocaleProvider';
 
 interface Props {
@@ -38,8 +37,4 @@ export function EvidenceQuietPanel({ open, evidence, onClose }: Props) {
       )}
     </aside>
   );
-}
-
-export function evidenceEntryLabel(count: number): string {
-  return count > 0 ? tFormat('customer.detail.evidenceCount', { n: count }) : t('customer.detail.evidence');
 }

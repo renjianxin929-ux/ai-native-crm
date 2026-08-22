@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { CUSTOMER_CAPTURE_CONTRACT } from '../components/salesWorkspace/CustomerCaptureContract';
-import { buildCustomerScopedSalesAgentEntry, buildCustomerTimeline, describeCustomerContext } from '../components/salesWorkspace/CustomerIntelligencePanel';
-import { buildSalesBrief } from '../components/salesWorkspace/SalesCommandCenter';
+import { CUSTOMER_CAPTURE_CONTRACT } from '../lib/salesWorkspace/customerCaptureContract';
+import { buildCustomerScopedSalesAgentEntry, buildCustomerTimeline, describeCustomerContext } from '../lib/salesWorkspace/customerIntelligence';
+import { buildSalesBrief } from '../lib/salesWorkspace/salesBrief';
 
 describe('Stage 9 AI Native Sales Workspace projections', () => {
   it('unifies existing follow-up and visit records without mutating them', () => {

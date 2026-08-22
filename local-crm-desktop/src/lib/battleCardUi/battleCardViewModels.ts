@@ -226,7 +226,7 @@ export function toVersionHistoryRows(
   currentCardId: string | null,
 ): VersionHistoryRow[] {
   return cards.map(card => {
-    let changeSummary = '';
+    let changeSummary: string;
     try {
       const payload = parsePayload(card.payload_json);
       changeSummary = payload.action_card.changes_since_previous_card.slice(0, 2).join('；');
@@ -267,8 +267,9 @@ export interface DailyReviewRowView {
 
 export function toDailyReviewRowViews(
   items: readonly import('../battleCard/dailyReview').BattleReviewQueueItem[],
-  _nowIso: string,
+  nowIso: string,
 ): DailyReviewRowView[] {
+  void nowIso;
   return items.map(item => ({
     customer_id: item.customer_id,
     customer_name: item.customer_name,

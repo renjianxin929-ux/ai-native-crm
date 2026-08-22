@@ -302,7 +302,7 @@ describe('V0.2 FINAL — candidate cancel closure', () => {
       const modelBeforeCancel = modelCalls();
       cancelCandidateSelection(controller);
       const after = crmSnapshot(fixture.sqlite);
-      // eslint-disable-next-line no-console
+
       console.log(`CRM_WRITE_COUNT=0 customers=${after.customers.length} tasks=${after.tasks.length} followUps=${after.followUps.length}`);
       expect(after).toEqual(before);
       expect(plannerCalls()).toBe(plannerBeforeCancel);
@@ -331,7 +331,7 @@ describe('V0.2 FINAL — candidate cancel closure', () => {
       expect(controller.getState().latest_result).toBeNull();
       expect(controller.getState().latest_proposal).toBeNull();
       expect(modelCalls()).toBe(modelBefore);
-      // eslint-disable-next-line no-console
+
       console.log('CROSS_CUSTOMER_PENDING_EXECUTION_COUNT=0');
     } finally {
       fixture.close();

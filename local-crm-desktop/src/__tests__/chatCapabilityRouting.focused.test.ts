@@ -26,7 +26,7 @@ import { previewAuthorityForSelection } from '../lib/planner/capabilitySelection
 import { selectCapabilityDeterministic } from '../lib/planner/deterministicCapabilitySelector';
 import { SalesAgentInteractionController } from '../lib/salesAgentTools/interactionController';
 import { PRODUCTION_CAPABILITY_COUNT } from '../lib/capabilities/execution';
-import { __setDbInstanceForTests, initializeDatabaseSchema } from '../lib/db';
+import { __setDbInstanceForTests } from '../lib/db';
 import { __resetSessionWriteStateStoreForTests } from '../lib/salesAgentTools/sessionWriteStateStore';
 import { seedCustomer, sessionForWrite, sqliteFixture } from './salesAgentProductionHarness';
 

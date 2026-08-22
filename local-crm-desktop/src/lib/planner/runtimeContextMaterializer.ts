@@ -135,7 +135,9 @@ export async function materializeRuntimeInput(
       const rawFilters = (args.filters && typeof args.filters === 'object' && !Array.isArray(args.filters)
         ? args.filters
         : args) as Record<string, unknown>;
-      const { list_kind: _listKind, db: _db, ...filterFields } = rawFilters;
+      const filterFields = { ...rawFilters };
+      delete filterFields.list_kind;
+      delete filterFields.db;
       return {
         filters: { ...filterFields, now: nowIso },
         list_kind: args.list_kind === 'resolution' ? 'resolution' : 'portfolio',

@@ -18,7 +18,6 @@ import * as XLSX from 'xlsx';
 import {
   createCapabilityRegistry,
   DuplicateCapabilityError,
-  type CapabilityDefinition,
 } from '../lib/capabilities';
 import { CUSTOMER_CAPABILITY_MANIFEST } from '../lib/capabilities/customer';
 import { TIMELINE_READ_CAPABILITY_MANIFEST } from '../lib/capabilities/timeline';
@@ -373,7 +372,7 @@ describe('T9 — MALFORMED FILE: representative invalid input fails per existing
 
   it('empty file never yields phantom rows', async () => {
     const file = new File([], 'empty.xlsx');
-    let preview: ImportPreview | null = null;
+    let preview: ImportPreview | null;
     try {
       preview = await previewImportFile(file);
     } catch {

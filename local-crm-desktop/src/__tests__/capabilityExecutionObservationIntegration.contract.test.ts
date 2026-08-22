@@ -32,13 +32,11 @@ import * as XLSX from 'xlsx';
 import Database from 'better-sqlite3';
 
 import { createCapabilityRegistry, type CapabilityDefinition } from '../lib/capabilities';
-import type { CapabilityRegistry } from '../lib/capabilities/registry';
 import {
   CapabilityInputValidationError,
   PRODUCTION_CAPABILITY_BINDING_REGISTRY,
   PRODUCTION_CAPABILITY_BINDINGS,
   PRODUCTION_CAPABILITY_COUNT,
-  PRODUCTION_CAPABILITY_EXECUTION,
   PRODUCTION_CAPABILITY_IDS,
   PRODUCTION_CAPABILITY_REGISTRY,
   createCapabilityBindingRegistry,
@@ -47,8 +45,6 @@ import {
   createProductionCapabilityExecution,
   type CapabilityBindingRegistry,
   type CapabilityExecutionEngine,
-  type CapabilityExecutorBinding,
-  type CapabilityInvocationScope,
 } from '../lib/capabilities/execution';
 import {
   createInMemoryObservationEmitter,

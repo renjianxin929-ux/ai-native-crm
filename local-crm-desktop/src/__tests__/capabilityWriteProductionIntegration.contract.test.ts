@@ -57,7 +57,7 @@ import { __setDbInstanceForTests, initializeDatabaseSchema, type DatabaseLike } 
 import { openSalesAgentSqliteFixture } from './salesAgentFunctionalFixture';
 import { createBattleCardRepositories, type BattleCardRepositories } from '../lib/battleCard/repository';
 import { BATTLE_CARD_SCHEMA_VERSION } from '../lib/battleCard/schema';
-import type { BattleCardPayload, CustomerStageCardInput, HypothesisStatus } from '../lib/battleCard/types';
+import type { BattleCardPayload, CustomerStageCardInput } from '../lib/battleCard/types';
 import { SalesAgentSession } from '../lib/salesAgentTools/agentSession';
 import { approvedCrmWriteBoundary } from '../lib/salesAgentTools/approvedCrmWriteBoundary';
 import { getCanonicalProposal, __resetSessionWriteStateStoreForTests } from '../lib/salesAgentTools/sessionWriteStateStore';
@@ -193,7 +193,7 @@ async function openMemoryDbWithCards(): Promise<SeededDb> {
   };
 
   const cardA1 = await insertCard('cust-a', 'NEW_LEAD', 1, 'CONFIRMED');
-  const cardA2 = await insertCard('cust-a', 'NEW_LEAD', 2, 'DRAFT');
+  await insertCard('cust-a', 'NEW_LEAD', 2, 'DRAFT');
   const cardB1 = await insertCard('cust-b', 'CONTACTED', 1, 'CONFIRMED');
   await insertCard('cust-b', 'CONTACTED', 2, 'DRAFT');
 

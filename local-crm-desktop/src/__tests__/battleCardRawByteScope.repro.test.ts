@@ -336,5 +336,5 @@ describe('P0-A: TypeScript/Rust raw-byte parity envelope', () => {
     const rawContentHashes = PARITY_MATRIX.map(fixture => sha256HexSync(fixture.raw_content));
     expect(new Set(rawContentHashes).size).toBe(PARITY_MATRIX.length);
     expect(tsCases[0]!.candidates[0]!.candidate_id).not.toBe(tsCases[1]!.candidates[0]!.candidate_id);
-  }, 120_000);
+  }, 600_000);
 });

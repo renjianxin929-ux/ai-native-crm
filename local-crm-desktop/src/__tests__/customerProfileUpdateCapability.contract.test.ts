@@ -47,8 +47,6 @@ import {
   PRODUCTION_CAPABILITY_IDS,
   PRODUCTION_CAPABILITY_REGISTRY,
   type CapabilityExecutorBinding,
-  type CapabilityExecutionOutcome,
-  type CapabilityInvocation,
   type CapabilityInvocationScope,
 } from '../lib/capabilities/execution';
 import { SALES_AGENT_CONFIRMATION_MECHANISM } from '../lib/capabilities/execution/writeAdapters';
@@ -64,11 +62,9 @@ import {
   __setDbInstanceForTests,
   createCustomer,
   getCustomer,
-  initializeDatabaseSchema,
   updateCustomer,
   type DatabaseLike,
 } from '../lib/db';
-import type { Customer } from '../lib/types';
 import { SalesAgentSession } from '../lib/salesAgentTools/agentSession';
 import { approvedCrmWriteBoundary } from '../lib/salesAgentTools/approvedCrmWriteBoundary';
 import {

@@ -59,9 +59,11 @@ export function proposeSalesAgentPlan(envelope: AgentIntentEnvelope, customerId:
 
 /** Retired legacy runtime helper. Production execution is SalesAgentSession -> ProductionReasoningPath. */
 export async function runSalesAgentInteraction(
-  _message: string,
-  _input: SalesAgentReadToolContext & { profile_id: string },
+  message: string,
+  input: SalesAgentReadToolContext & { profile_id: string },
 ): Promise<SalesAgentInteractionResult> {
+  void message;
+  void input;
   throw new Error('Legacy Sales Agent runtime was retired; use SalesAgentSession production path.');
 }
 

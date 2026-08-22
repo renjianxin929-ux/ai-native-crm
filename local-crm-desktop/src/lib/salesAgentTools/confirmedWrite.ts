@@ -216,7 +216,9 @@ function requireJsonSafeString(value: unknown, field: string): string {
   if ((trimmed.startsWith('{') || trimmed.startsWith('[')) && canParseJson(trimmed)) {
     throw new Error(`fact_verification ${field} must not carry a JSON payload.`);
   }
-  if (/[\u0000-\u001f]/.test(result)) throw new Error(`fact_verification ${field} must not contain control characters.`);
+  if ([...result].some(character => character.charCodeAt(0) <= 0x1f)) {
+    throw new Error(`fact_verification ${field} must not contain control characters.`);
+  }
   return result;
 }
 
@@ -334,7 +336,7 @@ export function cloneValidatedPayload<T>(value: T): T {
   try {
     return structuredClone(value);
   } catch (error) {
-    throw new Error(`Canonical payload cannot be cloned (proxy or non-cloneable): ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(`Canonical payload cannot be cloned (proxy or non-cloneable): ${error instanceof Error ? error.message : String(error)}`, { cause: error });
   }
 }
 
@@ -411,7 +413,7 @@ export function rebuildProposalFromSnapshot(snapshot: CanonicalProposalSnapshot)
   try {
     envelope = JSON.parse(snapshot.canonical_envelope_json) as Record<string, unknown>;
   } catch (error) {
-    throw new Error(`Canonical proposal envelope is invalid: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(`Canonical proposal envelope is invalid: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
   }
   // Envelope 闭合 Schema 验证（防止只用 payload JSON 在 Confirm 时另拼 Envelope）
   if (envelope.hash_algorithm !== HASH_ALGORITHM
@@ -474,7 +476,7 @@ export function parseFactVerificationsRuntime(input: unknown): readonly FactVeri
   try {
     source = structuredClone(input);
   } catch (error) {
-    throw new Error(`fact_verifications contains a non-cloneable value (proxy or unsupported object): ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(`fact_verifications contains a non-cloneable value (proxy or unsupported object): ${error instanceof Error ? error.message : String(error)}`, { cause: error });
   }
   const seenFactIds = new Set<string>();
   const items: FactVerificationItem[] = [];

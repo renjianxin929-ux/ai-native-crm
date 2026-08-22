@@ -108,7 +108,7 @@ export default function DailyBattleReviewPage() {
     } finally {
       setSavingFollowUp(false);
     }
-  }, [followUpTarget, followUpText, client, load]);
+  }, [followUpTarget, followUpText, load]);
 
   const overdue = items.filter(item => item.is_overdue).slice(0, 2);
   const dueToday = items.filter(item => item.is_due_today).slice(0, 3);

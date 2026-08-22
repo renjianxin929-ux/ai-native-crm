@@ -349,7 +349,7 @@ describe('T1 — Current-turn Decision Must NOT Be Handoff', () => {
       const write = classifyClosedWriteIntent(CURRENT_DECISION);
       const before = counts(fixture.sqlite);
       const turn = await controller.submit(CURRENT_DECISION);
-      // eslint-disable-next-line no-console
+
       console.log([
         'FAIL_FIRST_CURRENT_DECISION',
         `INPUT=${CURRENT_DECISION}`,
@@ -514,7 +514,7 @@ describe('T7 — User Enters Customer A → Fresh Scoped Conversation', () => {
       const beforeB = counts(fixture.sqlite, CUSTOMER_B);
       simulateForegroundUserEnterCustomer(controller, CUSTOMER_A, CUSTOMER_A_NAME);
       const next = controller.getState();
-      // eslint-disable-next-line no-console
+
       console.log([
         'FAIL_FIRST_FRESH_CUSTOMER',
         `SCOPED=${next.scoped_customer_id}`,

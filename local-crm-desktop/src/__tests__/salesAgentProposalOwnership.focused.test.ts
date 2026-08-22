@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { buildContextSnapshot } from '../lib/context/contextBuilder';
 import { createApprovedCrmWriteBoundary } from '../lib/salesAgentTools/approvedCrmWriteBoundary';
-import { SalesAgentSession } from '../lib/salesAgentTools/agentSession';
 import { confirmationFor, seedCustomer, sessionForWrite, sqliteFixture, sqliteRepository } from './salesAgentProductionHarness';
 import { formatUserFacingErrorMessage } from '../lib/salesAgentUi/formatUserFacingError';
 import { __resetSessionWriteStateStoreForTests } from '../lib/salesAgentTools/sessionWriteStateStore';

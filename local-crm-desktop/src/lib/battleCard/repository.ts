@@ -372,9 +372,10 @@ export interface StageCardRepository {
 
 export function createStageCardRepository(
   db: DatabaseLike,
-  _clock: () => string = () => new Date().toISOString(),
+  clock: () => string = () => new Date().toISOString(),
   backend?: () => import('../battleCardUi/atomicWriteBackend').AtomicBattleCardWriteBackend | undefined,
 ): StageCardRepository {
+  void clock;
   const atomic = backend ?? (() => defaultAtomicWriteBackend());
   return {
     async nextVersion(customerId, stageCode) {

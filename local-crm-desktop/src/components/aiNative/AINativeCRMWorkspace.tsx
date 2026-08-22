@@ -90,8 +90,17 @@ export default function AINativeCRMWorkspace({
     }
   }, []);
 
-  useEffect(() => { void loadCatalog(); }, [loadCatalog]);
-  useEffect(() => { if (scopedEntry) setSelectedCustomerId(scopedEntry.customer_id); }, [scopedEntry]);
+  useEffect(() => {
+    let active = true;
+    queueMicrotask(() => { if (active) void loadCatalog(); });
+    return () => { active = false; };
+  }, [loadCatalog]);
+  useEffect(() => {
+    if (!scopedEntry) return;
+    let active = true;
+    queueMicrotask(() => { if (active) setSelectedCustomerId(scopedEntry.customer_id); });
+    return () => { active = false; };
+  }, [scopedEntry]);
 
   const searchable = useMemo(() => toSearchable(directory), [directory]);
   const compareContext = useMemo(() => catalog ? buildWorkspaceContextSnapshot(catalog) : null, [catalog]);
@@ -99,8 +108,13 @@ export default function AINativeCRMWorkspace({
     if (directory.length === 0 || dailyFocusInitialized.current) return;
     dailyFocusInitialized.current = true;
     const items = buildDailyFocusItems(searchable, SALES_AGENT_APP_CLOCK.now());
-    setDailyFocusItems(items);
-    if (items.length > 0 && shouldAutoOpenDailyFocus()) setDailyFocusOpen(true);
+    let active = true;
+    queueMicrotask(() => {
+      if (!active) return;
+      setDailyFocusItems(items);
+      if (items.length > 0 && shouldAutoOpenDailyFocus()) setDailyFocusOpen(true);
+    });
+    return () => { active = false; };
   }, [directory, searchable]);
 
   const loadSelectedContext = useCallback(async (customerId = selectedCustomerId) => {

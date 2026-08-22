@@ -4,9 +4,9 @@ import type { ContextSnapshot } from '../../lib/context/types';
 import type { CustomerMemoryContext, MemoryRepository } from '../../lib/customerMemory';
 import type { LoadedReadOnlyAgentSnapshot } from '../../lib/readOnlySnapshotLoaderReadiness';
 import { getDb } from '../../lib/db';
-import { SalesAgentSession, type AgentSessionResult, type SalesAgentHost, type SafeWriteBoundary } from '../../lib/salesAgentTools/agentSession';
-import { approvedCrmWriteBoundary } from '../../lib/salesAgentTools/approvedCrmWriteBoundary';
+import { SalesAgentSession, type AgentSessionResult, type SalesAgentHost } from '../../lib/salesAgentTools/agentSession';
 import type { AgentWriteProposal } from '../../lib/salesAgentTools/confirmedWrite';
+import { confirmSalesAgentProposal } from '../../lib/salesAgentTools/confirmSalesAgentProposal';
 import type { WriteClarificationRequest } from '../../lib/salesAgentTools/writeIntent';
 import { editFact, reviewedFacts, setFactReview, type CustomerCaptureReview } from '../../lib/customerCapture/review';
 import { readAndValidateVisionFile } from '../../lib/productionAi/visionInput';
@@ -61,20 +61,6 @@ function semanticRouterFromHost(host: SalesAgentHost | null): ((
 ) => Promise<SemanticIntentResolution>) | undefined {
   if (!host || !('routeSemanticIntent' in host) || typeof host.routeSemanticIntent !== 'function') return undefined;
   return host.routeSemanticIntent as (instruction: string, envelopeId: string, signal?: AbortSignal) => Promise<SemanticIntentResolution>;
-}
-
-/**
- * Production confirm: only proposal_id + nonce are submitted.
- * Canonical payload is read from the process-stable write-state store (survives Session remount).
- */
-export async function confirmSalesAgentProposal(session: SalesAgentSession, proposal: AgentWriteProposal, onRefresh: () => Promise<void>, boundary: SafeWriteBoundary = approvedCrmWriteBoundary) {
-  const result = await session.confirmWriteByRef({
-    proposal_id: proposal.proposal_id,
-    nonce: proposal.nonce ?? '',
-    confirmed_at: SALES_AGENT_APP_CLOCK.now(),
-  }, boundary);
-  await onRefresh();
-  return result;
 }
 
 type SpeechRecognitionLike = {
@@ -169,13 +155,19 @@ export function SalesAgentInteractionWorkspace({
   userConversationKey?: string;
 }) {
   const sessionRef = useRef<SalesAgentSession | null>(null);
+  const [activeSession, setActiveSession] = useState<SalesAgentSession | null>(null);
   const [sessionVersion, setSessionVersion] = useState(0);
+  const [phase, setPhase] = useState<SalesAgentUiPhase>('idle');
+  const [error, setError] = useState('');
 
   useEffect(() => {
     if (!customerId) {
       sessionRef.current?.invalidateAllPendingWrites();
       sessionRef.current = null;
-      setSessionVersion(v => v + 1);
+      queueMicrotask(() => {
+        setActiveSession(null);
+        setSessionVersion(v => v + 1);
+      });
       return;
     }
     if (!snapshot || !context) {
@@ -207,7 +199,7 @@ export function SalesAgentInteractionWorkspace({
     if (existing && existing.getCustomerId() !== customerId) {
       existing.invalidateAllPendingWrites();
     }
-    sessionRef.current = new SalesAgentSession(customerId, host, () => SALES_AGENT_APP_CLOCK.now(), {
+    const nextSession = new SalesAgentSession(customerId, host, () => SALES_AGENT_APP_CLOCK.now(), {
       snapshot,
       context,
       compare_context: compareContext ?? undefined,
@@ -220,7 +212,11 @@ export function SalesAgentInteractionWorkspace({
         ? host.createProductionModelCaller()
         : undefined,
     });
-    setSessionVersion(v => v + 1);
+    sessionRef.current = nextSession;
+    queueMicrotask(() => {
+      setActiveSession(nextSession);
+      setSessionVersion(v => v + 1);
+    });
   }, [customerId, host, snapshot, context, compareContext, memory, profileId, memoryRepository, loadCustomerSnapshot]);
 
   const controllerRef = useRef<SalesAgentInteractionController | null>(null);
@@ -256,7 +252,7 @@ export function SalesAgentInteractionWorkspace({
       setPhase('blocked');
       throw cause instanceof Error ? cause : new Error(message);
     }
-  }, [host]);
+  }, [host, customerCatalog]);
 
   useEffect(() => {
     if (!controllerRef.current) return;
@@ -311,10 +307,8 @@ export function SalesAgentInteractionWorkspace({
   const [replayResult, setReplayResult] = useState('');
   const [refreshCount, setRefreshCount] = useState(0);
   const [editing, setEditing] = useState<Record<string, string>>({});
-  const [phase, setPhase] = useState<SalesAgentUiPhase>('idle');
   const [sessionBusy, setSessionBusy] = useState(false);
   const [voiceListening, setVoiceListening] = useState(false);
-  const [error, setError] = useState('');
   const [locatingCustomer, setLocatingCustomer] = useState(false);
   const [candidates, setCandidates] = useState<readonly CustomerSearchCandidate[]>([]);
   const [emptyExact, setEmptyExact] = useState(false);
@@ -345,7 +339,9 @@ export function SalesAgentInteractionWorkspace({
   const thinkingStartedAt = useRef(0);
 
   useEffect(() => {
-    setConfirmExpanded(false);
+    let active = true;
+    queueMicrotask(() => { if (active) setConfirmExpanded(false); });
+    return () => { active = false; };
   }, [proposal?.proposal_id]);
 
   const holdThinkingMorph = async () => {
@@ -382,7 +378,10 @@ export function SalesAgentInteractionWorkspace({
   const genericPickerEnabled = isGenericOptionalCustomerPickerEnabled(stageMode, customerId);
 
   useEffect(() => {
-    if (!genericPickerEnabled) setPickerOpen(false);
+    if (genericPickerEnabled) return;
+    let active = true;
+    queueMicrotask(() => { if (active) setPickerOpen(false); });
+    return () => { active = false; };
   }, [genericPickerEnabled]);
 
   const workSteps = buildAgentWorkProcess({
@@ -460,11 +459,16 @@ export function SalesAgentInteractionWorkspace({
 
   useEffect(() => {
     if (!customerId) return;
-    setCandidates([]);
-    setEmptyExact(false);
-    setPortfolioMode(false);
-    setProposal(null);
-    setClarification(null);
+    let active = true;
+    queueMicrotask(() => {
+      if (!active) return;
+      setCandidates([]);
+      setEmptyExact(false);
+      setPortfolioMode(false);
+      setProposal(null);
+      setClarification(null);
+    });
+    return () => { active = false; };
   }, [customerId]);
 
   useEffect(() => {
@@ -490,20 +494,6 @@ export function SalesAgentInteractionWorkspace({
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionVersion, contextLoading, customerId]);
-
-  useEffect(() => {
-    const decision = decideCustomerBoundPendingResume(pendingUserSubmit.current, customerId);
-    if (decision.action !== 'resume') {
-      if (decision.action === 'discard') pendingUserSubmit.current = null;
-      return;
-    }
-    if (!customerId || contextLoading || !sessionRef.current || !snapshot || !context) return;
-    if (sessionBusy) return;
-    pendingUserSubmit.current = null;
-    setLocatingCustomer(false);
-    void submit(decision.prompt);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionVersion, contextLoading, snapshot, context, customerId, sessionBusy]);
 
   const submit = async (prompt = message) => {
     if (!prompt.trim()) return;
@@ -585,6 +575,25 @@ export function SalesAgentInteractionWorkspace({
     }
   };
 
+  useEffect(() => {
+    const decision = decideCustomerBoundPendingResume(pendingUserSubmit.current, customerId);
+    if (decision.action !== 'resume') {
+      if (decision.action === 'discard') pendingUserSubmit.current = null;
+      return;
+    }
+    if (!customerId || contextLoading || !sessionRef.current || !snapshot || !context) return;
+    if (sessionBusy) return;
+    pendingUserSubmit.current = null;
+    let active = true;
+    queueMicrotask(() => {
+      if (!active) return;
+      setLocatingCustomer(false);
+      void submit(decision.prompt);
+    });
+    return () => { active = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionVersion, contextLoading, snapshot, context, customerId, sessionBusy]);
+
   const cancelInFlight = () => {
     abortRef.current?.abort();
     setSessionBusy(false);
@@ -626,7 +635,10 @@ export function SalesAgentInteractionWorkspace({
           ? host.createProductionModelCaller()
           : undefined,
       } : undefined);
-      if (!unscopedCreate) sessionRef.current = session;
+      if (!unscopedCreate) {
+        sessionRef.current = session;
+        setActiveSession(session);
+      }
     }
     try {
       const write = await confirmSalesAgentProposal(session, confirmedProposal, async () => {
@@ -668,23 +680,14 @@ export function SalesAgentInteractionWorkspace({
     setPhase('idle');
   };
 
-  const toggleGroupedOperation = (operationId: string, selected: boolean) => {
-    if (!proposal || !sessionRef.current) return;
-    try {
-      setProposal(sessionRef.current.setGroupedOperationSelected(proposal.proposal_id, operationId, selected));
-      setError('');
-    } catch (cause) {
-      setError(formatUserFacingErrorMessage(cause));
-      setPhase('blocked');
-    }
-  };
-
   useEffect(() => {
     if (!initialInstruction || initialInstructionConsumedRef.current === initialInstruction) return;
     if (sessionBusy || contextLoading) return;
     initialInstructionConsumedRef.current = initialInstruction;
     onInitialInstructionConsumed?.();
-    void submit(initialInstruction);
+    let active = true;
+    queueMicrotask(() => { if (active) void submit(initialInstruction); });
+    return () => { active = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialInstruction, sessionBusy, contextLoading, customerId, sessionVersion]);
 
@@ -1215,7 +1218,17 @@ export function SalesAgentInteractionWorkspace({
                     <button
                       type="button"
                       className="btn btn-sm"
-                      onClick={() => toggleGroupedOperation(item.operation_id, !item.selected)}
+                      onClick={() => {
+                        const session = activeSession;
+                        if (!session) return;
+                        try {
+                          setProposal(session.setGroupedOperationSelected(proposal.proposal_id, item.operation_id, !item.selected));
+                          setError('');
+                        } catch (cause) {
+                          setError(formatUserFacingErrorMessage(cause));
+                          setPhase('blocked');
+                        }
+                      }}
                     >
                       {item.selected ? '取消此子操作' : '恢复此子操作'}
                     </button>

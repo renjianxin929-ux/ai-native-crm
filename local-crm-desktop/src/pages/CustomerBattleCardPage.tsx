@@ -89,15 +89,16 @@ export default function CustomerBattleCardPage() {
     void load();
   }, [id, load]);
 
-  const bundle = useMemo<StageCardViewBundle | null>(() => {
-    if (!viewingCard) return null;
+  const bundleProjection = useMemo<{ bundle: StageCardViewBundle | null; error: string }>(() => {
+    if (!viewingCard) return { bundle: null, error: '' };
     try {
-      return toStageCardBundle(viewingCard);
+      return { bundle: toStageCardBundle(viewingCard), error: '' };
     } catch (cause) {
-      setError(formatUserFacingErrorMessage(cause));
-      return null;
+      return { bundle: null, error: formatUserFacingErrorMessage(cause) };
     }
   }, [viewingCard]);
+  const bundle = bundleProjection.bundle;
+  const visibleError = error || bundleProjection.error;
 
   /** 最新草稿卡（current_stage_card_id 指针只在确认后设置，草稿须从历史查找）。 */
   const latestDraftCard = useMemo(
@@ -146,10 +147,14 @@ export default function CustomerBattleCardPage() {
     if (handledIntent.current || !customer) return;
     if (locationState?.openImport) {
       handledIntent.current = true;
-      setImportOpen(true);
+      let active = true;
+      queueMicrotask(() => { if (active) setImportOpen(true); });
+      return () => { active = false; };
     } else if (locationState?.openGenerateDraft) {
       handledIntent.current = true;
-      void handleGenerateDraft();
+      let active = true;
+      queueMicrotask(() => { if (active) void handleGenerateDraft(); });
+      return () => { active = false; };
     }
   }, [locationState, customer, handleGenerateDraft]);
 
@@ -242,7 +247,7 @@ export default function CustomerBattleCardPage() {
     return (
       <div className="bc-page">
         <div className="bc-layout"><div className="bc-main">
-          <BattleCardStatusBanner testId="bc-error-no-customer" tone="danger" title={t('battle.notFound')} note={error || undefined} actions={[<button key="back" type="button" className="bc-btn" onClick={() => navigate('/customers')}>{t('battle.backToList')}</button>]} />
+          <BattleCardStatusBanner testId="bc-error-no-customer" tone="danger" title={t('battle.notFound')} note={visibleError || undefined} actions={[<button key="back" type="button" className="bc-btn" onClick={() => navigate('/customers')}>{t('battle.backToList')}</button>]} />
         </div></div>
       </div>
     );
@@ -261,7 +266,7 @@ export default function CustomerBattleCardPage() {
             onEnterAgent={handleEnterAgent}
           />
 
-          {error ? <div role="alert" className="bc-banner danger" style={{ marginBottom: 14 }}>{error}</div> : null}
+          {visibleError ? <div role="alert" className="bc-banner danger" style={{ marginBottom: 14 }}>{visibleError}</div> : null}
 
           {statusText === 'NONE' ? (
             <BattleCardStatusBanner

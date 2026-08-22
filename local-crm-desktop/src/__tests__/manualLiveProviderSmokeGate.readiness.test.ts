@@ -6,7 +6,6 @@ import { describe, expect, it } from 'vitest';
 import { hasExactModelCapabilitiesPhase13ChangedFileSet } from './modelCapabilitiesChangedFileCohort';
 
 import {
-  MANUAL_LIVE_PROVIDER_SMOKE_AUTHORIZATION_PHRASE,
   runManualLiveProviderSmokeGate,
   validateManualLiveProviderSmokeRequest,
   validateManualLiveProviderSmokeResult,

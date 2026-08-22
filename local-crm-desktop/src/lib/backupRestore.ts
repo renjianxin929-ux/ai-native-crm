@@ -362,5 +362,5 @@ function isSafeSettingRow(row: Record<string, unknown>): boolean {
   const key = typeof row.key === 'string' ? row.key.toLowerCase() : '';
   if (['ai_config', 'text_ai_config', 'multimodal_config'].includes(key)) return false;
   const raw = typeof row.value === 'string' ? row.value.toLowerCase() : '';
-  return !/(?:api[_-]?key|authorization|provider[_-]?key|\"token\"|\"secret\")/.test(raw);
+  return !/(?:api[_-]?key|authorization|provider[_-]?key|"token"|"secret")/.test(raw);
 }

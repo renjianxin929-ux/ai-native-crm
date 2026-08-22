@@ -2,7 +2,6 @@
  * Canonical Snapshot 复现测试（修复前必须 FAIL 的场景）。
  * P0-A: nested evidence_refs 引用共享；P0-B: Object.create(null)/getter/Proxy 被接受。
  */
-import Database from 'better-sqlite3';
 import { describe, expect, it, beforeEach } from 'vitest';
 
 import { parseFactVerificationsRuntime, buildWriteProposal } from '../lib/salesAgentTools/confirmedWrite';

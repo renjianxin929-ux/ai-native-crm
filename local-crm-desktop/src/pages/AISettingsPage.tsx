@@ -68,7 +68,11 @@ export default function AISettingsPage() {
     }
   }, []);
 
-  useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => {
+    let active = true;
+    queueMicrotask(() => { if (active) void refresh(); });
+    return () => { active = false; };
+  }, [refresh]);
 
   const updateDraft = (capability: ModelCapability, field: keyof ProviderDraft, value: string) => {
     setDrafts(current => ({ ...current, [capability]: { ...current[capability], [field]: value } }));

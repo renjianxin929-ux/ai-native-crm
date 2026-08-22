@@ -6,7 +6,7 @@
 import { isCompletedHistoricalFollowUp } from '../planner/followUpInteractionContract';
 import { sortByInstantDesc } from '../time/instantCompare';
 import type { Customer, FollowUpRecord, VisitRecord } from '../types';
-import type { CustomerTimelineItem } from '../../components/salesWorkspace/CustomerIntelligencePanel';
+import type { CustomerTimelineItem } from '../salesWorkspace/customerIntelligence';
 
 export const CUSTOMER_DETAIL_LAYER2_ACCORDIONS = [
   'profile',

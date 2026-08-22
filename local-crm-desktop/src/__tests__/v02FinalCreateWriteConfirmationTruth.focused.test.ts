@@ -267,7 +267,7 @@ describe('PHASE 0 TRACE — prove first wrong seams before the fix', () => {
         CONFIRMATION_NAME: turnA.state.latest_proposal?.proposed_values.name ?? null,
         PRE_CONFIRM_WRITES: customerCount(fixture.sqlite) - beforeA,
       };
-      // eslint-disable-next-line no-console
+
       console.log('TRACE_CASE_A', JSON.stringify(traceA, null, 2));
 
       const utteranceB = '把商机金额改到22万';
@@ -295,7 +295,7 @@ describe('PHASE 0 TRACE — prove first wrong seams before the fix', () => {
           REASONING_MODEL_CALLS: fake.calls.length,
           PRE_CONFIRM_WRITES: customerCount(fixtureB.sqlite) - beforeB,
         };
-        // eslint-disable-next-line no-console
+
         console.log('TRACE_CASE_B', JSON.stringify(traceB, null, 2));
       } finally {
         fixtureB.close();
@@ -306,7 +306,7 @@ describe('PHASE 0 TRACE — prove first wrong seams before the fix', () => {
         WORKSPACE_DUMPS_PROPOSAL_REASON: workspace.includes('{proposal.reason}'),
         WORKSPACE_RESETS_EXPANDED_ON_PROPOSAL: /setConfirmExpanded\(false\)/.test(workspace),
       };
-      // eslint-disable-next-line no-console
+
       console.log('TRACE_CASE_C', JSON.stringify(traceC, null, 2));
     } finally {
       fixture.close();

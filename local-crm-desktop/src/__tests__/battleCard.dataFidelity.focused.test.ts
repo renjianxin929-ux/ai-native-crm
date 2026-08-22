@@ -7,7 +7,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-import { FRESH_PROFILE_SCHEMA_RUNTIME_REPAIR_FULL_CHANGED_COHORT, MAC_REAL_APP_CUSTOMER_DISCOVERY_FIX_FULL_CHANGED_COHORT, V0_1_RC_FULL_CHANGED_COHORT, V0_1_GOLDEN_JOURNEY_FIX_FULL_CHANGED_COHORT, V0_1_GOLDEN_JOURNEY_FIX_LIVE_PROVIDER_EVIDENCE_FULL_CHANGED_COHORT, V0_1_GOLDEN_JOURNEY_FIX_REPACK_MANIFEST_CHANGED_COHORT } from './finalUsabilityChangedFileCohort';
+import { FRESH_PROFILE_SCHEMA_RUNTIME_REPAIR_FULL_CHANGED_COHORT, MAC_REAL_APP_CUSTOMER_DISCOVERY_FIX_FULL_CHANGED_COHORT, V0_1_RC_FULL_CHANGED_COHORT, V0_1_GOLDEN_JOURNEY_FIX_FULL_CHANGED_COHORT, V0_1_GOLDEN_JOURNEY_FIX_LIVE_PROVIDER_EVIDENCE_FULL_CHANGED_COHORT, V0_1_GOLDEN_JOURNEY_FIX_REPACK_MANIFEST_CHANGED_COHORT, V0_2_LINT_CLEANUP_APP_CHANGED_COHORT, V0_2_LINT_CLEANUP_FULL_CHANGED_COHORT, V0_2_WINDOWS_TEST_REPAIR_FULL_CHANGED_COHORT } from './finalUsabilityChangedFileCohort';
 
 import { parseIntelligenceMaterial } from '../lib/battleCard/parser';
 import { createBattleCardRepositories } from '../lib/battleCard/repository';
@@ -104,7 +104,7 @@ describe('peer references group structure (P0-A)', () => {
     for (const peer of draft.peer_references) {
       expect(peer.why_comparable).toContain('参照型号');
       expect(peer.non_transferable_boundary).toContain('不宣称其使用飞书');
-      expect(peer.non_transferable_boundary).toContain('不宣称其使用飞书或具有相同痛点') || expect(peer.non_transferable_boundary).toContain('相同痛点');
+      expect(peer.non_transferable_boundary).toMatch(/不宣称其使用飞书或具有相同痛点|相同痛点/);
     }
   });
 
@@ -181,7 +181,7 @@ describe('formula/ingredient conditional boundary (P0-B)', () => {
 
       // 显式核实但缺 scope/evidence → 拒绝 VERIFIED
       const repos = createBattleCardRepositories(db, CLOCK);
-      const result = await confirmIntelligenceImport(preview, {
+      await confirmIntelligenceImport(preview, {
         customer_id: 'cust-cond',
         keep_fact_ids: [formulaFact!.fact_id],
         keep_hypothesis_ids: [],
@@ -251,6 +251,9 @@ describe('full changed cohort exact-set guard (P1-B)', () => {
       V0_1_GOLDEN_JOURNEY_FIX_FULL_CHANGED_COHORT,
       V0_1_GOLDEN_JOURNEY_FIX_LIVE_PROVIDER_EVIDENCE_FULL_CHANGED_COHORT,
       V0_1_GOLDEN_JOURNEY_FIX_REPACK_MANIFEST_CHANGED_COHORT,
+      V0_2_LINT_CLEANUP_FULL_CHANGED_COHORT,
+      V0_2_LINT_CLEANUP_APP_CHANGED_COHORT,
+      V0_2_WINDOWS_TEST_REPAIR_FULL_CHANGED_COHORT,
     ];
     const matched = registered.find(cohort => {
       const expected = new Set(cohort);

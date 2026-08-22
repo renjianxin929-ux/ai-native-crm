@@ -78,35 +78,6 @@ const LOOP_51_ALLOWED_CHANGED_FILES = new Set([
   'src/__tests__/readOnlyAISuggestionPanel.readiness.test.ts',
 ]);
 
-const LOOP_51_BRIDGE_WITH_GUARD_UPDATE_CHANGED_FILES = [
-  'src/__tests__/actionRunnerBoundaryContract.readiness.test.ts',
-  'src/__tests__/confirmedActionLiveDryRun.readiness.test.ts',
-  'src/__tests__/confirmedActionReviewQueue.readiness.test.ts',
-  'src/__tests__/dashboardDataProjection.readiness.test.ts',
-  'src/__tests__/dashboardProjectionPanel.readiness.test.ts',
-  'src/__tests__/dbWritePlanDryRun.readiness.test.ts',
-  'src/__tests__/humanConfirmationContract.readiness.test.ts',
-  'src/__tests__/liveProviderSandboxCall.readiness.test.ts',
-  'src/__tests__/manualLiveProviderSmokeGate.readiness.test.ts',
-  'src/__tests__/modelProviderBoundaryContract.readiness.test.ts',
-  'src/__tests__/modelProviderReadOnlySandbox.readiness.test.ts',
-  'src/__tests__/modelReadOnlyInvocationGate.readiness.test.ts',
-  'src/__tests__/modelSuggestOnlyOutputGate.readiness.test.ts',
-  'src/__tests__/modelSuggestionAdapterBoundary.readiness.test.ts',
-  'src/__tests__/modelSuggestionReviewDraftGate.readiness.test.ts',
-  'src/__tests__/reviewDraftQueueBoundary.readiness.test.ts',
-  'src/__tests__/safeWriteRunnerGate.readiness.test.ts',
-  'src/lib/liveSandboxToSuggestOnlyBridgeReadiness.ts',
-  'src/lib/liveSandboxToSuggestOnlyBridge/liveSandboxToSuggestOnlyBridgeFixturesV1.ts',
-  'src/__tests__/liveSandboxToSuggestOnlyBridge.readiness.test.ts',
-  'src/lib/readOnlyAISuggestionServiceReadiness.ts',
-  'src/lib/readOnlyAISuggestionService/readOnlyAISuggestionServiceFixturesV1.ts',
-  'src/__tests__/readOnlyAISuggestionService.readiness.test.ts',
-  'src/components/aiSuggestions/ReadOnlyAISuggestionPanel.tsx',
-  'src/components/aiSuggestions/readOnlyAISuggestionViewModel.ts',
-  'src/__tests__/readOnlyAISuggestionPanel.readiness.test.ts',
-];
-
 const LOOP_52_READ_ONLY_AI_SUGGESTION_SERVICE_CHANGED_FILES = [
   'src/__tests__/actionRunnerBoundaryContract.readiness.test.ts',
   'src/__tests__/confirmedActionLiveDryRun.readiness.test.ts',
@@ -182,9 +153,6 @@ const LOOP_53A_SELF_TEST_EXPECTATION_ALIGNMENT_PATCH_FILES = [
 
 const CORE_FILE = 'src/lib/liveSandboxToSuggestOnlyBridgeReadiness.ts';
 const FIXTURE_FILE = 'src/lib/liveSandboxToSuggestOnlyBridge/liveSandboxToSuggestOnlyBridgeFixturesV1.ts';
-const TEST_FILE = 'src/__tests__/liveSandboxToSuggestOnlyBridge.readiness.test.ts';
-const LOOP_51_FILES = [CORE_FILE, FIXTURE_FILE, TEST_FILE];
-
 const LOOP_51_FORBIDDEN_IMPORT_TERMS = [
   'createLiveProviderSandboxTransport',
   'liveProviderSandboxTransport',

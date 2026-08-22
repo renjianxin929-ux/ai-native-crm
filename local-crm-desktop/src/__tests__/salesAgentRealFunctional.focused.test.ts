@@ -9,7 +9,6 @@ import { normalizeCustomerSearchFilters, resumeInstructionAfterScope } from '../
 import { resolveCustomerForAgentMessage } from '../lib/salesAgentTools/customerResolution';
 import { SALES_AGENT_TOOL_REGISTRY } from '../lib/salesAgentTools/registry';
 import {
-  SEARCH_CUSTOMERS_MAX_RESULTS,
   SEARCH_CUSTOMERS_PORTFOLIO_PAGE_SIZE,
   searchCustomersFromFixture,
 } from '../lib/salesAgentTools/searchCustomers';
@@ -132,11 +131,11 @@ describe('Sales Agent real functional closure', () => {
       let activeSession: SalesAgentSession | null = null;
       const controller = new SalesAgentInteractionController({
         db: fixture.db,
-        createSession: id => activeSession && activeSession /* identity match via closure */ ? (activeSession as SalesAgentSession) : null,
+        createSession: () => activeSession && activeSession /* identity match via closure */ ? (activeSession as SalesAgentSession) : null,
         clock: () => NOW,
       });
       // Fix createSession properly
-      controller.createSession = (id: string) => {
+      controller.createSession = () => {
         if (activeSession) {
           // Session is constructed for the bound id
           return activeSession;

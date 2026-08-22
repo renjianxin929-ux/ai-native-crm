@@ -22,7 +22,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { PRODUCTION_PLANNER_TOOL_SURFACE } from '../lib/planner/plannerToolSurface';
 import { planCapability, type ModelPlannerRequest } from '../lib/planner/runtimePlanner';
 import { SalesAgentInteractionController } from '../lib/salesAgentTools/interactionController';
-import { __setDbInstanceForTests, initializeDatabaseSchema } from '../lib/db';
+import { __setDbInstanceForTests } from '../lib/db';
 import { __resetSessionWriteStateStoreForTests } from '../lib/salesAgentTools/sessionWriteStateStore';
 import { seedCustomer, sessionForWrite, sqliteFixture } from './salesAgentProductionHarness';
 import { VISIT_NEXT_ACTIONS } from '../lib/visitCreate';
@@ -31,8 +31,6 @@ const DEEPSEEK_KEY = process.env.DEEPSEEK_LIVE_KEY ?? '';
 const DEEPSEEK_URL = 'https://api.deepseek.com/v1/chat/completions';
 const MODEL = 'deepseek-chat';
 const NOW = '2026-07-15T12:00:00+08:00';
-
-let realModelCallCount = 0;
 
 function compactSurface() {
   return PRODUCTION_PLANNER_TOOL_SURFACE.map((d) => ({
@@ -84,7 +82,6 @@ function parseJson(content: string): unknown {
 }
 
 async function deepseekChat(messages: Array<{ role: string; content: string }>): Promise<string> {
-  realModelCallCount += 1;
   const res = await fetch(DEEPSEEK_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${DEEPSEEK_KEY}` },
@@ -211,7 +208,7 @@ describe.skipIf(!process.env.DEEPSEEK_LIVE_KEY)('C1.8 REAL DeepSeek — short-co
     __setDbInstanceForTests(fixture.db);
     seedCustomer(fixture.sqlite, 'customer-1');
     const controller = makeController(fixture.db, 'customer-1');
-    const turn = await controller.submit('删掉');
+    await controller.submit('删掉');
     expect(fixture.sqlite.prepare('SELECT COUNT(*) AS c FROM customers WHERE id=?').get('customer-1').c).toBe(1);
     fixture.close();
   });

@@ -401,7 +401,7 @@ describe('T1 — Pending Continue Cross-customer Race', () => {
         { prompt: stalePrompt, expectedCustomerId: staleCustomer },
         CUSTOMER_B,
       );
-      // eslint-disable-next-line no-console
+
       console.log([
         'FAIL_FIRST_T1',
         `BEFORE=pendingContinue is string-only; continueAfterBind(A prompt, B) runs`,
@@ -437,7 +437,7 @@ describe('T2 — Pending User Submit Cross-customer Race', () => {
       await controller.submit('帮我给这个客户写一条跟进，下周一联系');
       const beforeB = counts(fixture.sqlite, CUSTOMER_B);
       humanEnterCustomer(controller, CUSTOMER_B, CUSTOMER_B_NAME);
-      // eslint-disable-next-line no-console
+
       console.log([
         'FAIL_FIRST_T2',
         'BEFORE=pendingUserSubmit is a bare string resumed against current customerId',
@@ -477,7 +477,7 @@ describe('T3 — Human Navigation Fresh Conversation', () => {
       const beforeB = counts(fixture.sqlite, CUSTOMER_B);
       humanEnterCustomer(controller, CUSTOMER_B, CUSTOMER_B_NAME);
       const next = controller.getState();
-      // eslint-disable-next-line no-console
+
       console.log([
         'FAIL_FIRST_T3',
         'BEFORE=A has latest_result / reasoning / proposal-or-clarification',
@@ -514,7 +514,7 @@ describe('T4 — Same-customer Continue', () => {
       );
       controller.syncExternalScope(CUSTOMER_A, CUSTOMER_A_NAME);
       const continued = await controller.continueAfterBind(locating.event.continue_prompt, CUSTOMER_A);
-      // eslint-disable-next-line no-console
+
       console.log([
         'FAIL_FIRST_T4',
         'BEFORE=same-customer continueAfterBind',
@@ -548,7 +548,7 @@ describe('T5 — Internal Bind Preserved', () => {
       expect(controller.getState().pending_original_instruction).toBe(pending);
       expect(controller.getState().intent_envelope?.envelope_id).toBe(envelopeId);
       const continued = await controller.continueAfterBind(bindTurn.event.continue_prompt, CUSTOMER_A);
-      // eslint-disable-next-line no-console
+
       console.log([
         'FAIL_FIRST_T5',
         'BEFORE=unscoped bind_required then syncExternalScope',
@@ -573,7 +573,7 @@ describe('T6 — zh-CN Raw Internal Key', () => {
     i18n?.setAppLocale('zh-CN');
     const surface = chromeBundle();
     const rawCount = countRawInternalKeys(surface);
-    // eslint-disable-next-line no-console
+
     console.log([
       'FAIL_FIRST_T6',
       'BEFORE=FIELD_LABELS[key] ?? key leaks unmapped schema names',
@@ -611,7 +611,7 @@ describe('T7 — en-US Agent Surface', () => {
     ];
     const chineseNav = nav.filter(label => HANZI.test(label));
     const chineseChrome = HANZI.test(surface.replace(new RegExp(CUSTOMER_A_NAME, 'g'), ''));
-    // eslint-disable-next-line no-console
+
     console.log([
       'FAIL_FIRST_T7',
       'BEFORE=all production chrome is hardcoded zh-CN',
@@ -647,7 +647,7 @@ describe('T8 — Runtime Locale Switch', () => {
     const enTitle = projectConfirmationCard(fakeProposal('create_customer', { name: 'Ada' })).title;
     i18n!.setAppLocale('zh-CN');
     const zhAgain = projectConfirmationCard(fakeProposal('create_customer', { name: 'Ada' })).title;
-    // eslint-disable-next-line no-console
+
     console.log([
       'FAIL_FIRST_T8',
       'BEFORE=no runtime locale',
@@ -674,7 +674,7 @@ describe('T9 — Locale Persistence', () => {
     expect(store.get('app_locale')).toBe('en-US');
     i18n!.resetAppLocaleForTests?.();
     i18n!.hydrateAppLocale?.();
-    // eslint-disable-next-line no-console
+
     console.log([
       'FAIL_FIRST_T9',
       'BEFORE=no persisted locale',
@@ -750,7 +750,7 @@ describe('T12 — Internal Technical Details Boundary', () => {
     const workspace = src('components/aiNative/SalesAgentInteractionWorkspace.tsx');
     const zhDefault = [zhCard.title, zhCard.confirm_label, zhCard.cancel_label, ...zhCard.summary_lines].join('\n');
     const enDefault = [enCard.title, enCard.confirm_label, enCard.cancel_label, ...enCard.summary_lines].join('\n');
-    // eslint-disable-next-line no-console
+
     console.log([
       'FAIL_FIRST_T12',
       'BEFORE=technical heading hardcoded; raw keys may leak in default card',

@@ -46,7 +46,6 @@ import {
   PRODUCTION_CAPABILITY_IDS,
   PRODUCTION_CAPABILITY_REGISTRY,
   type CapabilityExecutorBinding,
-  type CapabilityInvocation,
   type CapabilityInvocationScope,
 } from '../lib/capabilities/execution';
 import { SALES_AGENT_CONFIRMATION_MECHANISM } from '../lib/capabilities/execution/writeAdapters';
@@ -63,7 +62,6 @@ import {
   createCustomer,
   deleteCustomer,
   getCustomer,
-  initializeDatabaseSchema,
   type DatabaseLike,
 } from '../lib/db';
 import { SalesAgentSession } from '../lib/salesAgentTools/agentSession';
@@ -85,13 +83,6 @@ const NOW = '2026-07-14T12:00:00.000Z';
 
 function openEmptyFixture() {
   return sqliteFixture();
-}
-
-type CustomerRow = Record<string, unknown>;
-
-async function selectCustomerRow(db: DatabaseLike, id: string): Promise<CustomerRow | undefined> {
-  const rows = await db.select<CustomerRow>('SELECT * FROM customers WHERE id = ?', [id]);
-  return rows[0];
 }
 
 async function countRows(db: DatabaseLike, table: string, customerId?: string): Promise<number> {

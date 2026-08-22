@@ -84,7 +84,7 @@ describe('UNIFIED_AGENT_STAGE morph focused guards', () => {
     expect(interaction).toContain('data-testid="agent-scope-chip"');
     expect(interaction).toContain('清除客户 Scope');
     expect(interaction).toContain('disabled={sessionBusy}');
-    expect(interaction).toContain('向 Sales Agent 提问或下达指令');
+    expect(interaction).toContain("placeholder={t('agent.composer.placeholder')}");
   });
 
   it('22-24: minimal header, no engineering kickers / permanent chips', () => {

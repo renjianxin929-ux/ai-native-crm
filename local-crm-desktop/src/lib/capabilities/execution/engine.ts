@@ -162,8 +162,10 @@ export function createCapabilityExecutionEngine(
 
     // 定义解析后填充（OUTCOME 事件需要真实 scope_requirement / executor_ref
     // 供桥派生事件结构字段；前置授权失败的结果语义保持 Closure-1 冻结不变）。
-    let resolvedScopeRequirement: CapabilityScopeRequirement | undefined;
-    let resolvedExecutorRef: CapabilityExecutorRef | undefined;
+    const resolved: {
+      scopeRequirement?: CapabilityScopeRequirement;
+      executorRef?: CapabilityExecutorRef;
+    } = {};
 
     /** 终态统一出口：每个 invocation 恰好发出一个 OUTCOME 观察事件（scope 为入口原样）。 */
     const emitOutcome = (outcome: CapabilityExecutionOutcome): CapabilityExecutionOutcome => {
@@ -173,8 +175,8 @@ export function createCapabilityExecutionEngine(
         capability_id: outcome.capability_id,
         capability_version: outcome.capability_version,
         scope: invocation.scope,
-        ...(resolvedScopeRequirement !== undefined ? { scope_requirement: resolvedScopeRequirement } : {}),
-        ...(resolvedExecutorRef !== undefined ? { executor_ref: resolvedExecutorRef } : {}),
+        ...(resolved.scopeRequirement !== undefined ? { scope_requirement: resolved.scopeRequirement } : {}),
+        ...(resolved.executorRef !== undefined ? { executor_ref: resolved.executorRef } : {}),
         ...(outcome.authority_decision ? { authority_decision: outcome.authority_decision } : {}),
         outcome,
       });
@@ -188,8 +190,8 @@ export function createCapabilityExecutionEngine(
     } catch {
       return emitOutcome(failure('CAPABILITY_NOT_FOUND', invocation, 'Capability identity is not registered.', invocationId));
     }
-    resolvedScopeRequirement = definition.scope_requirement;
-    resolvedExecutorRef = definition.executor_ref;
+    resolved.scopeRequirement = definition.scope_requirement;
+    resolved.executorRef = definition.executor_ref;
 
     // 2. 生命周期观察：INVOCATION_STARTED（定义解析成功后发出；executor_ref /
     //    scope_requirement 此时为真实定义值；CAPABILITY_NOT_FOUND 无定义、不发）。

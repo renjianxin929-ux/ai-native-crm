@@ -12,7 +12,6 @@ import {
   createBattleCardRepositories,
   sha256Hex,
   withTransaction,
-  type BattleCardRepositories,
 } from '../lib/battleCard/repository';
 import type { CustomerHypothesisInput, IntelligenceImportInput, ReviewedFactInput } from '../lib/battleCard/types';
 
@@ -633,7 +632,6 @@ describe('cascade on customer deletion', () => {
         generated_by: 'DETERMINISTIC', confirmed_by: null, created_at: NOW, confirmed_at: null,
       });
 
-      const { deleteCustomer } = await import('../lib/db');
       // 直接调用底层删除逻辑（生产 deleteCustomer 依赖 Tauri getDb，此处用等价 SQL 路径验证级联规则）
       for (const table of ['customer_stage_cards', 'customer_hypotheses', 'reviewed_facts', 'intelligence_imports']) {
         await db.execute(`DELETE FROM ${table} WHERE customer_id = ?`, ['cust-tinsol']);

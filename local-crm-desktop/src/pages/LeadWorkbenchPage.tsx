@@ -244,8 +244,9 @@ export function sortLeadWorkItemsForDisplay(items: LeadWorkItem[]): LeadWorkItem
 
 export function getLeadWorkbenchListEmptyMessage(
   totalTaskCount: number,
-  _status: LeadWorkStatus,
+  status: LeadWorkStatus,
 ): string {
+  void status;
   if (totalTaskCount === 0) {
     return '暂无获客任务，请先在导入分流中心执行分流。';
   }
@@ -770,14 +771,21 @@ export default function LeadWorkbenchPage() {
   }, []);
 
   useEffect(() => {
-    void loadItems(statusFilter);
+    let active = true;
+    queueMicrotask(() => { if (active) void loadItems(statusFilter); });
+    return () => { active = false; };
   }, [loadItems, statusFilter]);
 
   useEffect(() => {
-    setPastePreviewState(getEmptyLeadPastePreviewState());
-    setCollectedLeadDraft(null);
-    setCaptureSaveEvidence(null);
-    setCollectedLeadSaveEvidence(null);
+    let active = true;
+    queueMicrotask(() => {
+      if (!active) return;
+      setPastePreviewState(getEmptyLeadPastePreviewState());
+      setCollectedLeadDraft(null);
+      setCaptureSaveEvidence(null);
+      setCollectedLeadSaveEvidence(null);
+    });
+    return () => { active = false; };
   }, [selectedItemId]);
 
   const loadCaptureEvents = useCallback(async (workItemId: string) => {
@@ -807,30 +815,34 @@ export default function LeadWorkbenchPage() {
   }, []);
 
   useEffect(() => {
-    if (!selectedItemId) {
+    let active = true;
+    queueMicrotask(() => {
+      if (!active) return;
       setCaptureEvents([]);
-      return;
-    }
-
-    setCaptureEvents([]);
-    void loadCaptureEvents(selectedItemId).catch(err => {
-      setError(getLeadCaptureSaveErrorMessage(err));
+      if (!selectedItemId) return;
+      void loadCaptureEvents(selectedItemId).catch(err => {
+        if (active) setError(getLeadCaptureSaveErrorMessage(err));
+      });
     });
+    return () => { active = false; };
   }, [loadCaptureEvents, selectedItemId]);
 
   useEffect(() => {
-    if (!selectedItemId) {
+    let active = true;
+    queueMicrotask(() => {
+      if (!active) return;
       setCollectedLeadDrafts([]);
-      setLeadSyncReplayEvidence([]);
-      setReplayEvidenceError(null);
-      return;
-    }
-
-    setCollectedLeadDrafts([]);
-    void loadCollectedLeadDrafts(selectedItemId).catch(err => {
-      setError(getCollectedLeadDraftSaveErrorMessage(err));
+      if (!selectedItemId) {
+        setLeadSyncReplayEvidence([]);
+        setReplayEvidenceError(null);
+        return;
+      }
+      void loadCollectedLeadDrafts(selectedItemId).catch(err => {
+        if (active) setError(getCollectedLeadDraftSaveErrorMessage(err));
+      });
+      void loadLeadSyncReplayEvidence();
     });
-    void loadLeadSyncReplayEvidence();
+    return () => { active = false; };
   }, [loadCollectedLeadDrafts, loadLeadSyncReplayEvidence, selectedItemId]);
 
   const handleRefreshTasks = useCallback(async () => {

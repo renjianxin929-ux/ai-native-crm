@@ -3,10 +3,11 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '../..');
-const rust = readFileSync(resolve(root, 'src-tauri/src/trusted_host.rs'), 'utf8');
-const driver = readFileSync(resolve(root, 'scripts/real_tauri_e2e.py'), 'utf8');
-const controller = readFileSync(resolve(root, 'src/lib/salesAgentTools/interactionController.ts'), 'utf8');
-const hostAdapter = readFileSync(resolve(root, 'src/lib/salesAgentTools/trustedHostAdapter.ts'), 'utf8');
+const source = (path: string) => readFileSync(resolve(root, path), 'utf8').replace(/\r\n/g, '\n');
+const rust = source('src-tauri/src/trusted_host.rs');
+const driver = source('scripts/real_tauri_e2e.py');
+const controller = source('src/lib/salesAgentTools/interactionController.ts');
+const hostAdapter = source('src/lib/salesAgentTools/trustedHostAdapter.ts');
 
 describe('transport equivalence and E2E truth closure', () => {
   it('provider-transport-equivalence uses one shared production/e2e pipeline around a raw response transport', () => {

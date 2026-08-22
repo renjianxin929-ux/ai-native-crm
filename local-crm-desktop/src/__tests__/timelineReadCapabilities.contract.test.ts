@@ -28,7 +28,7 @@ import { executeSalesAgentReadTool } from '../lib/salesAgentTools/registry';
 import { __setDbInstanceForTests, initializeDatabaseSchema, listFollowUps, listVisits, type DatabaseLike } from '../lib/db';
 import type { FollowUpRecord, VisitRecord } from '../lib/types';
 import type { LoadedReadOnlyAgentSnapshot } from '../lib/readOnlySnapshotLoaderReadiness';
-import { buildCustomerTimeline } from '../components/salesWorkspace/CustomerIntelligencePanel';
+import { buildCustomerTimeline } from '../lib/salesWorkspace/customerIntelligence';
 
 const NOW = '2026-07-12T00:00:00.000Z';
 

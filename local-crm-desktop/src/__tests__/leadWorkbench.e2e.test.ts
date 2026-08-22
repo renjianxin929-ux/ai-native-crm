@@ -3,7 +3,6 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 import { ensureBaseSchema, type DatabaseLike } from '../lib/db';
-import { insertLeadCaptureEvent } from '../lib/leadWorkbench/captureEvents';
 import {
   getCollectedLeadById,
   insertCollectedLeadDraft,

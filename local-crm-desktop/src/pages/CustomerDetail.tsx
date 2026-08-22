@@ -14,7 +14,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { listFollowUps, listVisits } from '../lib/db';
 import { SqliteCrmEvidenceResolver, SqliteMemoryRepository } from '../lib/customerMemory';
 import type { CustomerMemoryEntry } from '../lib/customerMemory';
-import { buildCustomerScopedSalesAgentEntry, buildCustomerTimeline, CustomerIntelligencePanel } from '../components/salesWorkspace/CustomerIntelligencePanel';
+import { CustomerIntelligencePanel } from '../components/salesWorkspace/CustomerIntelligencePanel';
+import { buildCustomerScopedSalesAgentEntry, buildCustomerTimeline } from '../lib/salesWorkspace/customerIntelligence';
 import { CustomerCaptureContract } from '../components/salesWorkspace/CustomerCaptureContract';
 import { createEvidenceRepository } from '../lib/evidence/repository';
 import type { EvidenceRow } from '../lib/evidence/types';
@@ -23,7 +24,8 @@ import { formatOpportunityAmount } from '../lib/opportunityBoard/boardPresentati
 import { formatUserFacingScheduleDate } from '../lib/salesAgentUi/userFacingFieldFormatter';
 import { t, tEnum, tField, tFormat, tGrade, tStage } from '../lib/i18n/appLocale';
 import { useAppLocale } from '../lib/i18n/LocaleProvider';
-import { EvidenceQuietPanel, evidenceEntryLabel } from '../components/controlSurface/EvidenceQuietPanel';
+import { EvidenceQuietPanel } from '../components/controlSurface/EvidenceQuietPanel';
+import { evidenceEntryLabel } from '../lib/evidence/evidenceEntryLabel';
 import {
   projectCustomerDetailFirstLayer,
   projectCustomerProfileFields,

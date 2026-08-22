@@ -207,7 +207,7 @@ export function createAgentIntentEnvelope(
     });
   }
 
-  if (directEntityLookup && search.is_customer_lookup && search.filters.name_query && !hasAnalysisMeaning(intentText)) {
+  if (directEntityLookup && search.is_customer_lookup && search.filters.name_query) {
     return make({
       intent: 'SEARCH_CUSTOMERS', mode: 'entity_resolution',
       customer_reference: search.filters.name_query, portfolio_filters: search.filters,
@@ -223,6 +223,17 @@ export function createAgentIntentEnvelope(
       portfolio_filters: search.filters,
       extracted_fields: { answer_shape: 'DIRECT_FACT', fact: 'last_contact' },
       confidence: 0.97,
+      unsupported_criteria: search.unsupported,
+    });
+  }
+
+  if (/(?:拜访|面访)(?:记录|历史|列表)/.test(intentText)) {
+    return make({
+      intent: 'CUSTOMER_TIMELINE_REVIEW', mode: 'customer_analysis',
+      customer_reference: search.filters.name_query ?? null,
+      portfolio_filters: search.filters,
+      extracted_fields: { answer_shape: 'TIMELINE', filters: { fact: 'visits' } },
+      confidence: 0.98,
       unsupported_criteria: search.unsupported,
     });
   }

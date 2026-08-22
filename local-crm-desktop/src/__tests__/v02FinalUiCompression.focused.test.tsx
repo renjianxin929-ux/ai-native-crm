@@ -15,7 +15,7 @@ import {
   projectCustomerProfileFields,
   CUSTOMER_DETAIL_LAYER2_ACCORDIONS,
 } from '../lib/customerDetailUi/customerDetailProjection';
-import { buildCustomerTimeline } from '../components/salesWorkspace/CustomerIntelligencePanel';
+import { buildCustomerTimeline } from '../lib/salesWorkspace/customerIntelligence';
 import {
   BATTLE_CARD_PRIMARY_SECTION_IDS,
   BATTLE_CARD_SECONDARY_SECTION_IDS,

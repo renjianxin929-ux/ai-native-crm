@@ -18,7 +18,7 @@ describe('semantic-router-production-wiring', () => {
     const fixture = database();
     await initializeDatabaseSchema(fixture.db);
     const authorize = vi.fn(async request => ({ authorizationId: 'semantic-auth', providerKind: request.providerKind, modelId: request.modelId }));
-    const execute = vi.fn(async ({ input }) => ({
+    const execute = vi.fn(async () => ({
       state: 'completed' as const, providerKind: 'DEEPSEEK_COMPATIBLE' as const, modelId: 'deepseek-chat', requestId: 'semantic-auth', latencyMs: 2,
       output: { intent: 'NEXT_ACTION_RECOMMENDATION', filters: {}, entities: [], scope: null, missing_fields: [], confidence: 0.93, clarification_question: null },
       tokenUsage: null,

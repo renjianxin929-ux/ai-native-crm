@@ -560,6 +560,7 @@ export class SalesAgentInteractionController {
         !sessionOwnedNextFollowUp
         && !isReadOnlyReasoningIntent(intentEnvelope)
         && intentEnvelope.intent !== 'CUSTOMER_TIMELINE_REVIEW'
+        && intentEnvelope.intent !== 'SEARCH_CUSTOMERS'
       ) {
         const plannedTurn = await this.tryCapabilityPlanner(trimmed);
         if (plannedTurn) return plannedTurn;

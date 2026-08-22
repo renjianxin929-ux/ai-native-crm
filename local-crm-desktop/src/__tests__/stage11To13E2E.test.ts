@@ -46,7 +46,7 @@ describe('Stage11-13 production session integration', () => {
   it('keeps the UI routing-free and uses no fake write executor as persistence evidence', () => {
     const ui = readFileSync('src/components/aiNative/SalesAgentInteractionWorkspace.tsx', 'utf8');
     expect(ui).toContain('sessionRef.current.createProposalFromReviewedFacts');
-    expect(ui).toContain('当前：');
+    expect(ui).toContain("t('agent.currentCustomer')");
     expect(ui).not.toContain('createWriteProposal');
   });
 });

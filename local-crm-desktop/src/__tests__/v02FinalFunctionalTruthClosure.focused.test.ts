@@ -5,7 +5,7 @@
  * Fake Transport proves the contract only. Real DeepSeek argument
  * extraction still requires foreground acceptance.
  */
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { buildContextSnapshot } from '../lib/context/contextBuilder';
 import { buildCustomerMemoryContext } from '../lib/customerMemory';

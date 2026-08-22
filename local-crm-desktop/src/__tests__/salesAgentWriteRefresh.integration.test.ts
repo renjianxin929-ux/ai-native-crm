@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import { confirmSalesAgentProposal } from '../components/aiNative/SalesAgentInteractionWorkspace';
+import { confirmSalesAgentProposal } from '../lib/salesAgentTools/confirmSalesAgentProposal';
 import { createApprovedCrmWriteBoundary } from '../lib/salesAgentTools/approvedCrmWriteBoundary';
-import { buildCustomerTimeline } from '../components/salesWorkspace/CustomerIntelligencePanel';
-import { confirmationFor, proposalFor, seedCustomer, sessionForWrite, sqliteFixture, sqliteRepository } from './salesAgentProductionHarness';
+import { buildCustomerTimeline } from '../lib/salesWorkspace/customerIntelligence';
+import { proposalFor, seedCustomer, sessionForWrite, sqliteFixture, sqliteRepository } from './salesAgentProductionHarness';
 
 describe('Sales Agent write refresh integration', () => {
   it('rereads the same refresh projections for follow-up, task, and next-follow-up once each without another ask or provider call', async () => {

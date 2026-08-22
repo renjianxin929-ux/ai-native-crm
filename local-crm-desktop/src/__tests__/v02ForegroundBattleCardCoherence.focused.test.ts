@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { confirmSalesAgentProposal } from '../components/aiNative/SalesAgentInteractionWorkspace';
+import { confirmSalesAgentProposal } from '../lib/salesAgentTools/confirmSalesAgentProposal';
 import { createStageCardEngine } from '../lib/battleCard/stageCardEngine';
 import { evaluateBattleCardCoherence } from '../lib/battleCardUi/battleCardViewModels';
 import { __setDbInstanceForTests, createCrmRepository, getCustomer, listVisits } from '../lib/db';

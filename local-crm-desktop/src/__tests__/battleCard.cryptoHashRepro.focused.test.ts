@@ -12,8 +12,6 @@ import {
   computeProposalHash,
   createCanonicalProposalSnapshot,
   HASH_ALGORITHM,
-  PROPOSAL_SCHEMA_VERSION,
-  SNAPSHOT_SCHEMA_VERSION,
   sha256HexSync,
   buildWriteProposal,
   canonicalJsonStringify,
@@ -350,7 +348,7 @@ describe('F. Production Bundle Hook 审计', () => {
     expect(storeSource).toContain('__corruptCanonicalSnapshotForTests'); // 定义存在（测试专用）
     // dist 产物扫描（若存在）：生产 bundle 不得含可调用入口
     const distDir = new URL('../../dist/', import.meta.url);
-    let distFiles: string[] = [];
+    let distFiles: string[];
     try {
       distFiles = readdirSync(distDir).filter(name => name.endsWith('.js') || name.endsWith('.mjs'));
     } catch {

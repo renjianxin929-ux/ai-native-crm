@@ -10,7 +10,6 @@ import {
   buildWriteProposal,
   canonicalJsonStringify,
   createCanonicalProposalSnapshot,
-  sha256HexSync,
   type CanonicalProposalSnapshot,
 } from '../lib/salesAgentTools/confirmedWrite';
 import { SalesAgentSession } from '../lib/salesAgentTools/agentSession';
@@ -19,7 +18,6 @@ import {
   __corruptCanonicalSnapshotForTests,
   __resetSessionWriteStateStoreForTests,
   getCanonicalProposal,
-  registerCanonicalProposal,
 } from '../lib/salesAgentTools/sessionWriteStateStore';
 import { __setDbInstanceForTests, initializeDatabaseSchema } from '../lib/db';
 import { createBattleCardAgentTools } from '../lib/battleCard/agentTools';
@@ -51,11 +49,6 @@ function buildProposalWithRaw(rawContent: string) {
     },
     reason: 'r',
   });
-}
-
-function envelopeBytesOf(proposal: ReturnType<typeof buildProposalWithRaw>): number {
-  const snapshot = createCanonicalProposalSnapshot(proposal);
-  return encoder.encode(snapshot.canonical_envelope_json).byteLength;
 }
 
 describe('A. 修复后行为（原失败基线反转）', () => {
@@ -96,8 +89,6 @@ describe('B. 常量与纯函数', () => {
 describe('C. 精确字节边界（UTF-8）', () => {
   function envelopeJsonOfSize(targetBytes: number, seed: string): { json: string; bytes: number } {
     // 用 ASCII 填充逼近目标字节数（seed 为固定前缀保证确定性）
-    const base = canonicalJsonStringify(buildCanonicalEnvelope({ payload: '' }));
-    const head = base.length - 2; // 去掉尾部 '"}'
     let json = '';
     // 二分逼近：构造 payload 长度使总字节精确
     let low = 0;

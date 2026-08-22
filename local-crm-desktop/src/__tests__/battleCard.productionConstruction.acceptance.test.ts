@@ -4,7 +4,6 @@
  * 不手工注入 BattleCardWriteExecutor（executor 只来自默认 composition root）。
  * DB 通过 db.ts 测试后门指向隔离内存库（生产路径永不调用该后门）。
  */
-import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { SalesAgentSession } from '../lib/salesAgentTools/agentSession';

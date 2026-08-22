@@ -10,7 +10,6 @@ import {
   BACKUP_TABLES,
   buildFullBackupPayload,
   restoreBackupPayloadWithDb,
-  type BackupTableName,
 } from '../src/lib/backupRestore';
 import { initializeDatabaseSchema, type DatabaseLike } from '../src/lib/db';
 

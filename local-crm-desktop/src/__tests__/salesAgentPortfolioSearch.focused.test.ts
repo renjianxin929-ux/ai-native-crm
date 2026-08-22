@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { buildContextSnapshot } from '../lib/context/contextBuilder';
 import { SalesAgentSession } from '../lib/salesAgentTools/agentSession';
 import { SalesAgentInteractionController } from '../lib/salesAgentTools/interactionController';
 import { executeSearchCustomersTool } from '../lib/salesAgentTools/executeSearchCustomersTool';
@@ -8,64 +7,12 @@ import {
   SEARCH_CUSTOMERS_PORTFOLIO_PAGE_SIZE,
   SEARCH_CUSTOMERS_RESOLUTION_MAX,
 } from '../lib/salesAgentTools/searchCustomers';
-import type { LoadedReadOnlyAgentSnapshot } from '../lib/readOnlySnapshotLoaderReadiness';
 import {
   insertSeededCustomer,
   openSalesAgentSqliteFixture,
-  SALES_AGENT_FIXTURE_CUSTOMERS,
 } from './salesAgentFunctionalFixture';
 
 const NOW = '2026-07-14T12:00:00.000Z';
-
-function sessionFor(customerId: string, name: string) {
-  const snapshot: LoadedReadOnlyAgentSnapshot = {
-    kind: 'LOADED_READ_ONLY_AGENT_SNAPSHOT',
-    version: 'v1',
-    snapshot_id: `snap-${customerId}`,
-    synthetic: false,
-    persisted: true,
-    load_source: 'sqlite_read_only',
-    loaded_at: NOW,
-    context: { active_profile_id: 'foreign_trade_geo', now: NOW },
-    customers: [{
-      id: customerId,
-      name,
-      customer_grade: 'A',
-      intent_level: 'HIGH',
-      evidence_ref: { type: 'customer', id: customerId, label: name, synthetic: false, persisted: true },
-    }],
-    tasks: [],
-    work_items: [],
-    collected_leads: [],
-    replay_evidence: [],
-    import_rows: [],
-    capture_events: [],
-    prompt_plans: [],
-    model_invocations: [],
-    eval_summaries: [],
-  };
-  const context = buildContextSnapshot({
-    snapshotId: `snap-${customerId}`,
-    capturedAt: NOW,
-    timeWindow: { from: '2026-07-01T00:00:00.000Z', to: NOW },
-    customers: [{
-      customerId,
-      name,
-      grade: 'A',
-      intentLevel: 'HIGH',
-      observedAt: NOW,
-      evidenceIds: [customerId],
-    }],
-    accounts: [],
-    interactions: [],
-  });
-  return new SalesAgentSession(customerId, null, () => NOW, {
-    snapshot,
-    context,
-    profile_id: 'foreign_trade_geo',
-    planning_mode: 'deterministic',
-  });
-}
 
 describe('Sales Agent portfolio search', () => {
   it('normalizeCustomerSearchFilters: 帮我找一下广州的客户 → portfolio, name contains 广州', () => {
@@ -155,7 +102,7 @@ describe('Sales Agent portfolio search', () => {
   it('controller submit portfolio → portfolio_browse, 共找到, pending null, not auto-bound', async () => {
     const fixture = await openSalesAgentSqliteFixture();
     try {
-      let activeSession: SalesAgentSession | null = null;
+      const activeSession: SalesAgentSession | null = null;
       const controller = new SalesAgentInteractionController({
         db: fixture.db,
         createSession: () => activeSession,
@@ -242,7 +189,7 @@ describe('Sales Agent portfolio search', () => {
         });
       }
 
-      let activeSession: SalesAgentSession | null = null;
+      const activeSession: SalesAgentSession | null = null;
       const controller = new SalesAgentInteractionController({
         db: fixture.db,
         createSession: () => activeSession,

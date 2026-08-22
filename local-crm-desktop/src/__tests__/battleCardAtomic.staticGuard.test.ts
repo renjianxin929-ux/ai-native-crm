@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 
 async function sourceOf(moduleSpec: string): Promise<string> {
   const imported = await import(moduleSpec);
-  return imported.default as string;
+  return (imported.default as string).replace(/\r\n/g, '\n');
 }
 
 describe('生产写路径不再引用旧事务 helper', () => {
@@ -26,7 +26,7 @@ describe('生产写路径不再引用旧事务 helper', () => {
   it('repository StageCardRepository.confirm 函数体不包含 withTransaction 调用', async () => {
     const source = await sourceOf('../lib/battleCard/repository?raw');
     // withTransaction 定义本身允许存在（测试适配器使用），但 confirm 生产分支不得调用
-    const confirmBlock = source.match(/async confirm\(cardId, by, at\) \{[\s\S]*?\n    \},\n  \};/);
+    const confirmBlock = source.match(/async confirm\(cardId, by, at\) \{[\s\S]*?\n {4}\},\n {2}\};/);
     expect(confirmBlock).toBeTruthy();
     // 生产分支（atomicBackend）与测试分支共存；withTransaction 仅出现在测试分支
     const productionBranch = confirmBlock![0].split('// 测试/无 Tauri 传输')[0] ?? '';

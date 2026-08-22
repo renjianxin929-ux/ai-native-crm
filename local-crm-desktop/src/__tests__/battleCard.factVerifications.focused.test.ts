@@ -3,14 +3,13 @@
  * 结构层 + 语义层分层；E/F 组必须经过正式 production composition 全链路
  * （默认 approvedCrmWriteBoundary → Proposal → confirmWriteByRef → BattleCardWriteExecutor → 隔离 SQLite）。
  */
-import Database from 'better-sqlite3';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { parseFactVerificationsRuntime, buildWriteProposal, type FactVerificationItem } from '../lib/salesAgentTools/confirmedWrite';
 import { SalesAgentSession } from '../lib/salesAgentTools/agentSession';
 import { approvedCrmWriteBoundary } from '../lib/salesAgentTools/approvedCrmWriteBoundary';
 import { __resetSessionWriteStateStoreForTests, cancelCanonicalProposal } from '../lib/salesAgentTools/sessionWriteStateStore';
-import { __setDbInstanceForTests, initializeDatabaseSchema, type DatabaseLike } from '../lib/db';
+import { __setDbInstanceForTests, initializeDatabaseSchema } from '../lib/db';
 import { createBattleCardAgentTools } from '../lib/battleCard/agentTools';
 import { createBattleCardRepositories } from '../lib/battleCard/repository';
 import { previewIntelligenceImport } from '../lib/battleCard/importService';

@@ -11,11 +11,13 @@ export async function getAIConfig(): Promise<AIConfig | null> {
   return null;
 }
 
-export async function saveAIConfig(_config: AIConfig): Promise<void> {
+export async function saveAIConfig(config: AIConfig): Promise<void> {
+  void config;
   throw new Error('旧版前端配置路径已移除；请使用 Rust Trusted Host 的 DPAPI 加密 SQLite 配置。');
 }
 
-export async function testAIConnection(_config: AIConfig): Promise<{ ok: boolean; message: string }> {
+export async function testAIConnection(config: AIConfig): Promise<{ ok: boolean; message: string }> {
+  void config;
   return { ok: false, message: '旧版前端连接测试已移除；请使用 Trusted Host 测试连接。' };
 }
 

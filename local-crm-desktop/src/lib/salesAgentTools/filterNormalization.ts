@@ -133,6 +133,12 @@ function stripLeadingAnalysisPrefix(text: string): string {
     .trim();
 }
 
+function stripTrailingEntityTask(text: string): string {
+  return text
+    .replace(/[，,。.\s]*(?:然后|再|之后)?\s*(?:总结|概括|分析|梳理|整理)(?:一下|下)?(?:最近|当前)?(?:情况|现状)?$/u, '')
+    .trim();
+}
+
 function extractQuotedOrMarkedName(message: string): string | null {
   // Cut trailing follow-on clauses ("，然后总结…") before name extraction
   const head = message.split(/[，,]?\s*然后/)[0]!.trim();
@@ -251,7 +257,7 @@ export function normalizeCustomerSearchFilters(message: string, nowIso?: string)
     if (wholeCompanyNameCandidate) {
       industry = undefined;
     } else if (industry && markedRaw.length > industry.length + 1
-      && (isDirectEntityLookup || markedRaw.endsWith(industry))) {
+      && (hasExplicitQuotedName || isDirectEntityLookup || markedRaw.endsWith(industry))) {
       industry = undefined;
     }
   }
@@ -270,12 +276,13 @@ export function normalizeCustomerSearchFilters(message: string, nowIso?: string)
     // region/industry vocabulary (华南生物, 广州生物科技有限公司). A leading
     // analysis verb ("总结一下…") is not part of the entity name and must be
     // stripped, otherwise the LIKE match against customers.name can never hit.
-    const cleaned = wholeCompanyNameCandidate ? stripLeadingAnalysisPrefix(markedRaw) : markedRaw;
-    // Trailing task language ("分析一下" / "，然后总结") is not part of the CRM name.
-    // Prefer the already-extracted company span when it is a prefix of the capture.
-    name_query = place.name_query && cleaned.startsWith(place.name_query)
-      ? place.name_query
-      : cleaned;
+    const cleaned = stripTrailingEntityTask(
+      wholeCompanyNameCandidate ? stripLeadingAnalysisPrefix(markedRaw) : markedRaw,
+    );
+    // markedRaw already stops before a follow-on clause. Once an explicit entity
+    // boundary exists, the central place parser must not shorten a company name
+    // merely because it contains a known region or industry token.
+    name_query = cleaned;
     if (name_query.length < 2) name_query = undefined;
   } else if (!name_query && !structural && markedRaw && !markedRawIsStructuredPortfolioTarget) {
     name_query = markedRaw;
@@ -379,6 +386,9 @@ export function resumeInstructionAfterScope(pending: string): string {
     return trimmed;
   }
   const norm = normalizeCustomerSearchFilters(pending);
+  // A portfolio query remains the active objective after a transient bind. It
+  // has no named-entity prefix to remove (for example “东莞的 A 类客户”).
+  if (norm.is_portfolio_query) return trimmed;
   const nameQuery = norm.filters.name_query?.trim();
   if (nameQuery) {
     const remaining = remainingInstructionAfterNamedBind(trimmed, nameQuery);

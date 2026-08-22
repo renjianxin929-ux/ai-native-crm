@@ -15,7 +15,7 @@
  */
 
 import { listFollowUps, listVisits } from '../../db';
-import { buildCustomerTimeline, type CustomerTimelineItem } from '../../../components/salesWorkspace/CustomerIntelligencePanel';
+import { buildCustomerTimeline, type CustomerTimelineItem } from '../../salesWorkspace/customerIntelligence';
 import type { VisitRecord } from '../../types';
 
 /** Timeline 读取的统一输入边界：显式客户范围。 */

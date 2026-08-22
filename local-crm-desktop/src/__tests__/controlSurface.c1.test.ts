@@ -130,7 +130,7 @@ describe('C1 AI-native control surface', () => {
     expect(customerList).toContain('formatOpportunityAmount');
     expect(customerDetail).toContain("t('customer.detail.accordion.profile')");
     expect(customerDetail).toContain('evidenceEntryLabel');
-    expect(readFileSync('src/components/controlSurface/EvidenceQuietPanel.tsx', 'utf8')).toContain("t('customer.detail.evidence')");
+    expect(readFileSync('src/lib/evidence/evidenceEntryLabel.ts', 'utf8')).toContain("t('customer.detail.evidence')");
     expect(customerDetail).toContain("t('customer.detail.askAgent')");
     expect(customerDetail).toContain('updateCustomerOpportunityAmount');
     expect(customerDetail).toContain("t('customer.detail.deleteConfirm')");

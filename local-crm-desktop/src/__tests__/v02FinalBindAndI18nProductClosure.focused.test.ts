@@ -237,7 +237,7 @@ describe('T1 — Internal Bind Continuation', () => {
       const before = counts(fixture.sqlite, CUSTOMER_A);
       const locating = await controller.submit(prompt);
       const message = `${locating.state.agent_message ?? ''}\n${locating.state.resolution_reason ?? ''}`;
-      // eslint-disable-next-line no-console
+
       console.log([
         'FAIL_FIRST_T1',
         `INPUT=${prompt}`,
@@ -274,7 +274,7 @@ describe('T2 — Unique Exact Match Auto Bind', () => {
     const { fixture, controller } = await controllerFor({ scoped: false });
     try {
       const locating = await controller.submit(prompt);
-      // eslint-disable-next-line no-console
+
       console.log([
         'FAIL_FIRST_T2',
         `INPUT=${prompt}`,
@@ -306,7 +306,7 @@ describe('T3 — Fuzzy Multiple Candidates Still Need Picker', () => {
     });
     try {
       const locating = await controller.submit('打开广州ABC科技分析一下');
-      // eslint-disable-next-line no-console
+
       console.log([
         'FAIL_FIRST_T3',
         `ACTUAL_PHASE=${locating.state.phase}`,
@@ -360,7 +360,7 @@ describe('T5 — Human Navigation Fresh Session Preserved', () => {
       }
       controller.enterCustomerConversation(CUSTOMER_B, CUSTOMER_B_NAME);
       const next = controller.getState();
-      // eslint-disable-next-line no-console
+
       console.log([
         'FAIL_FIRST_T5',
         `ACTUAL_SCOPED=${next.scoped_customer_id}`,
@@ -397,7 +397,7 @@ describe('T6 — en-US Agent Core Chrome', () => {
       'quick.followUp',
     ] as const;
     const surface = visibleCatalog(keys);
-    // eslint-disable-next-line no-console
+
     console.log([
       'FAIL_FIRST_T6',
       `ACTUAL_SURFACE=${surface.replace(/\n/g, ' | ')}`,
@@ -434,7 +434,7 @@ describe('T7 — en-US Board First Screen', () => {
       'board.amountUnknown',
     ] as const;
     const surface = visibleCatalog(keys);
-    // eslint-disable-next-line no-console
+
     console.log([
       'FAIL_FIRST_T7',
       `ACTUAL_SURFACE=${surface.replace(/\n/g, ' | ')}`,
@@ -466,7 +466,7 @@ describe('T8 — en-US Review First Screen', () => {
       'review.expand',
     ] as const;
     const surface = visibleCatalog(keys);
-    // eslint-disable-next-line no-console
+
     console.log([
       'FAIL_FIRST_T8',
       `ACTUAL_SURFACE=${surface.replace(/\n/g, ' | ')}`,

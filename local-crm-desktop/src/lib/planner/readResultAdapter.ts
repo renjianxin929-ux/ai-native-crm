@@ -362,8 +362,8 @@ function formatCurrentBattleCard(data: unknown, facts?: CustomerFactProjection):
       ? ['这个客户目前没有作战卡。']
       : ['这张作战卡目前仍与当前 CRM 阶段一致。', cardLines.join('\n')];
   return {
-    shape: 'ANALYSIS',
-    presentation: 'analysis',
+    shape: 'CUSTOMER_SUMMARY',
+    presentation: 'direct',
     headline: coherence.kind === 'stale' ? '作战卡已部分过时' : '当前作战卡',
     message: reviewLines.filter(Boolean).join('\n'),
   };
