@@ -9,6 +9,10 @@ on:
       - release/v0.2.1-installers
   workflow_dispatch:
 
+concurrency:
+  group: v0.2.1-installer-build
+  cancel-in-progress: true
+
 permissions:
   contents: write
 
@@ -47,6 +51,18 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Exclude the manual migration utility from the production bundle
+        shell: pwsh
+        run: |
+          $manifest = "src-tauri/Cargo.toml"
+          $text = [System.IO.File]::ReadAllText($manifest)
+          $pattern = '(?ms)\r?\n\[\[bin\]\]\r?\nname = "migrate_plaintext_credentials"\r?\npath = "src/bin/migrate_plaintext_credentials\.rs"\r?\nrequired-features = \["migration-tool"\]\r?\n'
+          $updated = [regex]::Replace($text, $pattern, [Environment]::NewLine)
+          if ($updated -eq $text) {
+            throw "Migration utility target block was not found in Cargo.toml."
+          }
+          [System.IO.File]::WriteAllText($manifest, $updated)
 
       - name: Build NSIS and MSI installers
         run: npm run tauri build -- --bundles nsis,msi
@@ -110,6 +126,22 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Exclude the manual migration utility from the production bundle
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          manifest = Path("src-tauri/Cargo.toml")
+          text = manifest.read_text()
+          block = """\n[[bin]]
+          name = "migrate_plaintext_credentials"
+          path = "src/bin/migrate_plaintext_credentials.rs"
+          required-features = ["migration-tool"]
+          """
+          if block not in text:
+              raise SystemExit("Migration utility target block was not found in Cargo.toml.")
+          manifest.write_text(text.replace(block, "\n", 1))
+          PY
+
       - name: Build Apple Silicon DMG
         run: npm run tauri build -- --bundles dmg
 
@@ -158,6 +190,22 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Exclude the manual migration utility from the production bundle
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          manifest = Path("src-tauri/Cargo.toml")
+          text = manifest.read_text()
+          block = """\n[[bin]]
+          name = "migrate_plaintext_credentials"
+          path = "src/bin/migrate_plaintext_credentials.rs"
+          required-features = ["migration-tool"]
+          """
+          if block not in text:
+              raise SystemExit("Migration utility target block was not found in Cargo.toml.")
+          manifest.write_text(text.replace(block, "\n", 1))
+          PY
 
       - name: Build Intel DMG
         run: npm run tauri build -- --bundles dmg
