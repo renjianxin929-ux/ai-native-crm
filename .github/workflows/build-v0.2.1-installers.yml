@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: v0.2.1-installer-build-final
+  group: v0.2.1-installer-build-tauri-workaround
   cancel-in-progress: true
 
 permissions:
@@ -49,17 +49,21 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Exclude the manual migration utility from the production bundle
+      - name: Keep the manual migration utility out of the production bundle
         shell: pwsh
         run: |
           $manifest = "src-tauri/Cargo.toml"
           $text = [System.IO.File]::ReadAllText($manifest)
-          $pattern = '(?ms)\r?\n\[\[bin\]\]\r?\nname = "migrate_plaintext_credentials"\r?\npath = "src/bin/migrate_plaintext_credentials\.rs"\r?\nrequired-features = \["migration-tool"\]\r?\n'
-          $updated = [regex]::Replace($text, $pattern, [Environment]::NewLine)
+          $updated = $text.Replace(
+            'path = "src/bin/migrate_plaintext_credentials.rs"',
+            'path = "dev-bin/migrate_plaintext_credentials.rs"'
+          )
           if ($updated -eq $text) {
-            throw "Migration utility target block was not found in Cargo.toml."
+            throw "Migration utility path was not found in Cargo.toml."
           }
           [System.IO.File]::WriteAllText($manifest, $updated)
+          New-Item -ItemType Directory -Force "src-tauri/dev-bin" | Out-Null
+          Move-Item "src-tauri/src/bin/migrate_plaintext_credentials.rs" "src-tauri/dev-bin/migrate_plaintext_credentials.rs"
 
       - name: Build NSIS and MSI installers
         run: npm run tauri build -- --bundles nsis,msi
@@ -123,20 +127,20 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Exclude the manual migration utility from the production bundle
+      - name: Keep the manual migration utility out of the production bundle
         run: |
           python3 - <<'PY'
           from pathlib import Path
           manifest = Path("src-tauri/Cargo.toml")
           text = manifest.read_text()
-          block = """\n[[bin]]
-          name = "migrate_plaintext_credentials"
-          path = "src/bin/migrate_plaintext_credentials.rs"
-          required-features = ["migration-tool"]
-          """
-          if block not in text:
-              raise SystemExit("Migration utility target block was not found in Cargo.toml.")
-          manifest.write_text(text.replace(block, "\n", 1))
+          old = 'path = "src/bin/migrate_plaintext_credentials.rs"'
+          new = 'path = "dev-bin/migrate_plaintext_credentials.rs"'
+          if old not in text:
+              raise SystemExit("Migration utility path was not found in Cargo.toml.")
+          manifest.write_text(text.replace(old, new, 1))
+          destination = Path("src-tauri/dev-bin/migrate_plaintext_credentials.rs")
+          destination.parent.mkdir(parents=True, exist_ok=True)
+          Path("src-tauri/src/bin/migrate_plaintext_credentials.rs").rename(destination)
           PY
 
       - name: Build Apple Silicon DMG
@@ -188,20 +192,20 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Exclude the manual migration utility from the production bundle
+      - name: Keep the manual migration utility out of the production bundle
         run: |
           python3 - <<'PY'
           from pathlib import Path
           manifest = Path("src-tauri/Cargo.toml")
           text = manifest.read_text()
-          block = """\n[[bin]]
-          name = "migrate_plaintext_credentials"
-          path = "src/bin/migrate_plaintext_credentials.rs"
-          required-features = ["migration-tool"]
-          """
-          if block not in text:
-              raise SystemExit("Migration utility target block was not found in Cargo.toml.")
-          manifest.write_text(text.replace(block, "\n", 1))
+          old = 'path = "src/bin/migrate_plaintext_credentials.rs"'
+          new = 'path = "dev-bin/migrate_plaintext_credentials.rs"'
+          if old not in text:
+              raise SystemExit("Migration utility path was not found in Cargo.toml.")
+          manifest.write_text(text.replace(old, new, 1))
+          destination = Path("src-tauri/dev-bin/migrate_plaintext_credentials.rs")
+          destination.parent.mkdir(parents=True, exist_ok=True)
+          Path("src-tauri/src/bin/migrate_plaintext_credentials.rs").rename(destination)
           PY
 
       - name: Build Intel DMG
