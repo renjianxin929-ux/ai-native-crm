@@ -1,9 +1,6 @@
 name: Build v0.2.1 Installers
 
 on:
-  pull_request:
-    branches:
-      - master
   push:
     branches:
       - release/v0.2.1-installers
