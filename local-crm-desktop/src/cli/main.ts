@@ -6,7 +6,9 @@ import { basename, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { buildCapabilityCatalog } from './catalog';
+import { findCapabilityTransport } from './capabilityTransport';
 import {
+  formatCapabilityExplicitlyUnsupported,
   formatCapabilityResult,
   formatCapabilityConfirmationRequired,
   formatCapabilityExecutionNotEnabled,
@@ -468,6 +470,19 @@ export async function runCli(
       writeLine(formatHelp());
       return 0;
     case 'cap': {
+      const transport = findCapabilityTransport(parsed.command.capability_id);
+      if (transport === null) {
+        writeLine(formatError('CAPABILITY_NOT_FOUND'));
+        return 2;
+      }
+      if (transport.transport === 'EXPLICITLY_UNSUPPORTED') {
+        // This happens before scope lookup, profile opening, or Engine.invoke.
+        writeLine(formatCapabilityExplicitlyUnsupported(
+          transport.capability_id,
+          transport.reason,
+        ));
+        return 2;
+      }
       if (isC4WriteProposalCapability(parsed.command.capability_id)) {
         if (!hasC4CustomerScope(profile, parsed.command)) {
           writeLine(formatCapabilityExecutionNotEnabled());

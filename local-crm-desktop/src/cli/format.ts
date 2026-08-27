@@ -32,6 +32,7 @@ export function formatHelp(): string {
     status: 'COMPLETED',
     command: 'help',
     commands: ['catalog', 'help', 'profile-status', 'session', 'cap', 'confirm'],
+    catalog_transport: 'catalog marks every capability as SUPPORTED or EXPLICITLY_UNSUPPORTED',
   });
 }
 
@@ -130,4 +131,18 @@ export function formatCapabilityConfirmationRequired(
 
 export function formatCapabilityExecutionNotEnabled(): string {
   return formatError('CAPABILITY_EXECUTION_NOT_ENABLED');
+}
+
+/** C7 fail-closed response for a known planner-surface capability with no CLI transport. */
+export function formatCapabilityExplicitlyUnsupported(
+  capabilityId: string,
+  reason: string,
+): string {
+  return formatJson({
+    ok: false,
+    status: 'ERROR',
+    code: 'CAPABILITY_EXPLICITLY_UNSUPPORTED',
+    capability_id: capabilityId,
+    reason,
+  });
 }
