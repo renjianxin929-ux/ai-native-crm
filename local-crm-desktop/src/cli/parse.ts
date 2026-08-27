@@ -16,6 +16,15 @@ export type ParsedCliCommand =
     readonly name: 'profile-status';
   }
   | {
+    readonly name: 'session';
+    readonly action: 'show' | 'clear-customer';
+  }
+  | {
+    readonly name: 'session';
+    readonly action: 'select-customer';
+    readonly customer_id: string;
+  }
+  | {
     readonly name: 'cap';
     readonly capability_id: string;
     readonly args: unknown;
@@ -71,8 +80,31 @@ function parseCapabilityCommand(profile: string, argv: readonly string[]): Parse
   }
 }
 
+function parseSessionCommand(profile: string, argv: readonly string[]): ParsedCliArgs {
+  const action = argv[0];
+  switch (action) {
+    case 'show':
+      return argv.length === 1
+        ? { ok: true, profile, command: { name: 'session', action: 'show' } }
+        : argumentError(profile);
+    case 'clear-customer':
+      return argv.length === 1
+        ? { ok: true, profile, command: { name: 'session', action: 'clear-customer' } }
+        : argumentError(profile);
+    case 'select-customer': {
+      const customer_id = argv[2];
+      if (argv.length !== 3 || argv[1] !== '--id' || customer_id === undefined || customer_id.trim().length === 0) {
+        return argumentError(profile);
+      }
+      return { ok: true, profile, command: { name: 'session', action: 'select-customer', customer_id } };
+    }
+    default:
+      return argumentError(profile);
+  }
+}
+
 /**
- * Parse the intentionally small C1 CLI grammar.  Profile-name validation is
+ * Parse the intentionally small C1/C2 CLI grammar. Profile-name validation is
  * owned by main.ts so it remains on the existing C0 security gate.
  */
 export function parseCliArgs(argv: readonly string[]): ParsedCliArgs {
@@ -102,6 +134,8 @@ export function parseCliArgs(argv: readonly string[]): ParsedCliArgs {
       return commandArgs.length === 0
         ? { ok: true, profile, command: { name: 'profile-status' } }
         : argumentError(profile);
+    case 'session':
+      return parseSessionCommand(profile, commandArgs);
     case 'cap':
       return parseCapabilityCommand(profile, commandArgs);
     default:

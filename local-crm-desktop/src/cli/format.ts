@@ -29,7 +29,7 @@ export function formatHelp(): string {
     ok: true,
     status: 'COMPLETED',
     command: 'help',
-    commands: ['catalog', 'help', 'profile-status', 'cap'],
+    commands: ['catalog', 'help', 'profile-status', 'session', 'cap'],
   });
 }
 
@@ -39,6 +39,20 @@ export function formatProfileStatus(profile: string, dbPath: string): string {
     status: 'COMPLETED',
     profile,
     db_path: dbPath,
+  });
+}
+
+export function formatSession(
+  profile: string,
+  command: 'session.show' | 'session.select-customer' | 'session.clear-customer',
+  selectedCustomerId: string | null,
+): string {
+  return formatJson({
+    ok: true,
+    status: 'COMPLETED',
+    command,
+    profile,
+    selected_customer_id: selectedCustomerId,
   });
 }
 

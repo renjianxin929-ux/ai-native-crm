@@ -10,15 +10,26 @@ import {
   formatError,
   formatHelp,
   formatProfileStatus,
+  formatSession,
 } from './format';
 import { parseCliArgs } from './parse';
 import { ProfileRuntimeError, validateProfileName } from './profile';
 import { openProfileDatabase } from './profileDb';
+import {
+  clearProfileCustomer,
+  selectProfileCustomer,
+  SessionRuntimeError,
+  showProfileSession,
+} from './session';
 
 type CliLineWriter = (line: string) => void;
 
 function profileErrorCode(error: unknown): string | undefined {
   return error instanceof ProfileRuntimeError ? error.code : undefined;
+}
+
+function sessionErrorCode(error: unknown): string | undefined {
+  return error instanceof SessionRuntimeError ? error.code : undefined;
 }
 
 /**
@@ -71,6 +82,30 @@ export async function runCli(
       } catch (error) {
         writeLine(formatError(profileErrorCode(error) ?? 'PROFILE_OPEN_FAILED'));
         return 5;
+      }
+    case 'session':
+      try {
+        switch (parsed.command.action) {
+          case 'show': {
+            const session = showProfileSession(profile);
+            writeLine(formatSession(profile, 'session.show', session.selected_customer_id));
+            return 0;
+          }
+          case 'select-customer': {
+            const session = selectProfileCustomer(profile, parsed.command.customer_id);
+            writeLine(formatSession(profile, 'session.select-customer', session.selected_customer_id));
+            return 0;
+          }
+          case 'clear-customer': {
+            const session = clearProfileCustomer(profile);
+            writeLine(formatSession(profile, 'session.clear-customer', session.selected_customer_id));
+            return 0;
+          }
+        }
+      } catch (error) {
+        const code = sessionErrorCode(error) ?? profileErrorCode(error);
+        writeLine(formatError(code ?? 'SESSION_INVALID'));
+        return code?.startsWith('PROFILE_') ? 5 : 2;
       }
   }
 }
