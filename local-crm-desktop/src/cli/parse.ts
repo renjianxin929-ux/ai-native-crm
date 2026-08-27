@@ -28,6 +28,8 @@ export type ParsedCliCommand =
     readonly name: 'cap';
     readonly capability_id: string;
     readonly args: unknown;
+    /** Present only for the explicit import.file.preview file transport. */
+    readonly file_path?: string;
   };
 
 export interface ParsedCliSuccess {
@@ -51,9 +53,21 @@ function argumentError(profile: string): ParsedCliFailure {
 
 function parseCapabilityCommand(profile: string, argv: readonly string[]): ParsedCliArgs {
   const capability_id = argv[0];
-  if (!capability_id || capability_id === '--args') return argumentError(profile);
+  if (!capability_id || capability_id === '--args' || capability_id === '--file') return argumentError(profile);
 
   const optionArgs = argv.slice(1);
+  if (capability_id === 'import.file.preview') {
+    const file_path = optionArgs[1];
+    if (optionArgs.length !== 2 || optionArgs[0] !== '--file' || file_path === undefined || file_path.trim().length === 0) {
+      return argumentError(profile);
+    }
+    return {
+      ok: true,
+      profile,
+      command: { name: 'cap', capability_id, args: undefined, file_path },
+    };
+  }
+
   if (optionArgs.length === 0) {
     return {
       ok: true,

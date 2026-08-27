@@ -94,7 +94,7 @@ describe('v0.2.2 C1 CLI parsing', () => {
       .toEqual({ ok: false, profile: 'sandbox', code: 'UNKNOWN_COMMAND' });
   });
 
-  it('does not execute a parsed cap command', async () => {
+  it('does not execute a parsed write cap command', async () => {
     const invoke = vi.spyOn(PRODUCTION_CAPABILITY_EXECUTION, 'invoke');
     const output: string[] = [];
 
@@ -102,12 +102,13 @@ describe('v0.2.2 C1 CLI parsing', () => {
       '--profile',
       'sandbox',
       'cap',
-      'customer.search',
+      'customer.create',
       '--args',
-      '{"name_query":"星河"}',
+      '{"name":"C3 must not write"}',
     ], (line) => output.push(line));
 
-    // Exit code 2 is intentionally locked for the C1 disabled execution path.
+    // C3 enables only its explicit READ slice; every write remains disabled
+    // before profile opening or Engine invocation.
     expect(exitCode).toBe(2);
     expect(output).toEqual([JSON.stringify({
       ok: false,

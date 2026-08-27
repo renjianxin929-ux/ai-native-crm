@@ -56,6 +56,23 @@ export function formatSession(
   });
 }
 
+/** C3 successful capability invocation envelope; result is the engine payload unchanged. */
+export function formatCapabilityResult(
+  profile: string,
+  capabilityId: string,
+  version: string,
+  result: unknown,
+): string {
+  return formatJson({
+    ok: true,
+    status: 'COMPLETED',
+    capability_id: capabilityId,
+    version,
+    profile,
+    result,
+  });
+}
+
 export function formatCapabilityExecutionNotEnabled(): string {
   return formatError('CAPABILITY_EXECUTION_NOT_ENABLED');
 }

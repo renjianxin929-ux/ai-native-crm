@@ -19,6 +19,36 @@ let dbInstance: DatabaseLike | null = null;
 let dbInitError: string | null = null;
 let dbInitialization: Promise<DatabaseLike> | null = null;
 let databaseLoaderForTests: (() => Promise<DatabaseLike>) | null = null;
+let profileRuntimeDatabase: DatabaseLike | null = null;
+let profileRuntimeFailClosed = false;
+
+function isDatabaseLike(value: unknown): value is DatabaseLike {
+  return typeof value === 'object' && value !== null
+    && 'execute' in value && 'select' in value
+    && typeof value.execute === 'function' && typeof value.select === 'function';
+}
+
+/**
+ * Arms the short-lived CLI profile-runtime boundary. While armed, getDb()
+ * must never initialize or return the desktop personal-crm.db singleton.
+ */
+export function enableProfileRuntimeFailClosed(): void {
+  profileRuntimeFailClosed = true;
+}
+
+/** Binds one already-opened profile database for the current runtime call. */
+export function bindProfileRuntimeDatabase(db: DatabaseLike): void {
+  if (!isDatabaseLike(db)) {
+    throw new TypeError('Profile runtime database must implement DatabaseLike.');
+  }
+  profileRuntimeDatabase = db;
+}
+
+/** Clears the CLI runtime binding and restores the desktop default-db behavior. */
+export function unbindProfileRuntimeDatabase(): void {
+  profileRuntimeDatabase = null;
+  profileRuntimeFailClosed = false;
+}
 
 /**
  * 测试后门（与 sessionWriteStateStore.__resetSessionWriteStateStoreForTests 同惯例）：
@@ -40,6 +70,13 @@ export function __setDatabaseLoaderForTests(loader: (() => Promise<DatabaseLike>
 }
 
 async function getDb(): Promise<DatabaseLike> {
+  // A bound profile always wins over the desktop singleton. If the runtime was
+  // armed but binding failed or has already been cleared, fail closed before
+  // any loader can open sqlite:personal-crm.db.
+  if (profileRuntimeDatabase) return profileRuntimeDatabase;
+  if (profileRuntimeFailClosed) {
+    throw new Error('Profile runtime database is not bound.');
+  }
   if (dbInstance) return dbInstance;
   if (dbInitError) throw new Error(dbInitError);
 

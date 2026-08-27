@@ -35,11 +35,40 @@ export interface RuntimeHydratorInput {
   readonly capability_id: string;
   readonly capability_version?: string;
   readonly args: unknown;
+  /** Native runtime File supplied only by the import preview CLI transport. */
+  readonly file?: unknown;
   readonly session?: RuntimeHydratorSession | null;
   readonly now?: string;
 }
 
 type JsonRecord = Record<string, unknown>;
+
+/**
+ * This is an execution-slice boundary, not a second capability registry. The
+ * production planner surface remains the identity source; C3 deliberately
+ * enables only the enumerated READ paths below.
+ */
+export const C3_CORE_READ_CAPABILITY_IDS = Object.freeze([
+  'customer.search',
+  'customer.get',
+  'customer.context',
+  'timeline.customer.read',
+  'timeline.visit.read',
+  'follow_up.customer.read',
+  'follow_up.global.read',
+  'task.read_by_customer',
+  'battle_card.current.read',
+  'battle_card.history.read',
+  'battle_card.context.read',
+  'import.file.preview',
+  'import.mapping.validate',
+] as const);
+
+const C3_CORE_READ_CAPABILITY_ID_SET: ReadonlySet<string> = new Set(C3_CORE_READ_CAPABILITY_IDS);
+
+export function isC3CoreReadCapability(capabilityId: string): boolean {
+  return C3_CORE_READ_CAPABILITY_ID_SET.has(capabilityId);
+}
 
 function isPlainObject(value: unknown): value is JsonRecord {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
@@ -60,8 +89,14 @@ function assertDatabaseLike(value: unknown): asserts value is DatabaseLike {
   }
 }
 
-function assertAllowedFields(record: JsonRecord, fields: readonly string[], capabilityId: string): void {
+function assertAllowedFields(
+  record: JsonRecord,
+  fields: readonly string[],
+  capabilityId: string,
+  extraAllowedFields: readonly string[] = [],
+): void {
   const allowed = new Set(fields);
+  for (const field of extraAllowedFields) allowed.add(field);
   for (const field of Object.keys(record)) {
     if (!allowed.has(field)) {
       throw new RuntimeHydratorError('INVALID_INPUT', `${capabilityId} received an unsupported agent argument: ${field}.`);
@@ -90,8 +125,16 @@ function runtimeNow(value: string | undefined): string {
 }
 
 function resolveVersion(input: RuntimeHydratorInput, descriptor: PlannerToolDescriptor): string {
-  const version = input.capability_version ?? descriptor.version;
-  return requireNonEmptyString(version, 'capability_version');
+  if (input.capability_version === undefined) return descriptor.version;
+
+  const version = requireNonEmptyString(input.capability_version, 'capability_version');
+  if (version !== descriptor.version) {
+    throw new RuntimeHydratorError(
+      'CAPABILITY_NOT_FOUND',
+      `${descriptor.capability_id} version does not match the production planner surface.`,
+    );
+  }
+  return version;
 }
 
 function resolveDescriptor(capabilityId: string): PlannerToolDescriptor {
@@ -111,9 +154,9 @@ function explicitCustomerId(
 ): string | undefined {
   if (args === undefined) return undefined;
   const record = requirePlainObject(args, `${descriptor.capability_id} requires an object of agent arguments.`);
-  assertAllowedFields(record, descriptor.input_schema.allowed_fields, descriptor.capability_id);
-
-  if (!descriptor.input_schema.allowed_fields.includes('customer_id')) return undefined;
+  // customer_id is a runtime scope overlay. It is intentionally not projected
+  // into the planner schema and must never become the business input payload.
+  assertAllowedFields(record, descriptor.input_schema.allowed_fields, descriptor.capability_id, ['customer_id']);
   const customerId = record.customer_id;
   return customerId === undefined ? undefined : requireNonEmptyString(customerId, 'customer_id');
 }
@@ -143,16 +186,19 @@ function hydrateCustomerSearch(
   descriptor: PlannerToolDescriptor,
   capabilityVersion: string,
 ): CapabilityInvocation {
-  const args = requirePlainObject(input.args, 'customer.search requires an object of agent arguments.');
-  assertAllowedFields(args, ['name_query', 'region', 'industry', 'customer_grade', 'list_kind'], descriptor.capability_id);
+  const args = requirePlainObject(input.args ?? {}, 'customer.search requires an object of agent arguments.');
+  assertAllowedFields(args, descriptor.input_schema.allowed_fields, descriptor.capability_id);
 
-  const name_query = requireNonEmptyString(args.name_query, 'name_query');
-  const region = optionalString(args, 'region');
-  const industry = optionalString(args, 'industry');
-  const customer_grade = optionalString(args, 'customer_grade');
   const list_kind = optionalString(args, 'list_kind');
   if (list_kind !== undefined && list_kind !== 'portfolio' && list_kind !== 'resolution') {
     throw new RuntimeHydratorError('INVALID_INPUT', 'list_kind must be portfolio or resolution.');
+  }
+
+  const filters: JsonRecord = { now: runtimeNow(input.now) };
+  for (const field of descriptor.input_schema.allowed_fields) {
+    if (field === 'list_kind') continue;
+    const value = optionalString(args, field);
+    if (value !== undefined) filters[field] = value;
   }
 
   assertDatabaseLike(input.profileDb);
@@ -160,16 +206,88 @@ function hydrateCustomerSearch(
     capability_id: descriptor.capability_id,
     capability_version: capabilityVersion,
     input: {
-      filters: {
-        name_query,
-        ...(region !== undefined ? { region } : {}),
-        ...(industry !== undefined ? { industry } : {}),
-        ...(customer_grade !== undefined ? { customer_grade } : {}),
-        now: runtimeNow(input.now),
-      },
+      filters,
       ...(list_kind !== undefined ? { list_kind } : {}),
       db: input.profileDb,
     },
+    scope: {},
+  };
+}
+
+function hydrateCustomerScopedNoArgRead(
+  input: RuntimeHydratorInput,
+  descriptor: PlannerToolDescriptor,
+  capabilityVersion: string,
+): CapabilityInvocation {
+  const customerId = resolveCustomerScope(input, descriptor);
+  return {
+    capability_id: descriptor.capability_id,
+    capability_version: capabilityVersion,
+    input: undefined,
+    scope: { customer_id: customerId },
+  };
+}
+
+function hydrateBattleCardRead(
+  input: RuntimeHydratorInput,
+  descriptor: PlannerToolDescriptor,
+  capabilityVersion: string,
+): CapabilityInvocation {
+  const customerId = resolveCustomerScope(input, descriptor);
+  assertDatabaseLike(input.profileDb);
+  return {
+    capability_id: descriptor.capability_id,
+    capability_version: capabilityVersion,
+    input: { db: input.profileDb },
+    scope: { customer_id: customerId },
+  };
+}
+
+function hydrateGlobalNoArgRead(
+  input: RuntimeHydratorInput,
+  descriptor: PlannerToolDescriptor,
+  capabilityVersion: string,
+): CapabilityInvocation {
+  if (input.args !== undefined) {
+    const args = requirePlainObject(input.args, `${descriptor.capability_id} takes no agent arguments.`);
+    assertAllowedFields(args, descriptor.input_schema.allowed_fields, descriptor.capability_id);
+  }
+  return {
+    capability_id: descriptor.capability_id,
+    capability_version: capabilityVersion,
+    input: undefined,
+    scope: {},
+  };
+}
+
+function hydrateImportMappingValidation(
+  input: RuntimeHydratorInput,
+  descriptor: PlannerToolDescriptor,
+  capabilityVersion: string,
+): CapabilityInvocation {
+  if (!Array.isArray(input.args)) {
+    throw new RuntimeHydratorError('INVALID_INPUT', 'import.mapping.validate requires an array of field mappings.');
+  }
+  return {
+    capability_id: descriptor.capability_id,
+    capability_version: capabilityVersion,
+    input: input.args,
+    scope: {},
+  };
+}
+
+function hydrateImportFilePreview(
+  input: RuntimeHydratorInput,
+  descriptor: PlannerToolDescriptor,
+  capabilityVersion: string,
+): CapabilityInvocation {
+  if (!(input.file instanceof File)) {
+    throw new RuntimeHydratorError('INVALID_INPUT', 'import.file.preview requires a native runtime File.');
+  }
+  return {
+    capability_id: descriptor.capability_id,
+    capability_version: capabilityVersion,
+    input: input.file,
     scope: {},
   };
 }
@@ -218,10 +336,25 @@ export async function hydrateRuntimeInvocation(input: RuntimeHydratorInput): Pro
     case 'customer.get':
     case 'customer.context':
       return hydrateCustomerScopedRead(input, descriptor, capabilityVersion);
+    case 'timeline.customer.read':
+    case 'timeline.visit.read':
+    case 'follow_up.customer.read':
+    case 'task.read_by_customer':
+      return hydrateCustomerScopedNoArgRead(input, descriptor, capabilityVersion);
+    case 'follow_up.global.read':
+      return hydrateGlobalNoArgRead(input, descriptor, capabilityVersion);
+    case 'battle_card.current.read':
+    case 'battle_card.history.read':
+    case 'battle_card.context.read':
+      return hydrateBattleCardRead(input, descriptor, capabilityVersion);
+    case 'import.mapping.validate':
+      return hydrateImportMappingValidation(input, descriptor, capabilityVersion);
+    case 'import.file.preview':
+      return hydrateImportFilePreview(input, descriptor, capabilityVersion);
     default:
       throw new RuntimeHydratorError(
         'CAPABILITY_NOT_SUPPORTED',
-        `${descriptor.capability_id} is not hydrated by the C2 runtime slice.`,
+        `${descriptor.capability_id} is not hydrated by the C3 runtime slice.`,
       );
   }
 }
