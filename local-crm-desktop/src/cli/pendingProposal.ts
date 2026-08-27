@@ -243,7 +243,8 @@ export function readPendingProposal(profileName: string, proposalId: string): Lo
     );
   }
 
-  const { profile: _profile, ...proposal } = record;
+  const proposal = { ...record };
+  delete proposal.profile;
   return Object.freeze({
     location,
     proposal: proposal as unknown as AgentWriteProposal,

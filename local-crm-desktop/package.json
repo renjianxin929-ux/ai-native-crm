@@ -9,11 +9,13 @@
     "build:cli": "vite build --ssr src/cli/main.ts --outDir dist/cli --emptyOutDir false",
     "crm": "npm run build:cli && node dist/cli/main.js",
     "lint": "eslint .",
+    "typecheck": "tsc -b",
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:e2e": "tauri dev --config src-tauri/tauri.e2e.conf.json --features e2e",
     "pretest": "npm run build",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:cli": "vitest run --dir src/__tests__ cli."
   },
   "dependencies": {
     "@tauri-apps/api": "^2.11.0",

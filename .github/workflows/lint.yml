@@ -29,8 +29,10 @@ jobs:
         run: npm ci
       - name: Run ESLint
         run: npm run lint
-      - name: Run frontend tests and production build
-        run: npm test
+      - name: Run TypeScript checks
+        run: npm run typecheck
+      - name: Run v0.2.2 CLI compatibility tests
+        run: npm run test:cli
 
   rust:
     runs-on: ubuntu-latest

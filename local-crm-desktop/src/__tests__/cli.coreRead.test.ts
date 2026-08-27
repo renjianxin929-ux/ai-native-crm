@@ -267,17 +267,28 @@ describe('v0.2.2 C3 core READ capability CLI', () => {
     const unknown = await runCap('sandbox', 'customer.find', { name_query: '星河' });
     const followUpCreate = await runCap('sandbox', 'follow_up.create', { title: 'must not write' });
     const customerCreate = await runCap('sandbox', 'customer.create', { name: 'must not write' });
+    const customerCreateTransport = buildCapabilityCatalog()
+      .find((entry) => entry.capability_id === 'customer.create');
+    if (customerCreateTransport?.transport !== 'EXPLICITLY_UNSUPPORTED') {
+      throw new Error('C7 must keep customer.create explicitly unsupported.');
+    }
 
     expect(unknown.exitCode).toBe(2);
     expect(unknown.envelope).toEqual({ ok: false, status: 'ERROR', code: 'CAPABILITY_NOT_FOUND' });
-    for (const result of [followUpCreate, customerCreate]) {
-      expect(result.exitCode).toBe(2);
-      expect(result.envelope).toEqual({
+    expect(followUpCreate).toEqual({
+      exitCode: 2,
+      envelope: { ok: false, status: 'ERROR', code: 'CAPABILITY_EXECUTION_NOT_ENABLED' },
+    });
+    expect(customerCreate).toEqual({
+      exitCode: 2,
+      envelope: {
         ok: false,
         status: 'ERROR',
-        code: 'CAPABILITY_EXECUTION_NOT_ENABLED',
-      });
-    }
+        code: 'CAPABILITY_EXPLICITLY_UNSUPPORTED',
+        capability_id: customerCreateTransport.capability_id,
+        reason: customerCreateTransport.reason,
+      },
+    });
     expect(invoke).not.toHaveBeenCalled();
   });
 

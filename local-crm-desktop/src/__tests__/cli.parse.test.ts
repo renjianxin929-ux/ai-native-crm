@@ -12,6 +12,7 @@ vi.mock('../lib/db', async (importOriginal) => {
 });
 
 import { parseCliArgs } from '../cli/parse';
+import { buildCapabilityCatalog } from '../cli/catalog';
 import { runCli } from '../cli/main';
 import { PRODUCTION_CAPABILITY_EXECUTION } from '../lib/capabilities/execution/production';
 
@@ -97,6 +98,11 @@ describe('v0.2.2 C1 CLI parsing', () => {
   it('does not execute a parsed write cap command', async () => {
     const invoke = vi.spyOn(PRODUCTION_CAPABILITY_EXECUTION, 'invoke');
     const output: string[] = [];
+    const customerCreate = buildCapabilityCatalog()
+      .find((entry) => entry.capability_id === 'customer.create');
+    if (customerCreate?.transport !== 'EXPLICITLY_UNSUPPORTED') {
+      throw new Error('C7 must keep customer.create explicitly unsupported.');
+    }
 
     const exitCode = await runCli([
       '--profile',
@@ -107,13 +113,14 @@ describe('v0.2.2 C1 CLI parsing', () => {
       '{"name":"C3 must not write"}',
     ], (line) => output.push(line));
 
-    // C3 enables only its explicit READ slice; every write remains disabled
-    // before profile opening or Engine invocation.
+    // C7 rejects an unwired write before profile opening or Engine invocation.
     expect(exitCode).toBe(2);
     expect(output).toEqual([JSON.stringify({
       ok: false,
       status: 'ERROR',
-      code: 'CAPABILITY_EXECUTION_NOT_ENABLED',
+      code: 'CAPABILITY_EXPLICITLY_UNSUPPORTED',
+      capability_id: customerCreate.capability_id,
+      reason: customerCreate.reason,
     })]);
     expect(defaultDbTripwire).not.toHaveBeenCalled();
     expect(invoke).not.toHaveBeenCalled();
