@@ -1,7 +1,13 @@
+import {
+  isCapabilityAliasDomain,
+  resolveCapabilityAliasPrefix,
+} from './alias';
+
 export type CliParseErrorCode =
   | 'PROFILE_REQUIRED'
   | 'COMMAND_REQUIRED'
   | 'UNKNOWN_COMMAND'
+  | 'ALIAS_NOT_FOUND'
   | 'ARGUMENT_ERROR';
 
 export type ParsedCliCommand =
@@ -100,6 +106,21 @@ function parseCapabilityCommand(profile: string, argv: readonly string[]): Parse
   }
 }
 
+/**
+ * C8 aliases are syntax sugar only: resolve a mechanically derived prefix and
+ * then parse the remainder through the exact existing cap grammar.
+ */
+function parseAliasCommand(profile: string, argv: readonly string[]): ParsedCliArgs {
+  const alias = resolveCapabilityAliasPrefix(argv);
+  if (alias === null) {
+    const firstWord = argv[0];
+    return firstWord !== undefined && isCapabilityAliasDomain(firstWord)
+      ? { ok: false, profile, code: 'ALIAS_NOT_FOUND' }
+      : { ok: false, profile, code: 'UNKNOWN_COMMAND' };
+  }
+  return parseCapabilityCommand(profile, [alias.capability_id, ...argv.slice(alias.consumed)]);
+}
+
 function parseSessionCommand(profile: string, argv: readonly string[]): ParsedCliArgs {
   const action = argv[0];
   switch (action) {
@@ -176,6 +197,6 @@ export function parseCliArgs(argv: readonly string[]): ParsedCliArgs {
     case 'confirm':
       return parseConfirmCommand(profile, commandArgs);
     default:
-      return { ok: false, profile, code: 'UNKNOWN_COMMAND' };
+      return parseAliasCommand(profile, [command, ...commandArgs]);
   }
 }
