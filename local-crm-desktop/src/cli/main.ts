@@ -3,79 +3,75 @@
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { buildCapabilityCatalog } from './catalog';
+import {
+  formatCapabilityExecutionNotEnabled,
+  formatCatalog,
+  formatError,
+  formatHelp,
+  formatProfileStatus,
+} from './format';
+import { parseCliArgs } from './parse';
 import { ProfileRuntimeError, validateProfileName } from './profile';
 import { openProfileDatabase } from './profileDb';
 
 type CliLineWriter = (line: string) => void;
-
-function writeJson(writeLine: CliLineWriter, value: Record<string, unknown>): void {
-  writeLine(JSON.stringify(value));
-}
 
 function profileErrorCode(error: unknown): string | undefined {
   return error instanceof ProfileRuntimeError ? error.code : undefined;
 }
 
 /**
- * Minimal C0 probe surface. It intentionally has no catalog, capability, or
- * write workflow: callers must choose an explicit profile and profile-status.
+ * C1 catalog surface.  The existing C0 profile gate remains first: no command
+ * can infer a profile or open a profile database before explicit validation.
  */
 export async function runCli(
   argv: readonly string[],
   writeLine: CliLineWriter = (line) => process.stdout.write(`${line}\n`),
 ): Promise<number> {
-  if (argv[0] !== '--profile') {
-    writeJson(writeLine, { ok: false, status: 'ERROR', code: 'PROFILE_REQUIRED' });
-    return 5;
-  }
-
-  const profile = argv[1];
+  const parsed = parseCliArgs(argv);
+  const profile = parsed.profile;
   if (profile === undefined) {
-    writeJson(writeLine, { ok: false, status: 'ERROR', code: 'PROFILE_REQUIRED' });
+    writeLine(formatError('PROFILE_REQUIRED'));
     return 5;
   }
 
   try {
     validateProfileName(profile);
   } catch (error) {
-    writeJson(writeLine, { ok: false, status: 'ERROR', code: profileErrorCode(error) ?? 'PROFILE_INVALID' });
+    writeLine(formatError(profileErrorCode(error) ?? 'PROFILE_INVALID'));
     return 5;
   }
 
-  const command = argv[2];
-  if (command === undefined) {
-    writeJson(writeLine, { ok: false, status: 'ERROR', code: 'COMMAND_REQUIRED' });
-    return 2;
-  }
-  if (argv.length !== 3) {
-    writeJson(writeLine, { ok: false, status: 'ERROR', code: 'ARGUMENT_ERROR' });
-    return 2;
-  }
-  if (command !== 'profile-status') {
-    writeJson(writeLine, { ok: false, status: 'ERROR', code: 'UNKNOWN_COMMAND' });
+  if (!parsed.ok) {
+    writeLine(formatError(parsed.code));
     return 2;
   }
 
-  try {
-    const handle = await openProfileDatabase(profile);
-    try {
-      writeJson(writeLine, {
-        ok: true,
-        status: 'COMPLETED',
-        profile: handle.profile,
-        db_path: handle.dbPath,
-      });
+  switch (parsed.command.name) {
+    case 'catalog':
+      writeLine(formatCatalog(profile, buildCapabilityCatalog()));
       return 0;
-    } finally {
-      await handle.close();
-    }
-  } catch (error) {
-    writeJson(writeLine, {
-      ok: false,
-      status: 'ERROR',
-      code: profileErrorCode(error) ?? 'PROFILE_OPEN_FAILED',
-    });
-    return 5;
+    case 'help':
+      writeLine(formatHelp());
+      return 0;
+    case 'cap':
+      // C1 proves parsing only.  It must never imply that a capability ran.
+      writeLine(formatCapabilityExecutionNotEnabled());
+      return 2;
+    case 'profile-status':
+      try {
+        const handle = await openProfileDatabase(profile);
+        try {
+          writeLine(formatProfileStatus(handle.profile, handle.dbPath));
+          return 0;
+        } finally {
+          await handle.close();
+        }
+      } catch (error) {
+        writeLine(formatError(profileErrorCode(error) ?? 'PROFILE_OPEN_FAILED'));
+        return 5;
+      }
   }
 }
 
@@ -88,7 +84,7 @@ if (isDirectExecution()) {
   void runCli(process.argv.slice(2)).then(
     (exitCode) => { process.exitCode = exitCode; },
     () => {
-      process.stdout.write(`${JSON.stringify({ ok: false, status: 'ERROR', code: 'PROFILE_OPEN_FAILED' })}\n`);
+      process.stdout.write(`${formatError('PROFILE_OPEN_FAILED')}\n`);
       process.exitCode = 5;
     },
   );

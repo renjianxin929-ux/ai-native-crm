@@ -131,7 +131,7 @@ describe('v0.2.2 C0 profile validation', () => {
     expect(existsSync(absoluteInput)).toBe(false);
   });
 
-  it('fails closed for missing commands and refuses catalog without opening a database', async () => {
+  it('fails closed for missing commands and serves catalog without opening a database', async () => {
     const fixture = useTemporaryProfileHome();
     const noCommandOutput: string[] = [];
     const catalogOutput: string[] = [];
@@ -139,8 +139,13 @@ describe('v0.2.2 C0 profile validation', () => {
     expect(await runCli(['--profile', 'sandbox'], (line) => noCommandOutput.push(line))).toBe(2);
     expect(JSON.parse(noCommandOutput[0] ?? '{}')).toMatchObject({ ok: false, status: 'ERROR', code: 'COMMAND_REQUIRED' });
 
-    expect(await runCli(['--profile', 'sandbox', 'catalog'], (line) => catalogOutput.push(line))).toBe(2);
-    expect(JSON.parse(catalogOutput[0] ?? '{}')).toMatchObject({ ok: false, status: 'ERROR', code: 'UNKNOWN_COMMAND' });
+    expect(await runCli(['--profile', 'sandbox', 'catalog'], (line) => catalogOutput.push(line))).toBe(0);
+    expect(JSON.parse(catalogOutput[0] ?? '{}')).toMatchObject({
+      ok: true,
+      status: 'COMPLETED',
+      profile: 'sandbox',
+      command: 'catalog',
+    });
 
     expect(existsSync(fixture.profilesRoot)).toBe(false);
   });

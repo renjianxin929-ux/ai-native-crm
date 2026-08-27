@@ -1,0 +1,120 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+const { defaultDbTripwire } = vi.hoisted(() => ({
+  defaultDbTripwire: vi.fn(async () => {
+    throw new Error('C1 cap parsing must not call getDb().');
+  }),
+}));
+
+vi.mock('../lib/db', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../lib/db')>();
+  return { ...actual, getDb: defaultDbTripwire };
+});
+
+import { parseCliArgs } from '../cli/parse';
+import { runCli } from '../cli/main';
+import { PRODUCTION_CAPABILITY_EXECUTION } from '../lib/capabilities/execution/production';
+
+afterEach(() => {
+  defaultDbTripwire.mockClear();
+  vi.restoreAllMocks();
+});
+
+describe('v0.2.2 C1 CLI parsing', () => {
+  it('parses cap customer.search and JSON args', () => {
+    const parsed = parseCliArgs([
+      '--profile',
+      'sandbox',
+      'cap',
+      'customer.search',
+      '--args',
+      '{"name_query":"星河"}',
+    ]);
+
+    expect(parsed).toEqual({
+      ok: true,
+      profile: 'sandbox',
+      command: {
+        name: 'cap',
+        capability_id: 'customer.search',
+        args: { name_query: '星河' },
+      },
+    });
+  });
+
+  it('preserves JSON fields exactly and does not correct query to an official field', () => {
+    const parsed = parseCliArgs([
+      '--profile',
+      'sandbox',
+      'cap',
+      'customer.search',
+      '--args',
+      '{"query":"星河"}',
+    ]);
+
+    expect(parsed).toMatchObject({
+      ok: true,
+      command: {
+        name: 'cap',
+        capability_id: 'customer.search',
+        args: { query: '星河' },
+      },
+    });
+  });
+
+  it('rejects malformed --args JSON', () => {
+    expect(parseCliArgs([
+      '--profile',
+      'sandbox',
+      'cap',
+      'customer.search',
+      '--args',
+      '{bad json}',
+    ])).toEqual({ ok: false, profile: 'sandbox', code: 'ARGUMENT_ERROR' });
+  });
+
+  it('rejects cap without a capability ID', () => {
+    expect(parseCliArgs(['--profile', 'sandbox', 'cap']))
+      .toEqual({ ok: false, profile: 'sandbox', code: 'ARGUMENT_ERROR' });
+  });
+
+  it('preserves an unknown capability ID instead of rewriting it to customer.search', () => {
+    expect(parseCliArgs(['--profile', 'sandbox', 'cap', 'customer.find']))
+      .toEqual({
+        ok: true,
+        profile: 'sandbox',
+        command: { name: 'cap', capability_id: 'customer.find', args: undefined },
+      });
+  });
+
+  it('reports malformed command syntax and unknown commands as parser errors', () => {
+    expect(parseCliArgs(['--profile', 'sandbox', 'catalog', '--unexpected']))
+      .toEqual({ ok: false, profile: 'sandbox', code: 'ARGUMENT_ERROR' });
+    expect(parseCliArgs(['--profile', 'sandbox', 'not-a-command']))
+      .toEqual({ ok: false, profile: 'sandbox', code: 'UNKNOWN_COMMAND' });
+  });
+
+  it('does not execute a parsed cap command', async () => {
+    const invoke = vi.spyOn(PRODUCTION_CAPABILITY_EXECUTION, 'invoke');
+    const output: string[] = [];
+
+    const exitCode = await runCli([
+      '--profile',
+      'sandbox',
+      'cap',
+      'customer.search',
+      '--args',
+      '{"name_query":"星河"}',
+    ], (line) => output.push(line));
+
+    // Exit code 2 is intentionally locked for the C1 disabled execution path.
+    expect(exitCode).toBe(2);
+    expect(output).toEqual([JSON.stringify({
+      ok: false,
+      status: 'ERROR',
+      code: 'CAPABILITY_EXECUTION_NOT_ENABLED',
+    })]);
+    expect(defaultDbTripwire).not.toHaveBeenCalled();
+    expect(invoke).not.toHaveBeenCalled();
+  });
+});
