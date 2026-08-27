@@ -11,6 +11,7 @@ import {
   formatCapabilityConfirmationRequired,
   formatCapabilityExecutionNotEnabled,
   formatCatalog,
+  formatConfirmationResult,
   formatError,
   formatHelp,
   formatProfileStatus,
@@ -25,7 +26,12 @@ import {
   isC3CoreReadCapability,
   RuntimeHydratorError,
 } from './runtimeHydrator';
-import { persistPendingProposal, PendingProposalError } from './pendingProposal';
+import {
+  consumePendingProposal,
+  persistPendingProposal,
+  PendingProposalError,
+  readPendingProposal,
+} from './pendingProposal';
 import {
   clearProfileCustomer,
   selectProfileCustomer,
@@ -39,10 +45,15 @@ import {
 } from '../lib/db';
 import { PRODUCTION_CAPABILITY_EXECUTION } from '../lib/capabilities/execution/production';
 import { findPlannerTool } from '../lib/planner/plannerToolSurface';
-import { getCanonicalProposal } from '../lib/salesAgentTools/sessionWriteStateStore';
+import { approvedCrmWriteBoundary } from '../lib/salesAgentTools/approvedCrmWriteBoundary';
+import { SALES_AGENT_APP_CLOCK } from '../lib/salesAgentTools/appClock';
+import { SalesAgentSession } from '../lib/salesAgentTools/agentSession';
+import type { AgentWriteProposal } from '../lib/salesAgentTools/confirmedWrite';
+import { getCanonicalProposal, rehydrateCanonicalProposal } from '../lib/salesAgentTools/sessionWriteStateStore';
 
 type CliLineWriter = (line: string) => void;
 type ParsedCapCommand = Extract<ParsedCliCommand, { readonly name: 'cap' }>;
+type ParsedConfirmCommand = Extract<ParsedCliCommand, { readonly name: 'confirm' }>;
 
 function hasC4CustomerScope(profile: string, command: ParsedCapCommand): boolean {
   if (typeof command.args === 'object' && command.args !== null && !Array.isArray(command.args)) {
@@ -295,6 +306,134 @@ async function runC4WriteProposalCapability(
 }
 
 /**
+ * C4 persists no new strong-confirmation token: for its sole destructive
+ * capability, the already-issued canonical nonce is the phrase exposed in the
+ * C4 envelope. This check only admits that existing nonce to confirmWriteByRef.
+ */
+function requiresExistingStrongConfirmationPhrase(proposal: AgentWriteProposal): boolean {
+  return proposal.tool_id === 'delete_customer' && proposal.operation === 'delete';
+}
+
+function pendingReadExitCode(error: PendingProposalError): number {
+  // The stored profile is part of the confirmation binding. A mismatch is a
+  // failed confirmation; filesystem/JSON/consume failures remain pending I/O.
+  return error.code === 'PENDING_PROPOSAL_PROFILE_MISMATCH' ? 4 : 7;
+}
+
+function restoredProposalFailure(error: unknown): { readonly code: string; readonly exitCode: number } {
+  const message = error instanceof Error ? error.message : '';
+  if (message === 'Confirmation replay rejected.') {
+    return { code: 'CONFIRMATION_REPLAY_REJECTED', exitCode: 4 };
+  }
+  if (message.includes('hash mismatch')) {
+    return { code: 'PENDING_PROPOSAL_HASH_MISMATCH', exitCode: 4 };
+  }
+  return { code: 'PENDING_PROPOSAL_CORRUPT', exitCode: 7 };
+}
+
+function confirmationFailureCode(error: unknown, strongConfirmation: boolean): string {
+  const message = error instanceof Error ? error.message : '';
+  if (message === 'Confirmation replay rejected.') return 'CONFIRMATION_REPLAY_REJECTED';
+  if (message.includes('does not match the exact proposal')) {
+    return strongConfirmation ? 'CONFIRMATION_PHRASE_MISMATCH' : 'CONFIRMATION_MISMATCH';
+  }
+  return 'CONFIRMATION_FAILED';
+}
+
+/**
+ * C5 transport bridge: pending file → checked canonical proposal → existing
+ * SalesAgentSession exact confirmation → existing approved safe-write boundary.
+ * It never routes the Agent through a confirm path or re-invokes the engine.
+ */
+async function runC5Confirm(
+  profile: string,
+  command: ParsedConfirmCommand,
+  writeLine: CliLineWriter,
+): Promise<number> {
+  let loaded;
+  try {
+    // This happens before opening the profile DB. Missing/corrupt/mismatched
+    // pending data therefore cannot create a profile DB or mutate business rows.
+    loaded = readPendingProposal(profile, command.proposal_id);
+  } catch (error) {
+    if (error instanceof PendingProposalError) {
+      writeLine(formatError(error.code));
+      return pendingReadExitCode(error);
+    }
+    writeLine(formatError('PENDING_PROPOSAL_CORRUPT'));
+    return 7;
+  }
+
+  const strongConfirmation = requiresExistingStrongConfirmationPhrase(loaded.proposal);
+  if (strongConfirmation && command.phrase === undefined) {
+    writeLine(formatError('CONFIRMATION_PHRASE_REQUIRED'));
+    return 4;
+  }
+  if (!strongConfirmation && command.phrase !== undefined) {
+    writeLine(formatError('CONFIRMATION_PHRASE_UNEXPECTED'));
+    return 4;
+  }
+
+  let proposal: AgentWriteProposal;
+  try {
+    // Rehydrate into the one existing state store. It recomputes the existing
+    // canonical hash; it does not mint an ID, hash, nonce, or confirmation.
+    proposal = rehydrateCanonicalProposal(loaded.proposal);
+  } catch (error) {
+    const failure = restoredProposalFailure(error);
+    writeLine(formatError(failure.code));
+    return failure.exitCode;
+  }
+
+  let handle: Awaited<ReturnType<typeof openProfileDatabase>> | undefined;
+  try {
+    enableProfileRuntimeFailClosed();
+    handle = await openProfileDatabase(profile);
+    bindProfileRuntimeDatabase(handle.db);
+
+    // The temporary session only supplies the existing customer-owned registry
+    // lookup. confirmWriteByRef remains the exact nonce/replay gate and the
+    // approved boundary remains the only business-write path.
+    const session = new SalesAgentSession(proposal.customer_id, null);
+    const result = await session.confirmWriteByRef({
+      proposal_id: proposal.proposal_id,
+      // Strong confirmations pass the user's phrase directly into the
+      // existing exact-nonce validator. Normal CLI confirm has no phrase and
+      // transports the immutable canonical nonce from the restored record.
+      nonce: strongConfirmation ? command.phrase ?? '' : proposal.nonce ?? '',
+      confirmed_at: SALES_AGENT_APP_CLOCK.now(),
+    }, approvedCrmWriteBoundary);
+
+    // Consume only after safe write success. The pending reader has closed all
+    // descriptors before its Windows-safe unlink.
+    try {
+      consumePendingProposal(loaded.location, proposal);
+    } catch (error) {
+      if (error instanceof PendingProposalError) {
+        writeLine(formatError(error.code));
+        return 7;
+      }
+      writeLine(formatError('PENDING_PROPOSAL_CONSUME_FAILED'));
+      return 7;
+    }
+
+    writeLine(formatConfirmationResult(profile, proposal.proposal_id, result));
+    return 0;
+  } catch (error) {
+    const profileCode = profileErrorCode(error);
+    if (profileCode !== undefined) {
+      writeLine(formatError(profileCode));
+      return 5;
+    }
+    writeLine(formatError(confirmationFailureCode(error, strongConfirmation)));
+    return 4;
+  } finally {
+    unbindProfileRuntimeDatabase();
+    if (handle !== undefined) await handle.close();
+  }
+}
+
+/**
  * C1 catalog surface.  The existing C0 profile gate remains first: no command
  * can infer a profile or open a profile database before explicit validation.
  */
@@ -339,10 +478,7 @@ export async function runCli(
       return runC3CoreReadCapability(profile, parsed.command, writeLine);
     }
     case 'confirm':
-      // C4 recognizes the command shape but intentionally does not reload a
-      // pending proposal or call the existing exact-confirmation executor.
-      writeLine(formatError('CONFIRM_NOT_ENABLED'));
-      return 2;
+      return runC5Confirm(profile, parsed.command, writeLine);
     case 'profile-status':
       try {
         const handle = await openProfileDatabase(profile);

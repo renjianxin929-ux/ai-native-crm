@@ -75,6 +75,22 @@ export function formatCapabilityResult(
   });
 }
 
+/** Existing confirmed-write result, exposed by the C5 CLI transport only after safe write success. */
+export function formatConfirmationResult(
+  profile: string,
+  proposalId: string,
+  result: unknown,
+): string {
+  return formatJson({
+    ok: true,
+    status: 'COMPLETED',
+    command: 'confirm',
+    profile,
+    proposal_id: proposalId,
+    result,
+  });
+}
+
 function confirmationHumanSummary(proposal: AgentWriteProposal): string {
   const card = projectConfirmationCard(proposal);
   return [

@@ -34,6 +34,8 @@ export type ParsedCliCommand =
   | {
     readonly name: 'confirm';
     readonly proposal_id: string;
+    /** Required only when the restored proposal is an existing strong confirmation. */
+    readonly phrase?: string;
   };
 
 export interface ParsedCliSuccess {
@@ -123,10 +125,17 @@ function parseSessionCommand(profile: string, argv: readonly string[]): ParsedCl
 
 function parseConfirmCommand(profile: string, argv: readonly string[]): ParsedCliArgs {
   const proposal_id = argv[1];
-  if (argv.length !== 2 || argv[0] !== '--proposal' || proposal_id === undefined || proposal_id.trim().length === 0) {
+  if (argv[0] !== '--proposal' || proposal_id === undefined || proposal_id.trim().length === 0) {
     return argumentError(profile);
   }
-  return { ok: true, profile, command: { name: 'confirm', proposal_id } };
+  if (argv.length === 2) {
+    return { ok: true, profile, command: { name: 'confirm', proposal_id } };
+  }
+  const phrase = argv[3];
+  if (argv.length !== 4 || argv[2] !== '--phrase' || phrase === undefined || phrase.trim().length === 0) {
+    return argumentError(profile);
+  }
+  return { ok: true, profile, command: { name: 'confirm', proposal_id, phrase } };
 }
 
 /**

@@ -240,7 +240,7 @@ describe('v0.2.2 C4 write proposal persistence', () => {
     expect(await businessRows('sandbox')).toEqual(before);
   });
 
-  it('leaves confirm disabled, preserves C3 read behavior, and keeps customer.find closed', async () => {
+  it('confirms through C5, preserves C3 read behavior, and keeps customer.find closed', async () => {
     useTemporaryProfileHome();
     await seedProfileRows('sandbox');
     const before = await businessRows('sandbox');
@@ -254,9 +254,16 @@ describe('v0.2.2 C4 write proposal persistence', () => {
       ['--profile', 'sandbox', 'confirm', '--proposal', proposal.envelope.proposal_id as string],
       (line) => output.push(line),
     );
-    expect(confirmExit).toBe(2);
-    expect(output).toEqual([JSON.stringify({ ok: false, status: 'ERROR', code: 'CONFIRM_NOT_ENABLED' })]);
-    expect(await businessRows('sandbox')).toEqual(before);
+    expect(confirmExit).toBe(0);
+    expect(JSON.parse(output[0] ?? '{}')).toMatchObject({
+      ok: true,
+      status: 'COMPLETED',
+      command: 'confirm',
+      profile: 'sandbox',
+      proposal_id: proposal.envelope.proposal_id,
+    });
+    const afterConfirm = await businessRows('sandbox');
+    expect(afterConfirm.follow_up_records).toHaveLength(before.follow_up_records.length + 1);
 
     const unknown = await runCap('sandbox', 'customer.find', { name_query: '星河' });
     expect(unknown).toEqual({

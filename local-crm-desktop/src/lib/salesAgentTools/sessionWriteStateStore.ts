@@ -63,6 +63,35 @@ export function registerCanonicalProposal(proposal: AgentWriteProposal): AgentWr
   return rebuildProposalFromSnapshot(snapshot);
 }
 
+/**
+ * Restores an already-issued canonical proposal after a process restart.
+ * Unlike registerCanonicalProposal this is an integrity gate: the persisted
+ * proposal_hash must already equal the existing canonical snapshot hash. It
+ * never creates an ID, nonce, or alternate confirmation state.
+ */
+export function rehydrateCanonicalProposal(proposal: AgentWriteProposal): AgentWriteProposal {
+  const snapshot = createCanonicalProposalSnapshot(proposal);
+  if (snapshot.proposal_hash !== proposal.proposal_hash) {
+    throw new Error('Canonical proposal hash mismatch; confirmation rejected.');
+  }
+
+  const state = stateFor(proposal.customer_id);
+  if (state.consumedProposalIds.has(proposal.proposal_id)) {
+    throw new Error('Confirmation replay rejected.');
+  }
+  const existing = state.snapshots.get(proposal.proposal_id);
+  if (existing) {
+    const rebuilt = rebuildProposalFromSnapshot(existing);
+    if (rebuilt.proposal_hash !== proposal.proposal_hash || rebuilt.nonce !== proposal.nonce) {
+      throw new Error('Canonical proposal identity collision; confirmation rejected.');
+    }
+    return rebuilt;
+  }
+
+  state.snapshots.set(snapshot.proposal_id, snapshot);
+  return rebuildProposalFromSnapshot(snapshot);
+}
+
 export function setCanonicalGroupedOperationSelection(
   proposalId: string,
   customerId: string,
