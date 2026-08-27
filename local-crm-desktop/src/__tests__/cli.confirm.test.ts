@@ -12,6 +12,7 @@ import { __resetSessionWriteStateStoreForTests } from '../lib/salesAgentTools/se
 
 const NOW = '2026-08-27T00:00:00.000Z';
 const CUSTOMER_ID = 'c5-xinghe';
+const SECOND_CUSTOMER_ID = 'c6-haiyue';
 
 interface TemporaryProfileHome {
   restore(): void;
@@ -300,9 +301,10 @@ describe('v0.2.2 C5 cross-process CLI confirm', () => {
     expect(await followUpCount('sandbox')).toBe(initialCount);
   });
 
-  it('requires the existing delete nonce as the strong-confirmation phrase before customer.delete can run', async () => {
+  it('C6 reuses the pending delete nonce as the only strong-confirmation phrase and consumes it exactly once', async () => {
     useTemporaryProfileHome();
     await seedCustomer('sandbox');
+    await seedCustomer('sandbox', SECOND_CUSTOMER_ID, '深圳海岳科技');
     const generated = await invoke([
       '--profile', 'sandbox', 'cap', 'customer.delete', '--args', JSON.stringify({ customer_id: CUSTOMER_ID }),
     ]);
@@ -311,17 +313,20 @@ describe('v0.2.2 C5 cross-process CLI confirm', () => {
       ok: true,
       status: 'STRONG_CONFIRMATION_REQUIRED',
       proposal_id: expect.any(String),
+      confirm_phrase_expected: expect.any(String),
     });
     const proposalId = generated.envelope.proposal_id as string;
     const location = resolvePendingProposalLocation('sandbox', proposalId);
     const phrase = (JSON.parse(readFileSync(location.path, 'utf8')) as { nonce?: unknown }).nonce;
     expect(typeof phrase).toBe('string');
+    expect(generated.envelope.confirm_phrase_expected).toBe(phrase);
 
     __resetSessionWriteStateStoreForTests();
     const missingPhrase = await confirm('sandbox', proposalId);
     expect(missingPhrase.exitCode).toBe(4);
     expect(missingPhrase.envelope).toEqual({ ok: false, status: 'ERROR', code: 'CONFIRMATION_PHRASE_REQUIRED' });
     expect(await customerExists('sandbox')).toBe(true);
+    expect(existsSync(location.path)).toBe(true);
 
     const wrongPhrase = await confirm('sandbox', proposalId, 'wrong existing nonce');
     expect(wrongPhrase.exitCode).toBe(4);
@@ -332,7 +337,25 @@ describe('v0.2.2 C5 cross-process CLI confirm', () => {
     __resetSessionWriteStateStoreForTests();
     const success = await confirm('sandbox', proposalId, phrase as string);
     expect(success.exitCode).toBe(0);
+    expect(success.envelope).toMatchObject({
+      ok: true,
+      status: 'COMPLETED',
+      command: 'confirm',
+      proposal_id: proposalId,
+    });
     expect(await customerExists('sandbox')).toBe(false);
+    expect(existsSync(location.path)).toBe(false);
+
+    __resetSessionWriteStateStoreForTests();
+    const replay = await confirm('sandbox', proposalId, phrase as string);
+    expect(replay.exitCode).toBe(7);
+    expect(replay.envelope).toEqual({
+      ok: false,
+      status: 'ERROR',
+      code: 'PENDING_PROPOSAL_NOT_FOUND',
+    });
+    expect(await customerExists('sandbox')).toBe(false);
+    expect(await customerExists('sandbox', SECOND_CUSTOMER_ID)).toBe(true);
     expect(existsSync(location.path)).toBe(false);
   });
 
