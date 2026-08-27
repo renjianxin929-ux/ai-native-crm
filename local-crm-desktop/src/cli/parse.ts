@@ -30,6 +30,10 @@ export type ParsedCliCommand =
     readonly args: unknown;
     /** Present only for the explicit import.file.preview file transport. */
     readonly file_path?: string;
+  }
+  | {
+    readonly name: 'confirm';
+    readonly proposal_id: string;
   };
 
 export interface ParsedCliSuccess {
@@ -117,6 +121,14 @@ function parseSessionCommand(profile: string, argv: readonly string[]): ParsedCl
   }
 }
 
+function parseConfirmCommand(profile: string, argv: readonly string[]): ParsedCliArgs {
+  const proposal_id = argv[1];
+  if (argv.length !== 2 || argv[0] !== '--proposal' || proposal_id === undefined || proposal_id.trim().length === 0) {
+    return argumentError(profile);
+  }
+  return { ok: true, profile, command: { name: 'confirm', proposal_id } };
+}
+
 /**
  * Parse the intentionally small C1/C2 CLI grammar. Profile-name validation is
  * owned by main.ts so it remains on the existing C0 security gate.
@@ -152,6 +164,8 @@ export function parseCliArgs(argv: readonly string[]): ParsedCliArgs {
       return parseSessionCommand(profile, commandArgs);
     case 'cap':
       return parseCapabilityCommand(profile, commandArgs);
+    case 'confirm':
+      return parseConfirmCommand(profile, commandArgs);
     default:
       return { ok: false, profile, code: 'UNKNOWN_COMMAND' };
   }

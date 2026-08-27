@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { buildCapabilityCatalog } from './catalog';
 import {
   formatCapabilityResult,
+  formatCapabilityConfirmationRequired,
   formatCapabilityExecutionNotEnabled,
   formatCatalog,
   formatError,
@@ -20,9 +21,11 @@ import { ProfileRuntimeError, validateProfileName } from './profile';
 import { openProfileDatabase } from './profileDb';
 import {
   hydrateRuntimeInvocation,
+  isC4WriteProposalCapability,
   isC3CoreReadCapability,
   RuntimeHydratorError,
 } from './runtimeHydrator';
+import { persistPendingProposal, PendingProposalError } from './pendingProposal';
 import {
   clearProfileCustomer,
   selectProfileCustomer,
@@ -36,9 +39,24 @@ import {
 } from '../lib/db';
 import { PRODUCTION_CAPABILITY_EXECUTION } from '../lib/capabilities/execution/production';
 import { findPlannerTool } from '../lib/planner/plannerToolSurface';
+import { getCanonicalProposal } from '../lib/salesAgentTools/sessionWriteStateStore';
 
 type CliLineWriter = (line: string) => void;
 type ParsedCapCommand = Extract<ParsedCliCommand, { readonly name: 'cap' }>;
+
+function hasC4CustomerScope(profile: string, command: ParsedCapCommand): boolean {
+  if (typeof command.args === 'object' && command.args !== null && !Array.isArray(command.args)) {
+    const customerId = (command.args as Record<string, unknown>).customer_id;
+    if (typeof customerId === 'string' && customerId.trim().length > 0) return true;
+  }
+  try {
+    return showProfileSession(profile).selected_customer_id !== null;
+  } catch {
+    // This is only the C4 admission check. The C3 closed surface remains the
+    // fallback when a write invocation has no usable customer scope yet.
+    return false;
+  }
+}
 
 function profileErrorCode(error: unknown): string | undefined {
   return error instanceof ProfileRuntimeError ? error.code : undefined;
@@ -169,6 +187,114 @@ async function runC3CoreReadCapability(
 }
 
 /**
+ * C4 runs only confirmation-gated write capabilities that have an existing
+ * canonical handoff. It persists that proposal and deliberately stops before
+ * any post-confirmation execution path.
+ */
+async function runC4WriteProposalCapability(
+  profile: string,
+  command: ParsedCapCommand,
+  writeLine: CliLineWriter,
+): Promise<number> {
+  const descriptor = findPlannerTool(command.capability_id);
+  if (descriptor === null) {
+    writeLine(formatError('CAPABILITY_NOT_FOUND'));
+    return 2;
+  }
+  if (!isC4WriteProposalCapability(descriptor.capability_id)) {
+    writeLine(formatCapabilityExecutionNotEnabled());
+    return 2;
+  }
+
+  let handle: Awaited<ReturnType<typeof openProfileDatabase>> | undefined;
+  try {
+    // Bind before profile open. Any db.ts access while unbound therefore fails
+    // closed instead of reaching the desktop production database.
+    enableProfileRuntimeFailClosed();
+    handle = await openProfileDatabase(profile);
+    bindProfileRuntimeDatabase(handle.db);
+
+    const session = descriptor.scope_requirement === 'CUSTOMER'
+      ? showProfileSession(profile)
+      : undefined;
+    const invocation = await hydrateRuntimeInvocation({
+      profile,
+      profileDb: handle.db,
+      capability_id: descriptor.capability_id,
+      args: command.args,
+      ...(session !== undefined ? { session } : {}),
+    });
+    const outcome = await PRODUCTION_CAPABILITY_EXECUTION.invoke(invocation);
+
+    if (outcome.status === 'CONFIRMATION_REQUIRED' || outcome.status === 'STRONG_CONFIRMATION_REQUIRED') {
+      const proposalId = outcome.confirmation_handoff?.proposal_id;
+      const customerId = invocation.scope.customer_id;
+      if (proposalId === undefined || typeof customerId !== 'string' || customerId.trim().length === 0) {
+        writeLine(formatError('EXECUTION_ERROR'));
+        return 10;
+      }
+
+      let proposal;
+      try {
+        // Rebuild from the existing canonical snapshot. This verifies the
+        // existing hash/schema and never creates a C4 proposal or nonce.
+        proposal = getCanonicalProposal(proposalId, customerId);
+      } catch {
+        writeLine(formatError('EXECUTION_ERROR'));
+        return 10;
+      }
+      if (proposal === null || proposal.proposal_id !== proposalId || proposal.customer_id !== customerId) {
+        writeLine(formatError('EXECUTION_ERROR'));
+        return 10;
+      }
+
+      try {
+        persistPendingProposal(profile, proposal);
+        writeLine(formatCapabilityConfirmationRequired(
+          profile,
+          invocation.capability_id,
+          outcome.status,
+          proposal,
+        ));
+        return 0;
+      } catch (error) {
+        if (error instanceof PendingProposalError || error instanceof TypeError) {
+          writeLine(formatError('EXECUTION_ERROR'));
+          return 10;
+        }
+        throw error;
+      }
+    }
+
+    if (outcome.status === 'EXECUTION_ERROR') {
+      writeLine(formatError(outcome.error_code));
+      return 10;
+    }
+
+    // C4 must never claim COMPLETED for a write. SUCCESS would mean an
+    // unexpected auto-write path and is a closed acceptance failure.
+    writeLine(formatError('EXECUTION_ERROR'));
+    return 10;
+  } catch (error) {
+    const profileCode = profileErrorCode(error);
+    if (profileCode !== undefined) {
+      writeLine(formatError(profileCode));
+      return 5;
+    }
+    const code = hydratorErrorCode(error) ?? sessionErrorCode(error);
+    if (code !== undefined) {
+      writeLine(formatError(code));
+      return capabilityErrorExitCode(code);
+    }
+    writeLine(formatError('PROFILE_OPEN_FAILED'));
+    return 5;
+  } finally {
+    unbindProfileRuntimeDatabase();
+    if (handle !== undefined) await handle.close();
+  }
+}
+
+/**
  * C1 catalog surface.  The existing C0 profile gate remains first: no command
  * can infer a profile or open a profile database before explicit validation.
  */
@@ -202,8 +328,21 @@ export async function runCli(
     case 'help':
       writeLine(formatHelp());
       return 0;
-    case 'cap':
+    case 'cap': {
+      if (isC4WriteProposalCapability(parsed.command.capability_id)) {
+        if (!hasC4CustomerScope(profile, parsed.command)) {
+          writeLine(formatCapabilityExecutionNotEnabled());
+          return 2;
+        }
+        return runC4WriteProposalCapability(profile, parsed.command, writeLine);
+      }
       return runC3CoreReadCapability(profile, parsed.command, writeLine);
+    }
+    case 'confirm':
+      // C4 recognizes the command shape but intentionally does not reload a
+      // pending proposal or call the existing exact-confirmation executor.
+      writeLine(formatError('CONFIRM_NOT_ENABLED'));
+      return 2;
     case 'profile-status':
       try {
         const handle = await openProfileDatabase(profile);

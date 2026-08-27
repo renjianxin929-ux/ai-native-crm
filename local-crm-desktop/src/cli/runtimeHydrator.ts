@@ -70,6 +70,22 @@ export function isC3CoreReadCapability(capabilityId: string): boolean {
   return C3_CORE_READ_CAPABILITY_ID_SET.has(capabilityId);
 }
 
+/**
+ * C4 intentionally enables only two representative confirmation-gated write
+ * capabilities. This is separate from (and must never expand) the C3 READ
+ * allowlist above.
+ */
+export const C4_WRITE_PROPOSAL_CAPABILITY_IDS = Object.freeze([
+  'follow_up.create',
+  'customer.delete',
+] as const);
+
+const C4_WRITE_PROPOSAL_CAPABILITY_ID_SET: ReadonlySet<string> = new Set(C4_WRITE_PROPOSAL_CAPABILITY_IDS);
+
+export function isC4WriteProposalCapability(capabilityId: string): boolean {
+  return C4_WRITE_PROPOSAL_CAPABILITY_ID_SET.has(capabilityId);
+}
+
 function isPlainObject(value: unknown): value is JsonRecord {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
   const prototype = Object.getPrototypeOf(value);
@@ -321,6 +337,56 @@ async function hydrateCustomerScopedRead(
 }
 
 /**
+ * C4 invokes the existing engine with the exact existing write-adapter shape:
+ * agent args remain business fields, customer_id is only a scope overlay, and
+ * the profile-owned DB handle is injected only where the adapter requires it.
+ */
+function hydrateC4WriteProposalCapability(
+  input: RuntimeHydratorInput,
+  descriptor: PlannerToolDescriptor,
+  capabilityVersion: string,
+): CapabilityInvocation {
+  if (!isC4WriteProposalCapability(descriptor.capability_id)) {
+    throw new RuntimeHydratorError(
+      'CAPABILITY_NOT_SUPPORTED',
+      `${descriptor.capability_id} is not hydrated by the C4 write-proposal slice.`,
+    );
+  }
+
+  const customerId = resolveCustomerScope(input, descriptor);
+  const args = requirePlainObject(
+    input.args ?? {},
+    `${descriptor.capability_id} requires an object of agent arguments.`,
+  );
+  assertAllowedFields(args, descriptor.input_schema.allowed_fields, descriptor.capability_id, ['customer_id']);
+  const businessArgs: JsonRecord = { ...args };
+  delete businessArgs.customer_id;
+  assertDatabaseLike(input.profileDb);
+
+  switch (descriptor.capability_id) {
+    case 'follow_up.create':
+      return {
+        capability_id: descriptor.capability_id,
+        capability_version: capabilityVersion,
+        input: businessArgs,
+        scope: { customer_id: customerId },
+      };
+    case 'customer.delete':
+      return {
+        capability_id: descriptor.capability_id,
+        capability_version: capabilityVersion,
+        input: { db: input.profileDb },
+        scope: { customer_id: customerId },
+      };
+    default:
+      throw new RuntimeHydratorError(
+        'CAPABILITY_NOT_SUPPORTED',
+        `${descriptor.capability_id} is not hydrated by the C4 write-proposal slice.`,
+      );
+  }
+}
+
+/**
  * Converts an already-selected capability and pure agent args into the exact
  * invocation shape consumed by the existing engine. It never selects or runs
  * a capability, and it has no default database fallback.
@@ -352,6 +418,9 @@ export async function hydrateRuntimeInvocation(input: RuntimeHydratorInput): Pro
     case 'import.file.preview':
       return hydrateImportFilePreview(input, descriptor, capabilityVersion);
     default:
+      if (isC4WriteProposalCapability(descriptor.capability_id)) {
+        return hydrateC4WriteProposalCapability(input, descriptor, capabilityVersion);
+      }
       throw new RuntimeHydratorError(
         'CAPABILITY_NOT_SUPPORTED',
         `${descriptor.capability_id} is not hydrated by the C3 runtime slice.`,
