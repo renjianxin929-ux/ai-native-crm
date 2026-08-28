@@ -13,13 +13,10 @@ import { SalesAgentSession } from '../lib/salesAgentTools/agentSession';
 import { __resetSessionWriteStateStoreForTests } from '../lib/salesAgentTools/sessionWriteStateStore';
 
 const PROFILE = 'sandbox';
-const CUSTOMER_ID = 'c4-profile-xinghe';
+const CUSTOMER_ID = 'c4-follow-up-time-xinghe';
 const NOW = '2026-08-27T00:00:00.000Z';
-const PROFILE_PATCH = Object.freeze({
-  industry: '跨境电商',
-  region: '广州',
-  notes: '仅在人工确认后写入的资料更新',
-});
+const ORIGINAL_NEXT_FOLLOW_UP_AT = '2026-09-06T09:00:00+08:00';
+const NEXT_FOLLOW_UP_AT = '2026-09-10T15:00:00+08:00';
 
 interface TemporaryProfileHome {
   readonly home: string;
@@ -44,7 +41,7 @@ const temporaryHomes: TemporaryProfileHome[] = [];
 let productionDbBefore: readonly ProductionDbSentinel[];
 
 function useTemporaryProfileHome(): TemporaryProfileHome {
-  const home = mkdtempSync(join(tmpdir(), 'localcrm-c4-profile-update-'));
+  const home = mkdtempSync(join(tmpdir(), 'localcrm-c4-follow-up-time-'));
   const previousUserProfile = process.env.USERPROFILE;
   const previousHome = process.env.HOME;
   process.env.USERPROFILE = home;
@@ -89,18 +86,15 @@ async function seedCustomer(profile = PROFILE): Promise<void> {
   try {
     await handle.db.execute(
       `INSERT INTO customers (
-        id, name, customer_grade, stage, wechat_add_status, intent_level,
-        phone_feedback, rough_visit_time_text, next_follow_up_at, notes,
-        region, industry, created_at, updated_at
-      ) VALUES (?, ?, 'A', 'QUALIFIED', 'ADDED', 'HIGH', 'INTERESTED', ?, ?, ?, ?, ?, ?, ?)`,
+        id, name, customer_grade, stage, intent_level, next_follow_up_at,
+        industry, opportunity_amount, created_at, updated_at
+      ) VALUES (?, ?, 'A', 'QUALIFIED', 'HIGH', ?, ?, ?, ?, ?)`,
       [
         CUSTOMER_ID,
         '广州星河科技',
-        '2026-09-05 下午',
-        '2026-09-06T09:00:00+08:00',
-        '原始备注',
-        '原始区域',
+        ORIGINAL_NEXT_FOLLOW_UP_AT,
         '原始行业',
+        80000,
         NOW,
         NOW,
       ],
@@ -135,11 +129,11 @@ async function invoke(argv: readonly string[]): Promise<CliResult> {
   };
 }
 
-async function runProfileUpdate(args: unknown): Promise<CliResult> {
+async function runNextFollowUpTimeUpdate(args: unknown): Promise<CliResult> {
   return invoke([
     '--profile', PROFILE,
     'cap',
-    'customer.profile.update',
+    'customer.next_follow_up_time.update',
     '--args',
     JSON.stringify(args),
   ]);
@@ -150,20 +144,14 @@ function readPendingRecord(proposalId: string): Record<string, unknown> {
   return JSON.parse(readFileSync(location.path, 'utf8')) as Record<string, unknown>;
 }
 
-function assertOnlyRequestedProfileFieldsChanged(
+function assertOnlyFollowUpTimeChanged(
   before: Readonly<Record<string, unknown>>,
   after: Readonly<Record<string, unknown>>,
 ): void {
-  for (const [field, value] of Object.entries(PROFILE_PATCH)) {
-    expect(after[field]).toBe(value);
-  }
+  expect(after.next_follow_up_at).toBe(NEXT_FOLLOW_UP_AT);
+  expect(after.id).toBe(before.id);
 
-  const allowedChanges = new Set<string>([
-    ...Object.keys(PROFILE_PATCH),
-    // Repository bookkeeping is the sole non-profile mutation performed by
-    // its existing updateCustomer implementation.
-    'updated_at',
-  ]);
+  const allowedChanges = new Set(['next_follow_up_at', 'updated_at']);
   for (const [field, value] of Object.entries(before)) {
     if (!allowedChanges.has(field)) expect(after[field]).toEqual(value);
   }
@@ -184,27 +172,29 @@ afterAll(() => {
   expect(captureProductionDbSentinels()).toEqual(productionDbBefore);
 });
 
-describe('v0.2.2 customer.profile.update C4/C5 CLI transport', () => {
+describe('v0.2.2 customer.next_follow_up_time.update C4/C5 CLI transport', () => {
   it('publishes the capability as supported and still requires an explicit profile', async () => {
     const fixture = useTemporaryProfileHome();
     const catalog = await invoke(['--profile', PROFILE, 'catalog']);
     const capabilities = catalog.envelope.capabilities as readonly Record<string, unknown>[];
-    const profileUpdate = capabilities.find((entry) => entry.capability_id === 'customer.profile.update');
+    const nextFollowUpTimeUpdate = capabilities.find(
+      (entry) => entry.capability_id === 'customer.next_follow_up_time.update',
+    );
 
     expect(catalog.exitCode).toBe(0);
-    expect(profileUpdate).toMatchObject({
-      capability_id: 'customer.profile.update',
+    expect(nextFollowUpTimeUpdate).toMatchObject({
+      capability_id: 'customer.next_follow_up_time.update',
       version: '1.0.0',
       transport: 'SUPPORTED',
       reason: null,
-      invocation: 'cap customer.profile.update --args <json>',
+      invocation: 'cap customer.next_follow_up_time.update --args <json>',
     });
 
     const missingProfile = await invoke([
       'cap',
-      'customer.profile.update',
+      'customer.next_follow_up_time.update',
       '--args',
-      JSON.stringify({ customer_id: CUSTOMER_ID, industry: PROFILE_PATCH.industry }),
+      JSON.stringify({ customer_id: CUSTOMER_ID, next_follow_up_at: NEXT_FOLLOW_UP_AT }),
     ]);
     expect(missingProfile).toEqual({
       exitCode: 5,
@@ -217,7 +207,7 @@ describe('v0.2.2 customer.profile.update C4/C5 CLI transport', () => {
     const fixture = useTemporaryProfileHome();
     const engineInvoke = vi.spyOn(PRODUCTION_CAPABILITY_EXECUTION, 'invoke');
 
-    const result = await runProfileUpdate({ industry: PROFILE_PATCH.industry });
+    const result = await runNextFollowUpTimeUpdate({ next_follow_up_at: NEXT_FOLLOW_UP_AT });
 
     expect(result).toEqual({
       exitCode: 2,
@@ -228,21 +218,24 @@ describe('v0.2.2 customer.profile.update C4/C5 CLI transport', () => {
     expect(captureProductionDbSentinels()).toEqual(productionDbBefore);
   });
 
-  it('persists only a pending proposal, overlays customer_id onto scope, and never confirms from cap', async () => {
+  it('persists only a pending proposal, projects the scope overlay, and confirms only through C5', async () => {
     const fixture = useTemporaryProfileHome();
     await seedCustomer();
     const before = await customerRow();
     const engineInvoke = vi.spyOn(PRODUCTION_CAPABILITY_EXECUTION, 'invoke');
     const confirmWriteByRef = vi.spyOn(SalesAgentSession.prototype, 'confirmWriteByRef');
 
-    const proposal = await runProfileUpdate({ customer_id: CUSTOMER_ID, ...PROFILE_PATCH });
+    const proposal = await runNextFollowUpTimeUpdate({
+      customer_id: CUSTOMER_ID,
+      next_follow_up_at: NEXT_FOLLOW_UP_AT,
+    });
 
     expect(proposal).toMatchObject({
       exitCode: 0,
       envelope: {
         ok: true,
         status: 'CONFIRMATION_REQUIRED',
-        capability_id: 'customer.profile.update',
+        capability_id: 'customer.next_follow_up_time.update',
         profile: PROFILE,
         proposal_id: expect.any(String),
         human_summary: expect.any(String),
@@ -254,15 +247,14 @@ describe('v0.2.2 customer.profile.update C4/C5 CLI transport', () => {
 
     const invocation = engineInvoke.mock.calls[0]?.[0];
     expect(invocation).toMatchObject({
-      capability_id: 'customer.profile.update',
+      capability_id: 'customer.next_follow_up_time.update',
       scope: { customer_id: CUSTOMER_ID },
-      input: expect.objectContaining({ ...PROFILE_PATCH, db: expect.any(Object) }),
+      input: { next_follow_up_at: NEXT_FOLLOW_UP_AT, db: expect.any(Object) },
     });
     const invocationInput = invocation?.input as Record<string, unknown>;
     expect(invocationInput).not.toHaveProperty('customer_id');
     expect(invocationInput).not.toHaveProperty('customerId');
-    expect(Object.keys(invocationInput).filter((field) => field !== 'db').sort())
-      .toEqual(Object.keys(PROFILE_PATCH).sort());
+    expect(Object.keys(invocationInput).sort()).toEqual(['db', 'next_follow_up_at']);
 
     const proposalId = proposal.envelope.proposal_id as string;
     const location = resolvePendingProposalLocation(PROFILE, proposalId);
@@ -271,7 +263,7 @@ describe('v0.2.2 customer.profile.update C4/C5 CLI transport', () => {
       profile: PROFILE,
       proposal_id: proposalId,
       customer_id: CUSTOMER_ID,
-      proposed_values: PROFILE_PATCH,
+      proposed_values: { next_follow_up_at: NEXT_FOLLOW_UP_AT },
     });
     expect(existsSync(location.path)).toBe(true);
     expect(relative(join(fixture.profilesRoot, PROFILE), location.path)).not.toMatch(/^\.\.(?:[\\/]|$)/u);
@@ -297,8 +289,8 @@ describe('v0.2.2 customer.profile.update C4/C5 CLI transport', () => {
     expect(existsSync(location.path)).toBe(false);
 
     const afterConfirm = await customerRow();
-    assertOnlyRequestedProfileFieldsChanged(before, afterConfirm);
-    expect(afterConfirm.id).toBe(pending.customer_id);
+    assertOnlyFollowUpTimeChanged(before, afterConfirm);
+    expect(afterConfirm.updated_at).not.toBe(before.updated_at);
 
     __resetSessionWriteStateStoreForTests();
     const replay = await invoke(['--profile', PROFILE, 'confirm', '--proposal', proposalId]);
@@ -312,22 +304,17 @@ describe('v0.2.2 customer.profile.update C4/C5 CLI transport', () => {
 
   it.each([
     ['customerId', CUSTOMER_ID],
-    ['wechat_add_status', 'PASSED'],
-    ['intent_level', 'LOW'],
-    ['phone_feedback', 'NO_ANSWER'],
-    ['rough_visit_time_text', '下周二下午'],
+    ['industry', '跨境电商'],
     ['opportunity_amount', 200000],
-    ['grade', 'A'],
-    ['stage', 'SIGNED'],
-  ] as const)('rejects forbidden %s without changing the customer row', async (field, value) => {
+  ] as const)('rejects injected %s without changing the customer row', async (field, value) => {
     useTemporaryProfileHome();
     await seedCustomer();
     const before = await customerRow();
     const engineInvoke = vi.spyOn(PRODUCTION_CAPABILITY_EXECUTION, 'invoke');
 
-    const result = await runProfileUpdate({
+    const result = await runNextFollowUpTimeUpdate({
       customer_id: CUSTOMER_ID,
-      industry: PROFILE_PATCH.industry,
+      next_follow_up_at: NEXT_FOLLOW_UP_AT,
       [field]: value,
     });
 
@@ -339,13 +326,13 @@ describe('v0.2.2 customer.profile.update C4/C5 CLI transport', () => {
     expect(await customerRow()).toEqual(before);
   });
 
-  it('rejects a customer_id-only empty profile patch before Engine.invoke', async () => {
+  it('rejects a missing next_follow_up_at before Engine.invoke', async () => {
     useTemporaryProfileHome();
     await seedCustomer();
     const before = await customerRow();
     const engineInvoke = vi.spyOn(PRODUCTION_CAPABILITY_EXECUTION, 'invoke');
 
-    const result = await runProfileUpdate({ customer_id: CUSTOMER_ID });
+    const result = await runNextFollowUpTimeUpdate({ customer_id: CUSTOMER_ID });
 
     expect(result).toEqual({
       exitCode: 2,

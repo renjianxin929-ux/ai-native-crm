@@ -153,3 +153,25 @@ schedule, rule, or runtime fields.
 The successful response is a `CONFIRMATION_REQUIRED` pending proposal. Stop at
 that envelope: the Agent must not run `crm confirm`; a human performs the
 separate confirmation step.
+
+## Example F — update a customer's next follow-up time and stop at confirmation
+
+First inspect the catalog. Only call the exact
+`customer.next_follow_up_time.update` capability when the catalog entry is
+marked `SUPPORTED`.
+
+```powershell
+crm --profile sandbox catalog
+crm --profile sandbox session select-customer --id <exact customer_id>
+crm --profile sandbox cap customer.next_follow_up_time.update --args '{"next_follow_up_at":"2026-09-03T09:00:00+08:00"}'
+```
+
+Every call must include `--profile`. The selected customer may instead be
+supplied as an exact `customer_id` scope overlay returned by an unambiguous
+search; it is not a business field. The business args contain only the required
+non-empty `next_follow_up_at` timestamp. Do not pass `customerId`, profile,
+industry, opportunity amount, rule fields, or runtime dependencies.
+
+The successful response is a `CONFIRMATION_REQUIRED` pending proposal. Stop at
+that envelope. The Agent must never run `crm confirm`; a human performs the
+separate confirmation step.

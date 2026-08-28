@@ -266,13 +266,13 @@ describe('v0.2.2 C3 core READ capability CLI', () => {
 
     const unknown = await runCap('sandbox', 'customer.find', { name_query: '星河' });
     const followUpCreate = await runCap('sandbox', 'follow_up.create', { title: 'must not write' });
-    const nextFollowUpTimeUpdate = await runCap('sandbox', 'customer.next_follow_up_time.update', {
-      next_follow_up_at: '2026-09-03T09:00:00+08:00',
+    const opportunityAmountUpdate = await runCap('sandbox', 'customer.opportunity_amount.update', {
+      opportunity_amount: 200000,
     });
-    const nextFollowUpTimeUpdateTransport = buildCapabilityCatalog()
-      .find((entry) => entry.capability_id === 'customer.next_follow_up_time.update');
-    if (nextFollowUpTimeUpdateTransport?.transport !== 'EXPLICITLY_UNSUPPORTED') {
-      throw new Error('C7 must keep customer.next_follow_up_time.update explicitly unsupported.');
+    const opportunityAmountUpdateTransport = buildCapabilityCatalog()
+      .find((entry) => entry.capability_id === 'customer.opportunity_amount.update');
+    if (opportunityAmountUpdateTransport?.transport !== 'EXPLICITLY_UNSUPPORTED') {
+      throw new Error('C7 must keep customer.opportunity_amount.update explicitly unsupported.');
     }
 
     expect(unknown.exitCode).toBe(2);
@@ -281,14 +281,14 @@ describe('v0.2.2 C3 core READ capability CLI', () => {
       exitCode: 2,
       envelope: { ok: false, status: 'ERROR', code: 'CAPABILITY_EXECUTION_NOT_ENABLED' },
     });
-    expect(nextFollowUpTimeUpdate).toEqual({
+    expect(opportunityAmountUpdate).toEqual({
       exitCode: 2,
       envelope: {
         ok: false,
         status: 'ERROR',
         code: 'CAPABILITY_EXPLICITLY_UNSUPPORTED',
-        capability_id: nextFollowUpTimeUpdateTransport.capability_id,
-        reason: nextFollowUpTimeUpdateTransport.reason,
+        capability_id: opportunityAmountUpdateTransport.capability_id,
+        reason: opportunityAmountUpdateTransport.reason,
       },
     });
     expect(invoke).not.toHaveBeenCalled();

@@ -136,9 +136,9 @@ describe('v0.2.2 C7 capability transport status', () => {
   it('fails known but unwired capabilities before Engine.invoke and preserves unknown-ID behavior', async () => {
     const fixture = useTemporaryProfileHome();
     const unsupported = buildCapabilityCatalog()
-      .find((entry) => entry.capability_id === 'customer.next_follow_up_time.update');
+      .find((entry) => entry.capability_id === 'customer.opportunity_amount.update');
     if (unsupported?.transport !== 'EXPLICITLY_UNSUPPORTED') {
-      throw new Error('C7 must keep customer.next_follow_up_time.update explicitly unsupported.');
+      throw new Error('C7 must keep customer.opportunity_amount.update explicitly unsupported.');
     }
     const invoke = vi.spyOn(PRODUCTION_CAPABILITY_EXECUTION, 'invoke');
 

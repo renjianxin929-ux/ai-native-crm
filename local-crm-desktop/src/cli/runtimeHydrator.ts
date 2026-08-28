@@ -80,6 +80,7 @@ export const C4_WRITE_PROPOSAL_CAPABILITY_IDS = Object.freeze([
   'customer.create',
   'customer.delete',
   'customer.profile.update',
+  'customer.next_follow_up_time.update',
 ] as const);
 
 const C4_WRITE_PROPOSAL_CAPABILITY_ID_SET: ReadonlySet<string> = new Set(C4_WRITE_PROPOSAL_CAPABILITY_IDS);
@@ -388,6 +389,18 @@ function hydrateC4WriteProposalCapability(
         input: { ...businessArgs, db: input.profileDb },
         scope: { customer_id: customerId },
       };
+    case 'customer.next_follow_up_time.update': {
+      const next_follow_up_at = requireNonEmptyString(
+        businessArgs.next_follow_up_at,
+        'next_follow_up_at',
+      );
+      return {
+        capability_id: descriptor.capability_id,
+        capability_version: capabilityVersion,
+        input: { next_follow_up_at, db: input.profileDb },
+        scope: { customer_id: customerId },
+      };
+    }
     case 'customer.delete':
       return {
         capability_id: descriptor.capability_id,

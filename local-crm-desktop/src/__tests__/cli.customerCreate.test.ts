@@ -170,8 +170,8 @@ describe('v0.2.2 customer.create C4/C5 CLI transport', () => {
       envelope: { ok: false, status: 'ERROR', code: 'CAPABILITY_NOT_FOUND' },
     });
 
-    const unwired = await runCap('sandbox', 'customer.next_follow_up_time.update', {
-      next_follow_up_at: '2026-09-03T09:00:00+08:00',
+    const unwired = await runCap('sandbox', 'customer.opportunity_amount.update', {
+      opportunity_amount: 200000,
     });
     expect(unwired).toMatchObject({
       exitCode: 2,
@@ -179,7 +179,7 @@ describe('v0.2.2 customer.create C4/C5 CLI transport', () => {
         ok: false,
         status: 'ERROR',
         code: 'CAPABILITY_EXPLICITLY_UNSUPPORTED',
-        capability_id: 'customer.next_follow_up_time.update',
+        capability_id: 'customer.opportunity_amount.update',
         reason: expect.any(String),
       },
     });
