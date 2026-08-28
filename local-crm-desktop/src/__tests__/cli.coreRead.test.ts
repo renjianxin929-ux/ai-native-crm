@@ -266,13 +266,13 @@ describe('v0.2.2 C3 core READ capability CLI', () => {
 
     const unknown = await runCap('sandbox', 'customer.find', { name_query: '星河' });
     const followUpCreate = await runCap('sandbox', 'follow_up.create', { title: 'must not write' });
-    const opportunityAmountUpdate = await runCap('sandbox', 'customer.opportunity_amount.update', {
-      opportunity_amount: 200000,
+    const visitCreate = await runCap('sandbox', 'visit.create', {
+      title: 'must remain unwired',
     });
-    const opportunityAmountUpdateTransport = buildCapabilityCatalog()
-      .find((entry) => entry.capability_id === 'customer.opportunity_amount.update');
-    if (opportunityAmountUpdateTransport?.transport !== 'EXPLICITLY_UNSUPPORTED') {
-      throw new Error('C7 must keep customer.opportunity_amount.update explicitly unsupported.');
+    const visitCreateTransport = buildCapabilityCatalog()
+      .find((entry) => entry.capability_id === 'visit.create');
+    if (visitCreateTransport?.transport !== 'EXPLICITLY_UNSUPPORTED') {
+      throw new Error('C7 must keep visit.create explicitly unsupported.');
     }
 
     expect(unknown.exitCode).toBe(2);
@@ -281,14 +281,14 @@ describe('v0.2.2 C3 core READ capability CLI', () => {
       exitCode: 2,
       envelope: { ok: false, status: 'ERROR', code: 'CAPABILITY_EXECUTION_NOT_ENABLED' },
     });
-    expect(opportunityAmountUpdate).toEqual({
+    expect(visitCreate).toEqual({
       exitCode: 2,
       envelope: {
         ok: false,
         status: 'ERROR',
         code: 'CAPABILITY_EXPLICITLY_UNSUPPORTED',
-        capability_id: opportunityAmountUpdateTransport.capability_id,
-        reason: opportunityAmountUpdateTransport.reason,
+        capability_id: visitCreateTransport.capability_id,
+        reason: visitCreateTransport.reason,
       },
     });
     expect(invoke).not.toHaveBeenCalled();

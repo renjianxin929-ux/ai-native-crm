@@ -175,3 +175,27 @@ industry, opportunity amount, rule fields, or runtime dependencies.
 The successful response is a `CONFIRMATION_REQUIRED` pending proposal. Stop at
 that envelope. The Agent must never run `crm confirm`; a human performs the
 separate confirmation step.
+
+## Example G — update a customer's opportunity amount and stop at confirmation
+
+First inspect the catalog. Only call the exact
+`customer.opportunity_amount.update` capability when that catalog entry is
+marked `SUPPORTED`.
+
+```powershell
+crm --profile sandbox catalog
+crm --profile sandbox cap customer.opportunity_amount.update --args '{"customer_id":"<exact customer_id>","opportunity_amount":200000}'
+```
+
+Every call must include `--profile`. The target customer must be supplied as
+the exact `customer_id` scope overlay returned by an unambiguous search, or be
+selected first with
+`crm --profile sandbox session select-customer --id <exact customer_id>` and
+then omitted from the capability args. The business args contain only
+`opportunity_amount`: a JSON number greater than zero, or `null` to record an
+unknown amount. Do not pass `customerId`, name, industry, follow-up time,
+`deal_amount`, rule fields, or runtime dependencies.
+
+The successful response is a `CONFIRMATION_REQUIRED` pending proposal. Stop at
+that envelope. The Agent must never run `crm confirm`; a human performs the
+separate confirmation step.

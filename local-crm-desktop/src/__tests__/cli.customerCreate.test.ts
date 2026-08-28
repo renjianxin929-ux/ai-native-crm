@@ -170,8 +170,8 @@ describe('v0.2.2 customer.create C4/C5 CLI transport', () => {
       envelope: { ok: false, status: 'ERROR', code: 'CAPABILITY_NOT_FOUND' },
     });
 
-    const unwired = await runCap('sandbox', 'customer.opportunity_amount.update', {
-      opportunity_amount: 200000,
+    const unwired = await runCap('sandbox', 'visit.create', {
+      title: 'must remain unwired',
     });
     expect(unwired).toMatchObject({
       exitCode: 2,
@@ -179,7 +179,7 @@ describe('v0.2.2 customer.create C4/C5 CLI transport', () => {
         ok: false,
         status: 'ERROR',
         code: 'CAPABILITY_EXPLICITLY_UNSUPPORTED',
-        capability_id: 'customer.opportunity_amount.update',
+        capability_id: 'visit.create',
         reason: expect.any(String),
       },
     });

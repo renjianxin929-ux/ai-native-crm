@@ -81,6 +81,7 @@ export const C4_WRITE_PROPOSAL_CAPABILITY_IDS = Object.freeze([
   'customer.delete',
   'customer.profile.update',
   'customer.next_follow_up_time.update',
+  'customer.opportunity_amount.update',
 ] as const);
 
 const C4_WRITE_PROPOSAL_CAPABILITY_ID_SET: ReadonlySet<string> = new Set(C4_WRITE_PROPOSAL_CAPABILITY_IDS);
@@ -398,6 +399,32 @@ function hydrateC4WriteProposalCapability(
         capability_id: descriptor.capability_id,
         capability_version: capabilityVersion,
         input: { next_follow_up_at, db: input.profileDb },
+        scope: { customer_id: customerId },
+      };
+    }
+    case 'customer.opportunity_amount.update': {
+      if (!Object.prototype.hasOwnProperty.call(businessArgs, 'opportunity_amount')) {
+        throw new RuntimeHydratorError(
+          'INVALID_INPUT',
+          'customer.opportunity_amount.update requires the opportunity_amount field.',
+        );
+      }
+      const opportunity_amount = businessArgs.opportunity_amount;
+      if (
+        opportunity_amount !== null
+        && (typeof opportunity_amount !== 'number'
+          || !Number.isFinite(opportunity_amount)
+          || opportunity_amount <= 0)
+      ) {
+        throw new RuntimeHydratorError(
+          'INVALID_INPUT',
+          'opportunity_amount must be a finite positive number or null.',
+        );
+      }
+      return {
+        capability_id: descriptor.capability_id,
+        capability_version: capabilityVersion,
+        input: { opportunity_amount, db: input.profileDb },
         scope: { customer_id: customerId },
       };
     }

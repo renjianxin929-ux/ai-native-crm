@@ -98,19 +98,19 @@ describe('v0.2.2 C1 CLI parsing', () => {
   it('does not execute a parsed unwired write cap command', async () => {
     const invoke = vi.spyOn(PRODUCTION_CAPABILITY_EXECUTION, 'invoke');
     const output: string[] = [];
-    const opportunityAmountUpdate = buildCapabilityCatalog()
-      .find((entry) => entry.capability_id === 'customer.opportunity_amount.update');
-    if (opportunityAmountUpdate?.transport !== 'EXPLICITLY_UNSUPPORTED') {
-      throw new Error('C7 must keep customer.opportunity_amount.update explicitly unsupported.');
+    const visitCreate = buildCapabilityCatalog()
+      .find((entry) => entry.capability_id === 'visit.create');
+    if (visitCreate?.transport !== 'EXPLICITLY_UNSUPPORTED') {
+      throw new Error('C7 must keep visit.create explicitly unsupported.');
     }
 
     const exitCode = await runCli([
       '--profile',
       'sandbox',
       'cap',
-      'customer.opportunity_amount.update',
+      'visit.create',
       '--args',
-      '{"opportunity_amount":200000}',
+      '{"title":"must remain unwired"}',
     ], (line) => output.push(line));
 
     // C7 rejects an unwired write before profile opening or Engine invocation.
@@ -119,8 +119,8 @@ describe('v0.2.2 C1 CLI parsing', () => {
       ok: false,
       status: 'ERROR',
       code: 'CAPABILITY_EXPLICITLY_UNSUPPORTED',
-      capability_id: opportunityAmountUpdate.capability_id,
-      reason: opportunityAmountUpdate.reason,
+      capability_id: visitCreate.capability_id,
+      reason: visitCreate.reason,
     })]);
     expect(defaultDbTripwire).not.toHaveBeenCalled();
     expect(invoke).not.toHaveBeenCalled();
