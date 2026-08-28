@@ -136,9 +136,9 @@ describe('v0.2.2 C7 capability transport status', () => {
   it('fails known but unwired capabilities before Engine.invoke and preserves unknown-ID behavior', async () => {
     const fixture = useTemporaryProfileHome();
     const unsupported = buildCapabilityCatalog()
-      .find((entry) => entry.capability_id === 'visit.create');
+      .find((entry) => entry.capability_id === 'task.create');
     if (unsupported?.transport !== 'EXPLICITLY_UNSUPPORTED') {
-      throw new Error('C7 must keep visit.create explicitly unsupported.');
+      throw new Error('C7 must keep task.create explicitly unsupported.');
     }
     const invoke = vi.spyOn(PRODUCTION_CAPABILITY_EXECUTION, 'invoke');
 

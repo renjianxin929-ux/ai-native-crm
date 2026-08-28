@@ -98,17 +98,17 @@ describe('v0.2.2 C1 CLI parsing', () => {
   it('does not execute a parsed unwired write cap command', async () => {
     const invoke = vi.spyOn(PRODUCTION_CAPABILITY_EXECUTION, 'invoke');
     const output: string[] = [];
-    const visitCreate = buildCapabilityCatalog()
-      .find((entry) => entry.capability_id === 'visit.create');
-    if (visitCreate?.transport !== 'EXPLICITLY_UNSUPPORTED') {
-      throw new Error('C7 must keep visit.create explicitly unsupported.');
+    const taskCreate = buildCapabilityCatalog()
+      .find((entry) => entry.capability_id === 'task.create');
+    if (taskCreate?.transport !== 'EXPLICITLY_UNSUPPORTED') {
+      throw new Error('C7 must keep task.create explicitly unsupported.');
     }
 
     const exitCode = await runCli([
       '--profile',
       'sandbox',
       'cap',
-      'visit.create',
+      'task.create',
       '--args',
       '{"title":"must remain unwired"}',
     ], (line) => output.push(line));
@@ -119,8 +119,8 @@ describe('v0.2.2 C1 CLI parsing', () => {
       ok: false,
       status: 'ERROR',
       code: 'CAPABILITY_EXPLICITLY_UNSUPPORTED',
-      capability_id: visitCreate.capability_id,
-      reason: visitCreate.reason,
+      capability_id: taskCreate.capability_id,
+      reason: taskCreate.reason,
     })]);
     expect(defaultDbTripwire).not.toHaveBeenCalled();
     expect(invoke).not.toHaveBeenCalled();

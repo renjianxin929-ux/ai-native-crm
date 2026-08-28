@@ -82,6 +82,7 @@ export const C4_WRITE_PROPOSAL_CAPABILITY_IDS = Object.freeze([
   'customer.profile.update',
   'customer.next_follow_up_time.update',
   'customer.opportunity_amount.update',
+  'visit.create',
 ] as const);
 
 const C4_WRITE_PROPOSAL_CAPABILITY_ID_SET: ReadonlySet<string> = new Set(C4_WRITE_PROPOSAL_CAPABILITY_IDS);
@@ -375,6 +376,15 @@ function hydrateC4WriteProposalCapability(
         input: businessArgs,
         scope: { customer_id: customerId },
       };
+    case 'visit.create': {
+      const title = requireNonEmptyString(businessArgs.title, 'title');
+      return {
+        capability_id: descriptor.capability_id,
+        capability_version: capabilityVersion,
+        input: { ...businessArgs, title, db: input.profileDb },
+        scope: { customer_id: customerId },
+      };
+    }
     case 'customer.profile.update':
       if (Object.keys(businessArgs).length === 0) {
         throw new RuntimeHydratorError(

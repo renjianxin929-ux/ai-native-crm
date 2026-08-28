@@ -199,3 +199,28 @@ unknown amount. Do not pass `customerId`, name, industry, follow-up time,
 The successful response is a `CONFIRMATION_REQUIRED` pending proposal. Stop at
 that envelope. The Agent must never run `crm confirm`; a human performs the
 separate confirmation step.
+
+## Example H — create a visit proposal and stop at confirmation
+
+First inspect the catalog. Only call the exact `visit.create` capability when
+that catalog entry is marked `SUPPORTED`.
+
+```powershell
+crm --profile sandbox catalog
+crm --profile sandbox cap visit.create --args '{"customer_id":"<exact customer_id>","title":"现场拜访"}'
+```
+
+Every call must include `--profile`. The target customer must be supplied as
+the exact `customer_id` scope overlay returned by an unambiguous search, or be
+selected first with
+`crm --profile sandbox session select-customer --id <exact customer_id>` and
+then omitted from the capability args. The args must include a non-empty
+`title`; optional fields are `visit_notes`, `customer_concerns`,
+`intent_after_visit`, `visit_outcome`, `next_action`, and
+`expected_contract_at`. The normal path should send only `title`, without
+`visit_outcome`, so it does not invoke the product's visit-outcome customer
+state rule.
+
+The successful response is a `CONFIRMATION_REQUIRED` pending proposal. Stop at
+that envelope. The Agent must never run `crm confirm`; a human performs the
+separate confirmation step.
