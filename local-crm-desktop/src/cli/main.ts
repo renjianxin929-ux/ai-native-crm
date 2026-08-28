@@ -262,6 +262,8 @@ async function runC4WriteProposalCapability(
       }
       if (proposal === null
         || proposal.proposal_id !== proposalId
+        || typeof proposal.customer_id !== 'string'
+        || proposal.customer_id.trim().length === 0
         || (customerId !== undefined && proposal.customer_id !== customerId)) {
         writeLine(formatError('EXECUTION_ERROR'));
         return 10;

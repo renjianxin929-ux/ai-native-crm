@@ -292,6 +292,11 @@ describe('v0.2.2 customer.create C4/C5 CLI transport', () => {
     const proposalId = proposal.envelope.proposal_id as string;
     const location = resolvePendingProposalLocation('sandbox', proposalId);
     expect(existsSync(location.path)).toBe(true);
+    const pendingCustomerId = readPendingRecord('sandbox', proposalId).customer_id;
+    expect(typeof pendingCustomerId).toBe('string');
+    if (typeof pendingCustomerId !== 'string' || pendingCustomerId.trim().length === 0) {
+      throw new Error('customer.create pending proposal must retain a customer_id.');
+    }
     expect(await customerRows('sandbox')).toEqual(before);
 
     // Model a separate human process: no in-memory canonical proposal remains.
@@ -310,7 +315,8 @@ describe('v0.2.2 customer.create C4/C5 CLI transport', () => {
     expect(existsSync(location.path)).toBe(false);
     const afterConfirm = await customerRows('sandbox');
     expect(afterConfirm).toHaveLength(before.length + 1);
-    expect(afterConfirm).toContainEqual(expect.objectContaining({ name: NEW_CUSTOMER_NAME }));
+    const createdCustomer = afterConfirm.find((row) => row.name === NEW_CUSTOMER_NAME);
+    expect(createdCustomer).toMatchObject({ id: pendingCustomerId, name: NEW_CUSTOMER_NAME });
 
     const search = await runCap('sandbox', 'customer.search', { name_query: '星河' });
     expect(search).toMatchObject({
