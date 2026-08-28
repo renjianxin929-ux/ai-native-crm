@@ -105,3 +105,30 @@ Stop here. Give the human the proposal ID, `human_summary`, and `diff`; do not
 run `crm confirm` and do not show a confirmation command. A
 `STRONG_CONFIRMATION_REQUIRED` response follows the same stop rule, with its
 pending nonce reserved for the human confirmation flow.
+
+## Example D — create a customer proposal and stop at confirmation
+
+First inspect the catalog. Only call the exact `customer.create` capability
+when that catalog entry is marked `SUPPORTED`.
+
+```powershell
+crm --profile sandbox catalog
+crm --profile sandbox cap customer.create --args '{"name":"广州星河科技","contact_person":"张总"}'
+```
+
+The args must include a non-empty `name`. Do not pass `customer_id`,
+`customerId`, `db`, `clock`, or other runtime dependencies; creation has no
+existing-customer scope. A successful proposal returns:
+
+```json
+{
+  "ok": true,
+  "status": "CONFIRMATION_REQUIRED",
+  "capability_id": "customer.create",
+  "profile": "sandbox"
+}
+```
+
+Stop at that envelope. The Agent must not run confirmation; a human performs
+the separate confirmation step. After that human step, a catalog-supported
+`customer.search` may find the new name.

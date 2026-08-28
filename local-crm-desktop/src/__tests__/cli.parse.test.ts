@@ -95,20 +95,20 @@ describe('v0.2.2 C1 CLI parsing', () => {
       .toEqual({ ok: false, profile: 'sandbox', code: 'UNKNOWN_COMMAND' });
   });
 
-  it('does not execute a parsed write cap command', async () => {
+  it('does not execute a parsed unwired write cap command', async () => {
     const invoke = vi.spyOn(PRODUCTION_CAPABILITY_EXECUTION, 'invoke');
     const output: string[] = [];
-    const customerCreate = buildCapabilityCatalog()
-      .find((entry) => entry.capability_id === 'customer.create');
-    if (customerCreate?.transport !== 'EXPLICITLY_UNSUPPORTED') {
-      throw new Error('C7 must keep customer.create explicitly unsupported.');
+    const customerProfileUpdate = buildCapabilityCatalog()
+      .find((entry) => entry.capability_id === 'customer.profile.update');
+    if (customerProfileUpdate?.transport !== 'EXPLICITLY_UNSUPPORTED') {
+      throw new Error('C7 must keep customer.profile.update explicitly unsupported.');
     }
 
     const exitCode = await runCli([
       '--profile',
       'sandbox',
       'cap',
-      'customer.create',
+      'customer.profile.update',
       '--args',
       '{"name":"C3 must not write"}',
     ], (line) => output.push(line));
@@ -119,8 +119,8 @@ describe('v0.2.2 C1 CLI parsing', () => {
       ok: false,
       status: 'ERROR',
       code: 'CAPABILITY_EXPLICITLY_UNSUPPORTED',
-      capability_id: customerCreate.capability_id,
-      reason: customerCreate.reason,
+      capability_id: customerProfileUpdate.capability_id,
+      reason: customerProfileUpdate.reason,
     })]);
     expect(defaultDbTripwire).not.toHaveBeenCalled();
     expect(invoke).not.toHaveBeenCalled();

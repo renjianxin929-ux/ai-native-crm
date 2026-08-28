@@ -241,8 +241,12 @@ async function runC4WriteProposalCapability(
 
     if (outcome.status === 'CONFIRMATION_REQUIRED' || outcome.status === 'STRONG_CONFIRMATION_REQUIRED') {
       const proposalId = outcome.confirmation_handoff?.proposal_id;
-      const customerId = invocation.scope.customer_id;
-      if (proposalId === undefined || typeof customerId !== 'string' || customerId.trim().length === 0) {
+      const customerId = descriptor.scope_requirement === 'CUSTOMER'
+        ? invocation.scope.customer_id
+        : undefined;
+      if (proposalId === undefined
+        || (descriptor.scope_requirement === 'CUSTOMER'
+          && (typeof customerId !== 'string' || customerId.trim().length === 0))) {
         writeLine(formatError('EXECUTION_ERROR'));
         return 10;
       }
@@ -251,12 +255,14 @@ async function runC4WriteProposalCapability(
       try {
         // Rebuild from the existing canonical snapshot. This verifies the
         // existing hash/schema and never creates a C4 proposal or nonce.
-        proposal = getCanonicalProposal(proposalId, customerId);
+        proposal = getCanonicalProposal(proposalId);
       } catch {
         writeLine(formatError('EXECUTION_ERROR'));
         return 10;
       }
-      if (proposal === null || proposal.proposal_id !== proposalId || proposal.customer_id !== customerId) {
+      if (proposal === null
+        || proposal.proposal_id !== proposalId
+        || (customerId !== undefined && proposal.customer_id !== customerId)) {
         writeLine(formatError('EXECUTION_ERROR'));
         return 10;
       }
@@ -484,7 +490,8 @@ export async function runCli(
         return 2;
       }
       if (isC4WriteProposalCapability(parsed.command.capability_id)) {
-        if (!hasC4CustomerScope(profile, parsed.command)) {
+        const descriptor = findPlannerTool(parsed.command.capability_id);
+        if (descriptor?.scope_requirement === 'CUSTOMER' && !hasC4CustomerScope(profile, parsed.command)) {
           writeLine(formatCapabilityExecutionNotEnabled());
           return 2;
         }

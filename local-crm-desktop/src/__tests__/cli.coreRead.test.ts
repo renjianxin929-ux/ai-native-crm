@@ -260,17 +260,17 @@ describe('v0.2.2 C3 core READ capability CLI', () => {
     }
   });
 
-  it('does not invoke the engine for unknown or write capability IDs', async () => {
+  it('does not invoke the engine for unknown or still-unwired write capability IDs', async () => {
     useTemporaryProfileHome();
     const invoke = vi.spyOn(PRODUCTION_CAPABILITY_EXECUTION, 'invoke');
 
     const unknown = await runCap('sandbox', 'customer.find', { name_query: '星河' });
     const followUpCreate = await runCap('sandbox', 'follow_up.create', { title: 'must not write' });
-    const customerCreate = await runCap('sandbox', 'customer.create', { name: 'must not write' });
-    const customerCreateTransport = buildCapabilityCatalog()
-      .find((entry) => entry.capability_id === 'customer.create');
-    if (customerCreateTransport?.transport !== 'EXPLICITLY_UNSUPPORTED') {
-      throw new Error('C7 must keep customer.create explicitly unsupported.');
+    const customerProfileUpdate = await runCap('sandbox', 'customer.profile.update', { name: 'must not write' });
+    const customerProfileUpdateTransport = buildCapabilityCatalog()
+      .find((entry) => entry.capability_id === 'customer.profile.update');
+    if (customerProfileUpdateTransport?.transport !== 'EXPLICITLY_UNSUPPORTED') {
+      throw new Error('C7 must keep customer.profile.update explicitly unsupported.');
     }
 
     expect(unknown.exitCode).toBe(2);
@@ -279,14 +279,14 @@ describe('v0.2.2 C3 core READ capability CLI', () => {
       exitCode: 2,
       envelope: { ok: false, status: 'ERROR', code: 'CAPABILITY_EXECUTION_NOT_ENABLED' },
     });
-    expect(customerCreate).toEqual({
+    expect(customerProfileUpdate).toEqual({
       exitCode: 2,
       envelope: {
         ok: false,
         status: 'ERROR',
         code: 'CAPABILITY_EXPLICITLY_UNSUPPORTED',
-        capability_id: customerCreateTransport.capability_id,
-        reason: customerCreateTransport.reason,
+        capability_id: customerProfileUpdateTransport.capability_id,
+        reason: customerProfileUpdateTransport.reason,
       },
     });
     expect(invoke).not.toHaveBeenCalled();

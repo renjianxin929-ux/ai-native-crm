@@ -71,12 +71,13 @@ export function isC3CoreReadCapability(capabilityId: string): boolean {
 }
 
 /**
- * C4 intentionally enables only two representative confirmation-gated write
+ * C4 intentionally enables only three representative confirmation-gated write
  * capabilities. This is separate from (and must never expand) the C3 READ
  * allowlist above.
  */
 export const C4_WRITE_PROPOSAL_CAPABILITY_IDS = Object.freeze([
   'follow_up.create',
+  'customer.create',
   'customer.delete',
 ] as const);
 
@@ -387,6 +388,39 @@ function hydrateC4WriteProposalCapability(
 }
 
 /**
+ * customer.create has scope=NONE: the capability is already selected by the
+ * caller, and only its planner-approved form fields become business input.
+ * It deliberately does not inherit a selected customer or inject runtime
+ * dependencies; the existing adapter mints the future customer ID at handoff.
+ */
+function hydrateCustomerCreateWriteProposal(
+  input: RuntimeHydratorInput,
+  descriptor: PlannerToolDescriptor,
+  capabilityVersion: string,
+): CapabilityInvocation {
+  const args = requirePlainObject(
+    input.args ?? {},
+    'customer.create requires an object of agent arguments.',
+  );
+  assertAllowedFields(args, descriptor.input_schema.allowed_fields, descriptor.capability_id);
+  requireNonEmptyString(args.name, 'name');
+
+  const businessArgs: JsonRecord = {};
+  for (const field of descriptor.input_schema.allowed_fields) {
+    if (Object.prototype.hasOwnProperty.call(args, field)) {
+      businessArgs[field] = args[field];
+    }
+  }
+
+  return {
+    capability_id: descriptor.capability_id,
+    capability_version: capabilityVersion,
+    input: businessArgs,
+    scope: {},
+  };
+}
+
+/**
  * Converts an already-selected capability and pure agent args into the exact
  * invocation shape consumed by the existing engine. It never selects or runs
  * a capability, and it has no default database fallback.
@@ -417,6 +451,8 @@ export async function hydrateRuntimeInvocation(input: RuntimeHydratorInput): Pro
       return hydrateImportMappingValidation(input, descriptor, capabilityVersion);
     case 'import.file.preview':
       return hydrateImportFilePreview(input, descriptor, capabilityVersion);
+    case 'customer.create':
+      return hydrateCustomerCreateWriteProposal(input, descriptor, capabilityVersion);
     default:
       if (isC4WriteProposalCapability(descriptor.capability_id)) {
         return hydrateC4WriteProposalCapability(input, descriptor, capabilityVersion);
