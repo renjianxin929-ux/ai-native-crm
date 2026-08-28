@@ -98,19 +98,19 @@ describe('v0.2.2 C1 CLI parsing', () => {
   it('does not execute a parsed unwired write cap command', async () => {
     const invoke = vi.spyOn(PRODUCTION_CAPABILITY_EXECUTION, 'invoke');
     const output: string[] = [];
-    const taskCreate = buildCapabilityCatalog()
-      .find((entry) => entry.capability_id === 'task.create');
-    if (taskCreate?.transport !== 'EXPLICITLY_UNSUPPORTED') {
-      throw new Error('C7 must keep task.create explicitly unsupported.');
+    const battleCardDraftCreate = buildCapabilityCatalog()
+      .find((entry) => entry.capability_id === 'battle_card.draft.create');
+    if (battleCardDraftCreate?.transport !== 'EXPLICITLY_UNSUPPORTED') {
+      throw new Error('C7 must keep battle_card.draft.create explicitly unsupported.');
     }
 
     const exitCode = await runCli([
       '--profile',
       'sandbox',
       'cap',
-      'task.create',
+      'battle_card.draft.create',
       '--args',
-      '{"title":"must remain unwired"}',
+      '{"stage_code":"NEW_LEAD"}',
     ], (line) => output.push(line));
 
     // C7 rejects an unwired write before profile opening or Engine invocation.
@@ -119,8 +119,8 @@ describe('v0.2.2 C1 CLI parsing', () => {
       ok: false,
       status: 'ERROR',
       code: 'CAPABILITY_EXPLICITLY_UNSUPPORTED',
-      capability_id: taskCreate.capability_id,
-      reason: taskCreate.reason,
+      capability_id: battleCardDraftCreate.capability_id,
+      reason: battleCardDraftCreate.reason,
     })]);
     expect(defaultDbTripwire).not.toHaveBeenCalled();
     expect(invoke).not.toHaveBeenCalled();

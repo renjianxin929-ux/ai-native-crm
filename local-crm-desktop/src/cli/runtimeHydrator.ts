@@ -77,6 +77,7 @@ export function isC3CoreReadCapability(capabilityId: string): boolean {
  */
 export const C4_WRITE_PROPOSAL_CAPABILITY_IDS = Object.freeze([
   'follow_up.create',
+  'task.create',
   'customer.create',
   'customer.delete',
   'customer.profile.update',
@@ -376,6 +377,20 @@ function hydrateC4WriteProposalCapability(
         input: businessArgs,
         scope: { customer_id: customerId },
       };
+    case 'task.create': {
+      const title = requireNonEmptyString(businessArgs.title, 'title');
+      const hasDueAt = Object.prototype.hasOwnProperty.call(businessArgs, 'due_at');
+      const dueAt = businessArgs.due_at;
+      if (hasDueAt && dueAt !== null && typeof dueAt !== 'string') {
+        throw new RuntimeHydratorError('INVALID_INPUT', 'due_at must be a string or null when present.');
+      }
+      return {
+        capability_id: descriptor.capability_id,
+        capability_version: capabilityVersion,
+        input: hasDueAt ? { title, due_at: dueAt } : { title },
+        scope: { customer_id: customerId },
+      };
+    }
     case 'visit.create': {
       const title = requireNonEmptyString(businessArgs.title, 'title');
       return {

@@ -224,3 +224,25 @@ state rule.
 The successful response is a `CONFIRMATION_REQUIRED` pending proposal. Stop at
 that envelope. The Agent must never run `crm confirm`; a human performs the
 separate confirmation step.
+
+## Example I — create a task proposal and stop at confirmation
+
+First inspect the catalog. Only call the exact `task.create` capability when
+that catalog entry is marked `SUPPORTED`.
+
+```powershell
+crm --profile sandbox catalog
+crm --profile sandbox cap task.create --args '{"customer_id":"<exact customer_id>","title":"发送报价提醒","due_at":"2026-09-03T09:00:00+08:00"}'
+```
+
+Every call must include `--profile`. The target customer must be supplied as
+the exact `customer_id` scope overlay returned by an unambiguous search, or be
+selected first with
+`crm --profile sandbox session select-customer --id <exact customer_id>` and
+then omitted from the capability args. The args must include a non-empty
+`title`; `due_at` is optional. Do not pass `customerId`, `status`, `priority`,
+`source`, visit fields, system IDs, or runtime dependencies.
+
+The successful response is a `CONFIRMATION_REQUIRED` pending proposal. Stop at
+that envelope. The Agent must never run `crm confirm`; a human performs the
+separate confirmation step.
