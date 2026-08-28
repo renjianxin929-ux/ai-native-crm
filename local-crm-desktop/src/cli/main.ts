@@ -38,6 +38,7 @@ import {
   clearProfileCustomer,
   selectProfileCustomer,
   SessionRuntimeError,
+  showExistingProfileSession,
   showProfileSession,
 } from './session';
 import {
@@ -63,7 +64,7 @@ function hasC4CustomerScope(profile: string, command: ParsedCapCommand): boolean
     if (typeof customerId === 'string' && customerId.trim().length > 0) return true;
   }
   try {
-    return showProfileSession(profile).selected_customer_id !== null;
+    return showExistingProfileSession(profile).selected_customer_id !== null;
   } catch {
     // This is only the C4 admission check. The C3 closed surface remains the
     // fallback when a write invocation has no usable customer scope yet.

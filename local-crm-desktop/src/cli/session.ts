@@ -102,6 +102,22 @@ function readSessionAt(location: SessionLocation): ProfileSession {
   return parseSession(readFileSync(location.sessionPath, 'utf8'));
 }
 
+/**
+ * Read a selected customer only when the profile directory already exists.
+ * C4 admission is a read-only preflight: a missing session must not create a
+ * profile or pending directory merely to learn that no customer is selected.
+ */
+export function showExistingProfileSession(profileName: string): ProfileSession {
+  const profilePaths = resolveProfilePaths(profileName);
+  try {
+    lstatSync(profilePaths.profileDir);
+  } catch (error) {
+    if (isMissingPathError(error)) return { selected_customer_id: null };
+    throw error;
+  }
+  return readSessionAt(resolveSessionLocation(profileName));
+}
+
 function normalizeCustomerId(customerId: string): string {
   const normalized = customerId.trim();
   if (!normalized) {

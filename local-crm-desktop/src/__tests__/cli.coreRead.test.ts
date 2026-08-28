@@ -266,11 +266,13 @@ describe('v0.2.2 C3 core READ capability CLI', () => {
 
     const unknown = await runCap('sandbox', 'customer.find', { name_query: '星河' });
     const followUpCreate = await runCap('sandbox', 'follow_up.create', { title: 'must not write' });
-    const customerProfileUpdate = await runCap('sandbox', 'customer.profile.update', { name: 'must not write' });
-    const customerProfileUpdateTransport = buildCapabilityCatalog()
-      .find((entry) => entry.capability_id === 'customer.profile.update');
-    if (customerProfileUpdateTransport?.transport !== 'EXPLICITLY_UNSUPPORTED') {
-      throw new Error('C7 must keep customer.profile.update explicitly unsupported.');
+    const nextFollowUpTimeUpdate = await runCap('sandbox', 'customer.next_follow_up_time.update', {
+      next_follow_up_at: '2026-09-03T09:00:00+08:00',
+    });
+    const nextFollowUpTimeUpdateTransport = buildCapabilityCatalog()
+      .find((entry) => entry.capability_id === 'customer.next_follow_up_time.update');
+    if (nextFollowUpTimeUpdateTransport?.transport !== 'EXPLICITLY_UNSUPPORTED') {
+      throw new Error('C7 must keep customer.next_follow_up_time.update explicitly unsupported.');
     }
 
     expect(unknown.exitCode).toBe(2);
@@ -279,14 +281,14 @@ describe('v0.2.2 C3 core READ capability CLI', () => {
       exitCode: 2,
       envelope: { ok: false, status: 'ERROR', code: 'CAPABILITY_EXECUTION_NOT_ENABLED' },
     });
-    expect(customerProfileUpdate).toEqual({
+    expect(nextFollowUpTimeUpdate).toEqual({
       exitCode: 2,
       envelope: {
         ok: false,
         status: 'ERROR',
         code: 'CAPABILITY_EXPLICITLY_UNSUPPORTED',
-        capability_id: customerProfileUpdateTransport.capability_id,
-        reason: customerProfileUpdateTransport.reason,
+        capability_id: nextFollowUpTimeUpdateTransport.capability_id,
+        reason: nextFollowUpTimeUpdateTransport.reason,
       },
     });
     expect(invoke).not.toHaveBeenCalled();

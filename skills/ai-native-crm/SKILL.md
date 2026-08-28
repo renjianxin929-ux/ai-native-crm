@@ -132,3 +132,24 @@ existing-customer scope. A successful proposal returns:
 Stop at that envelope. The Agent must not run confirmation; a human performs
 the separate confirmation step. After that human step, a catalog-supported
 `customer.search` may find the new name.
+
+## Example E — update customer profile fields and stop at confirmation
+
+First inspect the catalog. Only call the exact `customer.profile.update`
+capability when that catalog entry is marked `SUPPORTED`.
+
+```powershell
+crm --profile sandbox catalog
+crm --profile sandbox cap customer.profile.update --args '{"customer_id":"<exact customer_id>","industry":"跨境电商","region":"广州"}'
+```
+
+Every call must include `--profile`. Supply the exact `customer_id` returned
+by an unambiguous search, or first select that customer with
+`crm --profile sandbox session select-customer --id <exact customer_id>` and
+then omit `customer_id` from the capability args. Only ordinary profile fields
+published in the catalog are accepted; do not pass `customerId`, status,
+schedule, rule, or runtime fields.
+
+The successful response is a `CONFIRMATION_REQUIRED` pending proposal. Stop at
+that envelope: the Agent must not run `crm confirm`; a human performs the
+separate confirmation step.

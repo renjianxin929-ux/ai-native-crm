@@ -98,19 +98,19 @@ describe('v0.2.2 C1 CLI parsing', () => {
   it('does not execute a parsed unwired write cap command', async () => {
     const invoke = vi.spyOn(PRODUCTION_CAPABILITY_EXECUTION, 'invoke');
     const output: string[] = [];
-    const customerProfileUpdate = buildCapabilityCatalog()
-      .find((entry) => entry.capability_id === 'customer.profile.update');
-    if (customerProfileUpdate?.transport !== 'EXPLICITLY_UNSUPPORTED') {
-      throw new Error('C7 must keep customer.profile.update explicitly unsupported.');
+    const nextFollowUpTimeUpdate = buildCapabilityCatalog()
+      .find((entry) => entry.capability_id === 'customer.next_follow_up_time.update');
+    if (nextFollowUpTimeUpdate?.transport !== 'EXPLICITLY_UNSUPPORTED') {
+      throw new Error('C7 must keep customer.next_follow_up_time.update explicitly unsupported.');
     }
 
     const exitCode = await runCli([
       '--profile',
       'sandbox',
       'cap',
-      'customer.profile.update',
+      'customer.next_follow_up_time.update',
       '--args',
-      '{"name":"C3 must not write"}',
+      '{"next_follow_up_at":"2026-09-03T09:00:00+08:00"}',
     ], (line) => output.push(line));
 
     // C7 rejects an unwired write before profile opening or Engine invocation.
@@ -119,8 +119,8 @@ describe('v0.2.2 C1 CLI parsing', () => {
       ok: false,
       status: 'ERROR',
       code: 'CAPABILITY_EXPLICITLY_UNSUPPORTED',
-      capability_id: customerProfileUpdate.capability_id,
-      reason: customerProfileUpdate.reason,
+      capability_id: nextFollowUpTimeUpdate.capability_id,
+      reason: nextFollowUpTimeUpdate.reason,
     })]);
     expect(defaultDbTripwire).not.toHaveBeenCalled();
     expect(invoke).not.toHaveBeenCalled();

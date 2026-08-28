@@ -170,14 +170,16 @@ describe('v0.2.2 customer.create C4/C5 CLI transport', () => {
       envelope: { ok: false, status: 'ERROR', code: 'CAPABILITY_NOT_FOUND' },
     });
 
-    const unwired = await runCap('sandbox', 'customer.profile.update', { name: '不应接通' });
+    const unwired = await runCap('sandbox', 'customer.next_follow_up_time.update', {
+      next_follow_up_at: '2026-09-03T09:00:00+08:00',
+    });
     expect(unwired).toMatchObject({
       exitCode: 2,
       envelope: {
         ok: false,
         status: 'ERROR',
         code: 'CAPABILITY_EXPLICITLY_UNSUPPORTED',
-        capability_id: 'customer.profile.update',
+        capability_id: 'customer.next_follow_up_time.update',
         reason: expect.any(String),
       },
     });

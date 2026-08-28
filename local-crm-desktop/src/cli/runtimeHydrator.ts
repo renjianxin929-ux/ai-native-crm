@@ -71,7 +71,7 @@ export function isC3CoreReadCapability(capabilityId: string): boolean {
 }
 
 /**
- * C4 intentionally enables only three representative confirmation-gated write
+ * C4 intentionally enables only the enumerated confirmation-gated write
  * capabilities. This is separate from (and must never expand) the C3 READ
  * allowlist above.
  */
@@ -79,6 +79,7 @@ export const C4_WRITE_PROPOSAL_CAPABILITY_IDS = Object.freeze([
   'follow_up.create',
   'customer.create',
   'customer.delete',
+  'customer.profile.update',
 ] as const);
 
 const C4_WRITE_PROPOSAL_CAPABILITY_ID_SET: ReadonlySet<string> = new Set(C4_WRITE_PROPOSAL_CAPABILITY_IDS);
@@ -370,6 +371,21 @@ function hydrateC4WriteProposalCapability(
         capability_id: descriptor.capability_id,
         capability_version: capabilityVersion,
         input: businessArgs,
+        scope: { customer_id: customerId },
+      };
+    case 'customer.profile.update':
+      if (Object.keys(businessArgs).length === 0) {
+        throw new RuntimeHydratorError(
+          'INVALID_INPUT',
+          'customer.profile.update requires at least one planner-approved profile field.',
+        );
+      }
+      return {
+        capability_id: descriptor.capability_id,
+        capability_version: capabilityVersion,
+        // update_customer_profile reads stored values while constructing its
+        // existing canonical proposal, so it alone receives the runtime DB.
+        input: { ...businessArgs, db: input.profileDb },
         scope: { customer_id: customerId },
       };
     case 'customer.delete':
