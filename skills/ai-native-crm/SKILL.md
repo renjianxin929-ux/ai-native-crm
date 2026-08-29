@@ -246,3 +246,31 @@ then omitted from the capability args. The args must include a non-empty
 The successful response is a `CONFIRMATION_REQUIRED` pending proposal. Stop at
 that envelope. The Agent must never run `crm confirm`; a human performs the
 separate confirmation step.
+
+## Example J — prepare an irreversible customer deletion and stop at strong confirmation
+
+First inspect the catalog. Only call the exact `customer.delete` capability
+when that catalog entry is marked `SUPPORTED`.
+
+```powershell
+crm --profile sandbox catalog
+crm --profile sandbox cap customer.delete --args '{"customer_id":"<exact customer_id>"}'
+```
+
+Every invocation must include `--profile`. The target customer must be the
+exact ID returned by an unambiguous search. Supply it as the `customer_id`
+scope overlay above, or select it first and then pass no business fields:
+
+```powershell
+crm --profile sandbox session select-customer --id <exact customer_id>
+crm --profile sandbox cap customer.delete --args '{}'
+```
+
+`customer.delete` has no planner business fields. Its args are either `{}` or
+the `customer_id` scope overlay; do not pass `name`, `customerId`, profile
+fields, or runtime dependencies.
+
+The successful response is a `STRONG_CONFIRMATION_REQUIRED` pending proposal.
+Stop at that envelope. This is an irreversible hard delete: the Agent must not
+run `crm confirm`, and must not pass, relay, or construct a `--phrase` value
+(including the pending nonce) for the human confirmation flow.
