@@ -161,6 +161,7 @@ cd local-crm-desktop
 npm ci
 npm run lint      # ESLint quality gate
 npm test          # Vitest suite
+npm run test:cli  # Focused v0.2.2 CLI compatibility gate
 npm run dev       # Vite frontend (use with Tauri for the desktop client)
 npm run build     # Typecheck + frontend production build
 npx tauri build   # Desktop installer for the current platform
