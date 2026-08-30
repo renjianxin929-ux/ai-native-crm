@@ -1,4 +1,5 @@
 mod credential_migration;
+mod desktop_profile;
 pub mod encrypted_credentials;
 mod battle_card_authoritative;
 mod battle_card_transactions;
@@ -15,6 +16,12 @@ pub fn run() {
     .invoke_handler(tauri::generate_handler![
       battle_card_transactions::confirm_battle_card_import_atomic_v1,
       battle_card_transactions::confirm_battle_card_stage_card_atomic_v1,
+      desktop_profile::desktop_data_source_status,
+      desktop_profile::desktop_list_profiles,
+      desktop_profile::desktop_create_profile,
+      desktop_profile::desktop_select_profile,
+      desktop_profile::desktop_profile_database_execute,
+      desktop_profile::desktop_profile_database_select,
       crm_lifecycle::restore_full_backup_atomic,
       crm_lifecycle::delete_customer_atomic,
       crm_lifecycle::persist_occurred_follow_up_atomic,

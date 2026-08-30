@@ -1,8 +1,14 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Database, FolderOpen, Brain, ArrowRight, Upload, AlertTriangle, Shield, Monitor, Info } from 'lucide-react';
-import { getDbPath } from '../lib/db';
+import { Database, Brain, ArrowRight, Upload, AlertTriangle, Shield, Monitor, Info } from 'lucide-react';
 import { APP_VERSION } from '../lib/version';
+import {
+  createDesktopProfile,
+  getDesktopDataSource,
+  listDesktopProfiles,
+  selectDesktopProfile,
+  type DesktopDataSource,
+} from '../lib/desktopDataSource';
 import {
   buildFullBackupPayload,
   normalizeBackupPayload,
@@ -180,7 +186,11 @@ export default function SettingsPage() {
   const navigate = useNavigate();
   useAppLocale();
   const [msg, setMsg] = useState('');
-  const [dbPath, setDbPath] = useState<string>('');
+  const [dataSource, setDataSource] = useState<DesktopDataSource | null>(null);
+  const [profiles, setProfiles] = useState<string[]>([]);
+  const [newProfileName, setNewProfileName] = useState('');
+  const [profileStatus, setProfileStatus] = useState<'idle' | 'loading' | 'switching'>('loading');
+  const [profileError, setProfileError] = useState('');
   const [restoreWarning, setRestoreWarning] = useState(false);
   const [restoreFile, setRestoreFile] = useState<File | null>(null);
   const [restorePreview, setRestorePreview] = useState<RestorePreview | null>(null);
@@ -188,7 +198,24 @@ export default function SettingsPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    getDbPath().then(setDbPath).catch(() => setMsg('无法获取数据库路径'));
+    void (async () => {
+      try {
+        const [nextDataSource, nextProfiles] = await Promise.all([
+          getDesktopDataSource(),
+          listDesktopProfiles(),
+        ]);
+        setDataSource(nextDataSource);
+        setProfiles(nextProfiles);
+        setProfileError('');
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        setDataSource(null);
+        setProfiles([]);
+        setProfileError(`Profile 数据源不可用：${detail}。为保护数据，未加载 legacy 数据。`);
+      } finally {
+        setProfileStatus('idle');
+      }
+    })();
   }, []);
 
   const isErrorMessage = msg.toLowerCase().includes('failed')
@@ -255,6 +282,40 @@ export default function SettingsPage() {
       setRestoreStatus('idle');
     }
   };
+
+  const activateProfile = async (profileName: string, create: boolean) => {
+    if (profileStatus !== 'idle') return;
+    setProfileStatus('switching');
+    setProfileError('');
+    try {
+      const nextDataSource = create
+        ? await createDesktopProfile(profileName)
+        : await selectDesktopProfile(profileName);
+      setDataSource(nextDataSource);
+      setMsg(`已保存 PROFILE:${nextDataSource.profileName}，正在重新加载运行时。`);
+      window.location.reload();
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      setProfileError(`无法打开 PROFILE:${profileName}：${detail}。未显示 legacy 数据。`);
+      setProfileStatus('idle');
+    }
+  };
+
+  const handleCreateProfile = async () => {
+    const profileName = newProfileName.trim();
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(profileName)) {
+      setProfileError('Profile 名称必须匹配 ^[A-Za-z0-9_-]{1,64}$。');
+      return;
+    }
+    await activateProfile(profileName, true);
+  };
+
+  const currentDataSourceLabel = dataSource
+    ? dataSource.mode === 'PROFILE'
+      ? `PROFILE:${dataSource.profileName}`
+      : 'LEGACY'
+    : '正在读取…';
+
   return (
     <div className="product-page">
       <div className="page-header">
@@ -267,6 +328,63 @@ export default function SettingsPage() {
 
       <div className="page-body">
         <div className="settings-grid">
+          <section className="glass-card" aria-label="Desktop Profile 数据源">
+            <h3 className="section-title"><Database size={16} style={{ marginRight: 6, verticalAlign: 'middle' }} />Desktop Profile 数据源</h3>
+            <p style={{ color: 'var(--text-secondary)', fontSize: 14, marginBottom: 8 }}>
+              当前模式：<strong>{currentDataSourceLabel}</strong>
+            </p>
+            <p style={{ color: 'var(--text-secondary)', fontSize: 13, marginBottom: 12, lineHeight: 1.6 }}>
+              PROFILE 固定使用本机 <code>~/.localcrm/profiles/&lt;profile&gt;/crm.sqlite</code>。此处不能绑定生产库、浏览任意 SQLite 文件或选择可执行文件。
+            </p>
+            {profileError ? (
+              <p role="alert" style={{ margin: '0 0 12px', color: '#dc2626', fontSize: 13, lineHeight: 1.5 }}>
+                {profileError}
+              </p>
+            ) : null}
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 6, color: 'var(--text-secondary)', fontSize: 14 }}>
+              已有 Profile
+              <select
+                aria-label="已有 Profile"
+                value={dataSource?.mode === 'PROFILE' ? dataSource.profileName : ''}
+                disabled={profileStatus !== 'idle' || profiles.length === 0}
+                onChange={event => {
+                  if (event.target.value) void activateProfile(event.target.value, false);
+                }}
+                style={{ minHeight: 40, padding: '0 12px', border: '1px solid var(--border)', borderRadius: 12 }}
+              >
+                <option value="">{profiles.length === 0 ? '暂无可用 Profile' : '选择一个 Profile'}</option>
+                {profiles.map(profileName => <option key={profileName} value={profileName}>{profileName}</option>)}
+              </select>
+            </label>
+            <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+              <label style={{ flex: '1 1 160px', display: 'flex', flexDirection: 'column', gap: 6, color: 'var(--text-secondary)', fontSize: 14 }}>
+                新 Profile 名称
+                <input
+                  aria-label="新 Profile 名称"
+                  value={newProfileName}
+                  maxLength={64}
+                  pattern="[A-Za-z0-9_-]{1,64}"
+                  placeholder="例如 demo"
+                  disabled={profileStatus !== 'idle'}
+                  onChange={event => setNewProfileName(event.target.value)}
+                  style={{ minHeight: 40, padding: '0 12px', border: '1px solid var(--border)', borderRadius: 12 }}
+                />
+              </label>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={profileStatus !== 'idle' || !/^[A-Za-z0-9_-]{1,64}$/.test(newProfileName.trim())}
+                onClick={() => { void handleCreateProfile(); }}
+                style={{ alignSelf: 'flex-end' }}
+              >
+                {profileStatus === 'switching' ? '正在切换…' : '创建并切换'}
+              </button>
+            </div>
+            {profileStatus === 'loading' ? (
+              <p style={{ margin: '12px 0 0', color: 'var(--text-muted)', fontSize: 13 }}>正在读取数据源配置…</p>
+            ) : null}
+          </section>
+
           <section className="glass-card" aria-label="数据与备份">
             <h3 className="section-title"><Database size={16} style={{ marginRight: 6, verticalAlign: 'middle' }} />数据与备份</h3>
             <p style={{ color: 'var(--text-secondary)', fontSize: 14, marginBottom: 8 }}>数据库</p>
@@ -307,22 +425,6 @@ export default function SettingsPage() {
                 正在恢复数据…
               </p>
             )}
-            <details style={{ marginTop: 12 }}>
-              <summary style={{ cursor: 'pointer', color: 'var(--text-muted)', fontSize: 13 }}>数据库路径</summary>
-              <div style={{ marginTop: 8, color: 'var(--text-secondary)' }}>
-                {dbPath ? (
-                  <p style={{
-                    fontSize: 12, fontFamily: 'monospace', background: 'var(--bg-secondary)',
-                    padding: '6px 10px', borderRadius: 8, wordBreak: 'break-all', margin: 0,
-                  }}>
-                    <FolderOpen size={14} style={{ marginRight: 4, verticalAlign: 'middle' }} />
-                    {dbPath}
-                  </p>
-                ) : (
-                  <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: 0 }}>正在加载数据库路径...</p>
-                )}
-              </div>
-            </details>
           </section>
 
           <section className="glass-card" aria-label="AI 与 Trusted Host 状态">
