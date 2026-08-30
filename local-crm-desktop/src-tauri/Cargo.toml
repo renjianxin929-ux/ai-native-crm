@@ -29,6 +29,10 @@ name = "app"
 path = "src/main.rs"
 
 [[bin]]
+name = "crm"
+path = "src/bin/crm.rs"
+
+[[bin]]
 name = "migrate_plaintext_credentials"
 path = "src/bin/migrate_plaintext_credentials.rs"
 required-features = ["migration-tool"]

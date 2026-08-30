@@ -15,6 +15,8 @@ use sqlx::sqlite::{SqliteArguments, SqliteConnectOptions, SqliteJournalMode, Sql
 use sqlx::{Column, Connection, Row, Sqlite, SqliteConnection, TypeInfo, ValueRef};
 use tauri::{AppHandle, Manager};
 
+use crate::bundled_cli;
+
 const PROFILE_NAME_MAX_LEN: usize = 64;
 const PROFILE_DATABASE_FILE_NAME: &str = "crm.sqlite";
 const LEGACY_DATABASE_FILE_NAME: &str = "personal-crm.db";
@@ -40,6 +42,21 @@ pub struct DesktopDataSourceStatus {
   pub mode: DesktopDataSourceMode,
   #[serde(skip_serializing_if = "Option::is_none")]
   pub profile_name: Option<String>,
+}
+
+/// Read-only settings projection. The renderer receives a fixed, Rust-resolved
+/// active profile path only for display; it never supplies a database or
+/// executable path back to the backend.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DesktopAgentCliStatus {
+  pub mode: DesktopDataSourceMode,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub profile_name: Option<String>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub profile_database_path: Option<String>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub installed_cli_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -432,6 +449,32 @@ fn sqlite_row_to_json(row: SqliteRow) -> Result<Value, String> {
 #[tauri::command]
 pub fn desktop_data_source_status(app: AppHandle) -> Result<DesktopDataSourceStatus, String> {
   read_data_source_status(&app)
+}
+
+/// Resolve all settings-only CLI fields from the installed app. No renderer
+/// argument can influence either path, and LEGACY mode never exposes the
+/// production personal-crm.db location through this command.
+#[tauri::command]
+pub fn desktop_agent_cli_status(app: AppHandle) -> Result<DesktopAgentCliStatus, String> {
+  let source = read_data_source_status(&app)?;
+  let profile_database_path = match &source.mode {
+    DesktopDataSourceMode::Profile => Some(
+      selected_profile_database_path(&app)?.to_string_lossy().to_string(),
+    ),
+    DesktopDataSourceMode::Legacy => None,
+  };
+  // Development runs do not have a packaged sidecar beside the app executable.
+  // A real installer must have one; the bundled install script verifies that.
+  let installed_cli_path = bundled_cli::resolve_installed_cli_path()
+    .ok()
+    .map(|path| path.to_string_lossy().to_string());
+
+  Ok(DesktopAgentCliStatus {
+    mode: source.mode,
+    profile_name: source.profile_name,
+    profile_database_path,
+    installed_cli_path,
+  })
 }
 
 #[tauri::command]

@@ -4,11 +4,14 @@ import { Database, Brain, ArrowRight, Upload, AlertTriangle, Shield, Monitor, In
 import { APP_VERSION } from '../lib/version';
 import {
   createDesktopProfile,
+  getDesktopAgentCliStatus,
   getDesktopDataSource,
   listDesktopProfiles,
   selectDesktopProfile,
+  type DesktopAgentCliStatus,
   type DesktopDataSource,
 } from '../lib/desktopDataSource';
+import { createSystemClipboardAdapter } from '../lib/clipboard';
 import {
   buildFullBackupPayload,
   normalizeBackupPayload,
@@ -122,6 +125,18 @@ export function formatRestoreFailureMessage(error: unknown): string {
   return `恢复失败：${message}。本次恢复已回滚，当前数据不会处于半恢复状态。`;
 }
 
+/** The copied command is a display-only projection of a Rust-resolved path. */
+export function buildAgentCatalogExample(installedCliPath: string, profileName: string): string {
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(profileName)) {
+    throw new Error('Agent CLI example requires a valid profile name.');
+  }
+  if (!/^(?:[A-Za-z]:[\\/]|\\\\[^\\/]+[\\/][^\\/]+|\/)/u.test(installedCliPath)
+    || /["\r\n]/u.test(installedCliPath)) {
+    throw new Error('Agent CLI example requires a safe absolute executable path.');
+  }
+  return `"${installedCliPath}" --profile ${profileName} catalog`;
+}
+
 export function buildBackupDownloadFileName(input: {
   kind: BackupDownloadKind;
   version: string;
@@ -187,6 +202,8 @@ export default function SettingsPage() {
   useAppLocale();
   const [msg, setMsg] = useState('');
   const [dataSource, setDataSource] = useState<DesktopDataSource | null>(null);
+  const [agentCliStatus, setAgentCliStatus] = useState<DesktopAgentCliStatus | null>(null);
+  const [agentCliMessage, setAgentCliMessage] = useState('');
   const [profiles, setProfiles] = useState<string[]>([]);
   const [newProfileName, setNewProfileName] = useState('');
   const [profileStatus, setProfileStatus] = useState<'idle' | 'loading' | 'switching'>('loading');
@@ -200,17 +217,20 @@ export default function SettingsPage() {
   useEffect(() => {
     void (async () => {
       try {
-        const [nextDataSource, nextProfiles] = await Promise.all([
+        const [nextDataSource, nextProfiles, nextAgentCliStatus] = await Promise.all([
           getDesktopDataSource(),
           listDesktopProfiles(),
+          getDesktopAgentCliStatus(),
         ]);
         setDataSource(nextDataSource);
         setProfiles(nextProfiles);
+        setAgentCliStatus(nextAgentCliStatus);
         setProfileError('');
       } catch (error) {
         const detail = error instanceof Error ? error.message : String(error);
         setDataSource(null);
         setProfiles([]);
+        setAgentCliStatus(null);
         setProfileError(`Profile 数据源不可用：${detail}。为保护数据，未加载 legacy 数据。`);
       } finally {
         setProfileStatus('idle');
@@ -315,6 +335,22 @@ export default function SettingsPage() {
       ? `PROFILE:${dataSource.profileName}`
       : 'LEGACY'
     : '正在读取…';
+  const activeProfileName = agentCliStatus?.mode === 'PROFILE' ? agentCliStatus.profileName : null;
+  const profileDatabasePath = agentCliStatus?.profileDatabasePath ?? null;
+  const installedCliPath = agentCliStatus?.installedCliPath ?? null;
+  const agentCatalogExample = activeProfileName && installedCliPath
+    ? buildAgentCatalogExample(installedCliPath, activeProfileName)
+    : null;
+
+  const copyAgentCatalogExample = async () => {
+    if (!agentCatalogExample) return;
+    try {
+      await createSystemClipboardAdapter().writeText(agentCatalogExample);
+      setAgentCliMessage('Agent 示例已复制。');
+    } catch (error) {
+      setAgentCliMessage(`复制失败：${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
 
   return (
     <div className="product-page">
@@ -336,6 +372,32 @@ export default function SettingsPage() {
             <p style={{ color: 'var(--text-secondary)', fontSize: 13, marginBottom: 12, lineHeight: 1.6 }}>
               PROFILE 固定使用本机 <code>~/.localcrm/profiles/&lt;profile&gt;/crm.sqlite</code>。此处不能绑定生产库、浏览任意 SQLite 文件或选择可执行文件。
             </p>
+            <p style={{ color: 'var(--text-secondary)', fontSize: 13, marginBottom: 8, lineHeight: 1.6 }}>
+              当前 Profile：<strong>{activeProfileName ?? '无（LEGACY）'}</strong>
+            </p>
+            <p style={{ color: 'var(--text-secondary)', fontSize: 13, marginBottom: 8, lineHeight: 1.6 }}>
+              当前 Profile DB 路径（Rust 只读解析）：{profileDatabasePath ? <code>{profileDatabasePath}</code> : '不适用（LEGACY）'}
+            </p>
+            <p style={{ color: 'var(--text-secondary)', fontSize: 13, marginBottom: 8, lineHeight: 1.6 }}>
+              已安装 CLI 可执行路径（Rust 只读解析）：{installedCliPath ? <code>{installedCliPath}</code> : '仅安装包提供；当前开发运行未检测到 sidecar。'}
+            </p>
+            <p style={{ color: 'var(--text-secondary)', fontSize: 13, marginBottom: 8, lineHeight: 1.6 }}>
+              Agent integration 只允许 <code>catalog</code> / <code>cap</code> / <code>session</code> / <code>profile-status</code>。Agent 不得调用 <code>confirm</code>，不得传 <code>--phrase</code>；本刀不提供第二个 Agent 可执行文件。
+            </p>
+            {agentCatalogExample ? (
+              <div style={{ margin: '0 0 12px' }}>
+                <p style={{ color: 'var(--text-secondary)', fontSize: 13, margin: '0 0 6px' }}>Agent 示例（绝对路径）：</p>
+                <code aria-label="Agent CLI 示例" style={{ display: 'block', overflowWrap: 'anywhere', marginBottom: 8 }}>{agentCatalogExample}</code>
+                <button type="button" className="btn btn-sm" onClick={() => { void copyAgentCatalogExample(); }}>
+                  复制 Agent 示例
+                </button>
+                {agentCliMessage ? <p style={{ margin: '8px 0 0', color: agentCliMessage.startsWith('复制失败') ? '#dc2626' : 'var(--text-secondary)', fontSize: 13 }}>{agentCliMessage}</p> : null}
+              </div>
+            ) : (
+              <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 12 }}>
+                请先在安装包中选择一个 Profile；没有 PATH shim 时不会复制裸 <code>crm --profile demo catalog</code> 命令。
+              </p>
+            )}
             {profileError ? (
               <p role="alert" style={{ margin: '0 0 12px', color: '#dc2626', fontSize: 13, lineHeight: 1.5 }}>
                 {profileError}
@@ -431,6 +493,9 @@ export default function SettingsPage() {
             <h3 className="section-title"><Brain size={16} style={{ marginRight: 6, verticalAlign: 'middle' }} />AI / Trusted Host 状态</h3>
             <p style={{ color: 'var(--text-secondary)', fontSize: 14, marginBottom: 12 }}>
               canonical Sales Agent 由宿主侧 Trusted Host 管理；未配置时请求会被安全阻断。前端页面不负责为 Agent 配置密钥。
+            </p>
+            <p style={{ color: 'var(--text-secondary)', fontSize: 13, margin: '0 0 12px', lineHeight: 1.6 }}>
+              Trusted Host 下的 Agent integration 仅允许 <code>catalog</code> / <code>cap</code> / <code>session</code> / <code>profile-status</code>；不得调用 <code>confirm</code>，不得传 <code>--phrase</code>。
             </p>
             <span className="status-pill info">Host-side Trusted Host</span>
             <p style={{ color: 'var(--text-secondary)', fontSize: 13, margin: '12px 0' }}>

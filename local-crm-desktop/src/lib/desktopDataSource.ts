@@ -5,6 +5,15 @@ export type DesktopDataSource =
   | { mode: 'LEGACY'; profileName?: never }
   | { mode: 'PROFILE'; profileName: string };
 
+/**
+ * Fixed, backend-resolved status for the bundled human/Agent CLI. These paths
+ * are presentation-only: callers cannot submit a database or executable path.
+ */
+export type DesktopAgentCliStatus = DesktopDataSource & {
+  readonly profileDatabasePath?: string;
+  readonly installedCliPath?: string;
+};
+
 type DesktopCommandInvoke = (command: string, args: Record<string, unknown>) => Promise<unknown>;
 
 let commandInvokeForTests: DesktopCommandInvoke | null = null;
@@ -27,6 +36,38 @@ function parseDesktopDataSource(value: unknown): DesktopDataSource {
     return { mode: 'PROFILE', profileName: value.profileName };
   }
   throw new Error('Desktop data source response is invalid.');
+}
+
+function isAbsoluteDisplayPath(value: string): boolean {
+  return /^(?:[A-Za-z]:[\\/]|\\\\[^\\/]+[\\/][^\\/]+|\/)/u.test(value);
+}
+
+function parseDesktopAgentCliStatus(value: unknown): DesktopAgentCliStatus {
+  const dataSource = parseDesktopDataSource(value);
+  if (!isRecord(value)) {
+    throw new Error('Bundled CLI status response is invalid.');
+  }
+  const profileDatabasePath = value.profileDatabasePath;
+  const installedCliPath = value.installedCliPath;
+  if (profileDatabasePath !== undefined
+    && (typeof profileDatabasePath !== 'string' || !isAbsoluteDisplayPath(profileDatabasePath))) {
+    throw new Error('Bundled CLI status returned an invalid profile database path.');
+  }
+  if (installedCliPath !== undefined
+    && (typeof installedCliPath !== 'string' || !isAbsoluteDisplayPath(installedCliPath))) {
+    throw new Error('Bundled CLI status returned an invalid executable path.');
+  }
+  if (dataSource.mode === 'LEGACY' && profileDatabasePath !== undefined) {
+    throw new Error('LEGACY status must not expose a profile database path.');
+  }
+  if (dataSource.mode === 'PROFILE' && profileDatabasePath === undefined) {
+    throw new Error('PROFILE status is missing its fixed profile database path.');
+  }
+  return {
+    ...dataSource,
+    ...(profileDatabasePath === undefined ? {} : { profileDatabasePath }),
+    ...(installedCliPath === undefined ? {} : { installedCliPath }),
+  };
 }
 
 async function invokeDesktopDataSourceCommand(command: string, args: Record<string, unknown>): Promise<unknown> {
@@ -52,6 +93,13 @@ export async function getDesktopDataSource(): Promise<DesktopDataSource> {
     return { mode: 'LEGACY' };
   }
   return parseDesktopDataSource(await invokeDesktopDataSourceCommand('desktop_data_source_status', {}));
+}
+
+export async function getDesktopAgentCliStatus(): Promise<DesktopAgentCliStatus> {
+  if (!commandInvokeForTests && !isTauriRuntime()) {
+    return { mode: 'LEGACY' };
+  }
+  return parseDesktopAgentCliStatus(await invokeDesktopDataSourceCommand('desktop_agent_cli_status', {}));
 }
 
 export async function listDesktopProfiles(): Promise<string[]> {

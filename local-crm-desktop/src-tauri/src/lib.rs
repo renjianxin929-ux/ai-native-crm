@@ -1,5 +1,6 @@
 mod credential_migration;
 mod desktop_profile;
+mod bundled_cli;
 pub mod encrypted_credentials;
 mod battle_card_authoritative;
 mod battle_card_transactions;
@@ -17,6 +18,7 @@ pub fn run() {
       battle_card_transactions::confirm_battle_card_import_atomic_v1,
       battle_card_transactions::confirm_battle_card_stage_card_atomic_v1,
       desktop_profile::desktop_data_source_status,
+      desktop_profile::desktop_agent_cli_status,
       desktop_profile::desktop_list_profiles,
       desktop_profile::desktop_create_profile,
       desktop_profile::desktop_select_profile,
