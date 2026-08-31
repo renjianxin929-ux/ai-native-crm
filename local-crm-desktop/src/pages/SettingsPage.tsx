@@ -125,8 +125,20 @@ export function formatRestoreFailureMessage(error: unknown): string {
   return `恢复失败：${message}。本次恢复已回滚，当前数据不会处于半恢复状态。`;
 }
 
+/** Removes Windows' extended-length prefix before a path reaches the UI or clipboard. */
+export function stripWindowsExtendedPathPrefix(path: string): string {
+  if (path.startsWith('\\\\?\\UNC\\')) {
+    return '\\\\' + path.slice('\\\\?\\UNC\\'.length);
+  }
+  if (path.startsWith('\\\\?\\')) {
+    return path.slice('\\\\?\\'.length);
+  }
+  return path;
+}
+
 /** The copied command is a display-only projection of a Rust-resolved path. */
 export function buildAgentCatalogExample(installedCliPath: string, profileName: string): string {
+  const displayCliPath = stripWindowsExtendedPathPrefix(installedCliPath);
   if (!/^[A-Za-z0-9_-]{1,64}$/.test(profileName)) {
     throw new Error('Agent CLI example requires a valid profile name.');
   }
@@ -134,7 +146,7 @@ export function buildAgentCatalogExample(installedCliPath: string, profileName: 
     || /["\r\n]/u.test(installedCliPath)) {
     throw new Error('Agent CLI example requires a safe absolute executable path.');
   }
-  return `"${installedCliPath}" --profile ${profileName} catalog`;
+  return '"' + displayCliPath + '" --profile ' + profileName + ' catalog';
 }
 
 export function buildBackupDownloadFileName(input: {
@@ -338,6 +350,7 @@ export default function SettingsPage() {
   const activeProfileName = agentCliStatus?.mode === 'PROFILE' ? agentCliStatus.profileName : null;
   const profileDatabasePath = agentCliStatus?.profileDatabasePath ?? null;
   const installedCliPath = agentCliStatus?.installedCliPath ?? null;
+  const displayedCliPath = installedCliPath ? stripWindowsExtendedPathPrefix(installedCliPath) : null;
   const agentCatalogExample = activeProfileName && installedCliPath
     ? buildAgentCatalogExample(installedCliPath, activeProfileName)
     : null;
@@ -379,7 +392,7 @@ export default function SettingsPage() {
               当前 Profile DB 路径（Rust 只读解析）：{profileDatabasePath ? <code>{profileDatabasePath}</code> : '不适用（LEGACY）'}
             </p>
             <p style={{ color: 'var(--text-secondary)', fontSize: 13, marginBottom: 8, lineHeight: 1.6 }}>
-              已安装 CLI 可执行路径（Rust 只读解析）：{installedCliPath ? <code>{installedCliPath}</code> : '仅安装包提供；当前开发运行未检测到 sidecar。'}
+              已安装 CLI 可执行路径（Rust 只读解析）：{displayedCliPath ? <code>{displayedCliPath}</code> : '仅安装包提供；当前开发运行未检测到 sidecar。'}
             </p>
             <p style={{ color: 'var(--text-secondary)', fontSize: 13, marginBottom: 8, lineHeight: 1.6 }}>
               Agent integration 只允许 <code>catalog</code> / <code>cap</code> / <code>session</code> / <code>profile-status</code>。Agent 不得调用 <code>confirm</code>，不得传 <code>--phrase</code>；本刀不提供第二个 Agent 可执行文件。

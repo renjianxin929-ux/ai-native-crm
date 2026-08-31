@@ -6,7 +6,7 @@ import {
   __setDesktopDataSourceCommandInvokeForTests,
   getDesktopAgentCliStatus,
 } from '../lib/desktopDataSource';
-import { buildAgentCatalogExample } from '../pages/SettingsPage';
+import { buildAgentCatalogExample, stripWindowsExtendedPathPrefix } from '../pages/SettingsPage';
 
 afterEach(() => {
   __setDesktopDataSourceCommandInvokeForTests(null);
@@ -37,6 +37,10 @@ describe('bundled executable CLI release surface', () => {
   it('copies an absolute sidecar command and never a bare PATH command', () => {
     expect(buildAgentCatalogExample('C:\\Program Files\\local-crm\\crm.exe', 'demo'))
       .toBe('"C:\\Program Files\\local-crm\\crm.exe" --profile demo catalog');
+    expect(buildAgentCatalogExample('\\\\?\\C:\\Program Files\\local-crm\\crm.exe', 'demo'))
+      .toBe('"C:\\Program Files\\local-crm\\crm.exe" --profile demo catalog');
+    expect(stripWindowsExtendedPathPrefix('\\\\?\\UNC\\server\\share\\crm.exe'))
+      .toBe('\\\\server\\share\\crm.exe');
     expect(buildAgentCatalogExample('/Applications/local-crm.app/Contents/MacOS/crm', 'demo'))
       .toBe('"/Applications/local-crm.app/Contents/MacOS/crm" --profile demo catalog');
     expect(() => buildAgentCatalogExample('crm', 'demo')).toThrow('absolute executable path');
@@ -82,5 +86,9 @@ describe('bundled executable CLI release surface', () => {
     expect(bundledCli).toContain('resolve_bundled_runtime_dir_from_sidecar_for_platform');
     expect(bundledRuntimeLayout).toContain('BundledRuntimePlatform::Windows => install_bin_dir.join("crm-runtime")');
     expect(launcher).toContain('resolve_bundled_runtime_dir_from_sidecar');
+    expect(launcher).toContain('#![cfg_attr(target_os = "windows", windows_subsystem = "console")]');
+    expect(launcher).toContain('stdin(Stdio::inherit())');
+    expect(launcher).toContain('stdout(Stdio::inherit())');
+    expect(launcher).toContain('stderr(Stdio::inherit())');
   });
 });
