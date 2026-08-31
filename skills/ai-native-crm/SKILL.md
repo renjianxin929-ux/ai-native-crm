@@ -9,6 +9,27 @@ The CLI entrypoint is in `local-crm-desktop`. Treat its `catalog` as the
 authority for the current CLI surface: every catalog entry is marked
 `SUPPORTED` or `EXPLICITLY_UNSUPPORTED`.
 
+## v0.2.2 release truth
+
+The planner publishes 25 capabilities; the CLI transports 21. Exactly four
+Battle Card write capabilities are `EXPLICITLY_UNSUPPORTED`:
+
+- `battle_card.draft.create`
+- `battle_card.confirm`
+- `battle_card.hypothesis.status.update`
+- `battle_card.intelligence_import.confirm`
+
+This does not make every `battle_card.*` capability unsupported. The three
+Battle Card reads `battle_card.current.read`, `battle_card.history.read`, and
+`battle_card.context.read` remain `SUPPORTED`. Do not describe those four
+writes as supported.
+
+The user CLI is the installed `crm` sidecar executable, not
+`dist/cli/main.js`. The CLI and Agent working database is
+`~/.localcrm/profiles/<profile>/crm.sqlite`. `personal-crm.db` is Desktop
+LEGACY compatibility only: the CLI never targets it and never migrates it
+automatically.
+
 ## Required operating rules
 
 1. Every `crm` invocation must explicitly include `--profile <profile>`; never
@@ -28,17 +49,20 @@ authority for the current CLI surface: every catalog entry is marked
    write authority.
 7. The Agent performs analysis from the returned evidence. The CLI returns
    envelopes and data only; it does not output a “建议你下一步” summary.
-8. On either `CONFIRMATION_REQUIRED` or
+8. A supported write capability stops at a pending confirmation. It does not
+   directly complete the business write.
+9. On either `CONFIRMATION_REQUIRED` or
    `STRONG_CONFIRMATION_REQUIRED`, immediately stop that write path. Do not
    make another write call, retry into confirmation, or treat the proposal as
    executed.
-9. The Agent must never run `crm confirm`. It hands the pending proposal to a
-   human and does not execute confirmation on the human's behalf.
-10. Do not request a production DB path. The explicit profile is the only CRM
+10. A human running `crm confirm` enters the existing confirmation execution
+    path. The Agent must never run it or pass `--phrase`; it hands the pending
+    proposal to a human and does not execute confirmation on the human's behalf.
+11. Do not request a production DB path. The explicit profile is the only CRM
     scope handle the Agent needs.
-11. Never pass `db`, `clock`, `credential`, or `snapshot` in CLI arguments or
+12. Never pass `db`, `clock`, `credential`, or `snapshot` in CLI arguments or
     attempt to supply those runtime dependencies.
-12. Never directly read, write, or modify CRM SQLite. Use only the supported
+13. Never directly read, write, or modify CRM SQLite. Use only the supported
     CLI capability boundary.
 
 For strong confirmation, `confirm_phrase_expected` is the pending proposal's
@@ -271,6 +295,7 @@ the `customer_id` scope overlay; do not pass `name`, `customerId`, profile
 fields, or runtime dependencies.
 
 The successful response is a `STRONG_CONFIRMATION_REQUIRED` pending proposal.
-Stop at that envelope. This is an irreversible hard delete: the Agent must not
-run `crm confirm`, and must not pass, relay, or construct a `--phrase` value
-(including the pending nonce) for the human confirmation flow.
+`customer.delete` is an irreversible hard delete and therefore requires strong
+confirmation. Stop at that envelope: the Agent must not run `crm confirm`, and
+must not pass, relay, or construct a `--phrase` value (including the pending
+nonce) for the human confirmation flow.
