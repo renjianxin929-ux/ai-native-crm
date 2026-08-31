@@ -1,6 +1,7 @@
 mod credential_migration;
 mod desktop_profile;
 mod bundled_cli;
+mod bundled_runtime_layout;
 pub mod encrypted_credentials;
 mod battle_card_authoritative;
 mod battle_card_transactions;

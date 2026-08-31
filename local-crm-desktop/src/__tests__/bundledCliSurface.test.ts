@@ -52,12 +52,18 @@ describe('bundled executable CLI release surface', () => {
     const buildScript = readFileSync(resolve(repoRoot, 'scripts/build-bundled-cli.mjs'), 'utf8');
     const cargoBuildScript = readFileSync(resolve(repoRoot, 'src-tauri/build.rs'), 'utf8');
     const installCheck = readFileSync(resolve(repoRoot, 'scripts/check-bundled-cli-install.mjs'), 'utf8');
+    const bundledCli = readFileSync(resolve(repoRoot, 'src-tauri/src/bundled_cli.rs'), 'utf8');
+    const bundledRuntimeLayout = readFileSync(resolve(repoRoot, 'src-tauri/src/bundled_runtime_layout.rs'), 'utf8');
+    const launcher = readFileSync(resolve(repoRoot, 'src-tauri/src/bin/crm.rs'), 'utf8');
 
     expect((packageJson.scripts as Record<string, string>)['build:bundled-cli']).toBe('node scripts/build-bundled-cli.mjs');
     expect((packageJson.scripts as Record<string, string>)['verify:bundled-cli']).toBe('node scripts/check-bundled-cli-install.mjs');
     expect(packageJson).not.toHaveProperty('bin');
     expect((tauriConfig.build as Record<string, string>).beforeBuildCommand).toBe('npm run build:bundled-cli');
     expect((tauriConfig.bundle as Record<string, unknown>).externalBin).toEqual(['binaries/crm']);
+    expect((tauriConfig.bundle as Record<string, unknown>).resources).toEqual({
+      'resources/crm-runtime/': 'crm-runtime/',
+    });
     expect(adapter).toContain("'desktop_agent_cli_status'");
     expect(settings).toContain('没有 PATH shim 时不会复制裸');
     expect(settings).toContain('Agent 不得调用');
@@ -72,5 +78,9 @@ describe('bundled executable CLI release surface', () => {
     expect(cargoBuildScript).toContain('CRM_BUNDLED_CLI_LAUNCHER_BUILD');
     expect(installCheck).toContain("PATH: ''");
     expect(installCheck).toContain("customer_create_confirmation_required: true");
+    expect(installCheck).toMatch(/process\.platform === 'win32'\s*\?\s*join\(installBinDir, 'crm-runtime'\)/u);
+    expect(bundledCli).toContain('resolve_bundled_runtime_dir_from_sidecar_for_platform');
+    expect(bundledRuntimeLayout).toContain('BundledRuntimePlatform::Windows => install_bin_dir.join("crm-runtime")');
+    expect(launcher).toContain('resolve_bundled_runtime_dir_from_sidecar');
   });
 });

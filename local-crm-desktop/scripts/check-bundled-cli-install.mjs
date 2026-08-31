@@ -69,9 +69,10 @@ function stageMockInstall(root, sourceCli, sourceRuntime) {
     mkdirSync(installBinDir, { recursive: true });
     copyFileSync(sourceCli, join(installBinDir, 'crm'));
     chmodSync(join(installBinDir, 'crm'), 0o755);
-    cpSync(sourceRuntime, join(contents, 'Resources', 'crm-runtime'), { recursive: true });
-    chmodSync(join(contents, 'Resources', 'crm-runtime', 'node'), 0o755);
-    return join(installBinDir, 'crm');
+    const runtimeDir = join(contents, 'Resources', 'crm-runtime');
+    cpSync(sourceRuntime, runtimeDir, { recursive: true });
+    chmodSync(join(runtimeDir, 'node'), 0o755);
+    return { cliPath: join(installBinDir, 'crm'), runtimeDir };
   }
 
   const installBinDir = join(root, 'installed');
@@ -80,9 +81,12 @@ function stageMockInstall(root, sourceCli, sourceRuntime) {
   const cliPath = join(installBinDir, `crm${extension}`);
   copyFileSync(sourceCli, cliPath);
   if (extension.length === 0) chmodSync(cliPath, 0o755);
-  cpSync(sourceRuntime, join(installBinDir, 'resources', 'crm-runtime'), { recursive: true });
-  if (extension.length === 0) chmodSync(join(installBinDir, 'resources', 'crm-runtime', 'node'), 0o755);
-  return cliPath;
+  const runtimeDir = process.platform === 'win32'
+    ? join(installBinDir, 'crm-runtime')
+    : join(installBinDir, 'resources', 'crm-runtime');
+  cpSync(sourceRuntime, runtimeDir, { recursive: true });
+  if (extension.length === 0) chmodSync(join(runtimeDir, 'node'), 0o755);
+  return { cliPath, runtimeDir };
 }
 
 function queryCustomerCount(runtimeDir, profileDatabase, customerName, environment) {
@@ -122,10 +126,7 @@ function main() {
 
   const temporaryRoot = mkdtempSync(join(tmpdir(), 'localcrm-bundled-cli-install-'));
   try {
-    const cliPath = stageMockInstall(temporaryRoot, sourceCli, sourceRuntime);
-    const runtimeDir = process.platform === 'darwin'
-      ? join(temporaryRoot, 'Local CRM.app', 'Contents', 'Resources', 'crm-runtime')
-      : join(temporaryRoot, 'installed', 'resources', 'crm-runtime');
+    const { cliPath, runtimeDir } = stageMockInstall(temporaryRoot, sourceCli, sourceRuntime);
     const profileHome = join(temporaryRoot, 'profile-home');
     const legacyAppData = join(temporaryRoot, 'legacy-app-data');
     const legacyDatabase = join(legacyAppData, 'com.localcrm.desktop', 'personal-crm.db');

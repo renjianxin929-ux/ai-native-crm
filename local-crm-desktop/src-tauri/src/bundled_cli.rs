@@ -71,6 +71,9 @@ pub fn resolve_installed_cli_path() -> Result<PathBuf, String> {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use crate::bundled_runtime_layout::{
+    resolve_bundled_runtime_dir_from_sidecar_for_platform, BundledRuntimePlatform,
+  };
   use std::fs::File;
   use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -101,16 +104,23 @@ mod tests {
   }
 
   #[test]
-  fn resolves_a_windows_sidecar_from_a_mock_install_directory() {
+  fn resolves_a_windows_sidecar_and_runtime_from_a_tauri_mock_install_directory() {
     let install = TestDirectory::new("windows");
     let app = install.0.join("local-crm.exe");
     let cli = install.0.join("crm.exe");
+    let runtime = install.0.join("crm-runtime");
     touch(&app);
     touch(&cli);
+    fs::create_dir_all(&runtime).expect("create Windows Tauri runtime directory");
 
     assert_eq!(
       resolve_installed_cli_path_for_platform(&app, BundledCliPlatform::Windows).expect("resolve Windows sidecar"),
       fs::canonicalize(cli).expect("canonical Windows sidecar"),
+    );
+    assert_eq!(
+      resolve_bundled_runtime_dir_from_sidecar_for_platform(&cli, BundledRuntimePlatform::Windows)
+        .expect("resolve Windows Tauri runtime"),
+      fs::canonicalize(runtime).expect("canonical Windows Tauri runtime"),
     );
   }
 
@@ -120,12 +130,32 @@ mod tests {
     let contents = install.0.join("Local CRM.app").join("Contents");
     let app = contents.join("MacOS").join("local-crm");
     let cli = contents.join("MacOS").join("crm");
+    let runtime = contents.join("Resources").join("crm-runtime");
     touch(&app);
     touch(&cli);
+    fs::create_dir_all(&runtime).expect("create macOS Resources runtime directory");
 
     assert_eq!(
       resolve_installed_cli_path_for_platform(&app, BundledCliPlatform::Macos).expect("resolve macOS sidecar"),
       fs::canonicalize(cli).expect("canonical macOS sidecar"),
+    );
+    assert_eq!(
+      resolve_bundled_runtime_dir_from_sidecar_for_platform(&cli, BundledRuntimePlatform::Macos)
+        .expect("resolve macOS Resources runtime"),
+      fs::canonicalize(runtime).expect("canonical macOS Resources runtime"),
+    );
+  }
+
+  #[test]
+  fn refuses_the_legacy_windows_resources_prefix() {
+    let install = TestDirectory::new("windows-legacy-runtime");
+    let cli = install.0.join("crm.exe");
+    touch(&cli);
+    fs::create_dir_all(install.0.join("resources").join("crm-runtime"))
+      .expect("create legacy Windows runtime directory");
+
+    assert!(
+      resolve_bundled_runtime_dir_from_sidecar_for_platform(&cli, BundledRuntimePlatform::Windows).is_err()
     );
   }
 

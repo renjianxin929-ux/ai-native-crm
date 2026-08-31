@@ -4,6 +4,10 @@
 //! resolves Node, JavaScript, and the native SQLite addon from its own
 //! installation, never from PATH or a source checkout.
 
+#[path = "../bundled_runtime_layout.rs"]
+mod bundled_runtime_layout;
+
+use bundled_runtime_layout::resolve_bundled_runtime_dir_from_sidecar;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -11,30 +15,6 @@ use std::process::{self, Command};
 
 fn sidecar_error(message: impl Into<String>) -> String {
   format!("bundled CRM CLI: {}", message.into())
-}
-
-fn runtime_dir_from_sidecar(sidecar_path: &Path) -> Result<PathBuf, String> {
-  let install_bin_dir = sidecar_path
-    .parent()
-    .ok_or_else(|| sidecar_error("installed executable directory is unavailable"))?;
-
-  #[cfg(target_os = "macos")]
-  let runtime_dir = install_bin_dir
-    .parent()
-    .ok_or_else(|| sidecar_error("macOS app Contents directory is unavailable"))?
-    .join("Resources")
-    .join("crm-runtime");
-
-  #[cfg(not(target_os = "macos"))]
-  let runtime_dir = install_bin_dir.join("resources").join("crm-runtime");
-
-  let metadata = fs::symlink_metadata(&runtime_dir)
-    .map_err(|error| sidecar_error(format!("runtime directory is unavailable: {error}")))?;
-  if metadata.file_type().is_symlink() || !metadata.is_dir() {
-    return Err(sidecar_error("runtime directory must be a real directory"));
-  }
-  fs::canonicalize(runtime_dir)
-    .map_err(|error| sidecar_error(format!("runtime directory could not be resolved: {error}")))
 }
 
 fn runtime_file(runtime_dir: &Path, file_name: &str) -> Result<PathBuf, String> {
@@ -55,9 +35,7 @@ fn runtime_file(runtime_dir: &Path, file_name: &str) -> Result<PathBuf, String> 
 fn run() -> Result<i32, String> {
   let sidecar_path = env::current_exe()
     .map_err(|error| sidecar_error(format!("installed executable path is unavailable: {error}")))?;
-  let sidecar_path = fs::canonicalize(sidecar_path)
-    .map_err(|error| sidecar_error(format!("installed executable path could not be resolved: {error}")))?;
-  let runtime_dir = runtime_dir_from_sidecar(&sidecar_path)?;
+  let runtime_dir = resolve_bundled_runtime_dir_from_sidecar(&sidecar_path)?;
 
   #[cfg(target_os = "windows")]
   let node_file_name = "node.exe";
