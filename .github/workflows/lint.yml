@@ -52,5 +52,10 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: local-crm-desktop/src-tauri
+      - name: Prepare bundled CLI sidecar for Rust tests
+        run: |
+          CRM_BUNDLED_CLI_LAUNCHER_BUILD=1 cargo build --manifest-path src-tauri/Cargo.toml --bin crm
+          mkdir -p src-tauri/binaries
+          cp src-tauri/target/debug/crm src-tauri/binaries/crm-x86_64-unknown-linux-gnu
       - name: Run Rust tests
         run: cargo test --manifest-path src-tauri/Cargo.toml
