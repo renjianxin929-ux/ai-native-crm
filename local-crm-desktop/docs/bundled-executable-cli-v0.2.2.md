@@ -50,6 +50,17 @@ The CLI and Agent working database is
 LEGACY compatibility only. The CLI never uses the legacy production database
 as its target and does not automatically migrate it.
 
+## Troubleshooting `PROFILE_OPEN_FAILED`
+
+When the installed CLI reports `PROFILE_OPEN_FAILED`, first check whether the
+Agent sandbox can access the directory containing
+`~/.localcrm/profiles/<profile>/crm.sqlite`. Do not immediately diagnose a
+damaged bundled runtime or schema: a restricted Agent sandbox can produce this
+error even when the bundled Node runtime, `better-sqlite3`, schema, and profile
+filesystem are healthy. Granting the Agent filesystem access to
+`~/.localcrm` does not change the storage boundary: the Agent may use CRM only
+through the `crm` CLI and must never directly read or modify `crm.sqlite`.
+
 ## Installed runtime layout
 
 The user CLI is the installed `crm` sidecar executable, not
