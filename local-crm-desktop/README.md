@@ -1,6 +1,6 @@
 # AI Native CRM — desktop app
 
-This directory is the V0.2 desktop product (`Tauri` + React).
+This directory is the v0.2.2 desktop product (`Tauri` + React).
 
 Project positioning, architecture, safety, and status live in the repository root README:
 

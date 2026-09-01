@@ -2,16 +2,15 @@
 //! plugin-sql pooled execute() cannot guarantee BEGIN/COMMIT affinity.
 
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::time::Duration;
 
 use serde::Deserialize;
 use serde_json::Value;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode};
 use sqlx::{Connection, SqliteConnection};
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
-const DB_FILE_NAME: &str = "personal-crm.db";
+use crate::desktop_profile;
 
 const BACKUP_TABLES: &[&str] = &[
   "customers",
@@ -57,12 +56,9 @@ const RESTORE_INSERT_ORDER: &[&str] = &[
   "lead_sync_logs",
 ];
 
-fn resolve_database_path(app: &AppHandle) -> Result<PathBuf, String> {
-  let dir = app
-    .path()
-    .app_data_dir()
-    .map_err(|_| "crm lifecycle: app data directory unavailable".to_string())?;
-  Ok(dir.join(DB_FILE_NAME))
+fn resolve_database_path(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+  desktop_profile::resolve_active_database_path(app)
+    .map_err(|error| format!("crm lifecycle: {error}"))
 }
 
 async fn open_connection(path: &std::path::Path) -> Result<SqliteConnection, String> {
@@ -74,7 +70,7 @@ async fn open_connection(path: &std::path::Path) -> Result<SqliteConnection, Str
     .journal_mode(SqliteJournalMode::Wal);
   SqliteConnection::connect_with(&options)
     .await
-    .map_err(|error| format!("crm lifecycle: production database unavailable: {error}"))
+    .map_err(|error| format!("crm lifecycle: selected data source unavailable: {error}"))
 }
 
 fn is_allowed_table(name: &str) -> bool {
@@ -124,6 +120,8 @@ pub async fn restore_full_backup_atomic(
   }
   let path = resolve_database_path(&app)?;
   let mut conn = open_connection(&path).await?;
+  desktop_profile::verify_active_database_path(&app, &path)
+    .map_err(|error| format!("crm lifecycle: {error}"))?;
   let mut tx = conn.begin().await.map_err(|error| format!("restore begin failed: {error}"))?;
   sqlx::query("PRAGMA defer_foreign_keys = ON")
     .execute(&mut *tx)
@@ -196,6 +194,8 @@ pub async fn delete_customer_atomic(app: AppHandle, customer_id: String) -> Resu
   }
   let path = resolve_database_path(&app)?;
   let mut conn = open_connection(&path).await?;
+  desktop_profile::verify_active_database_path(&app, &path)
+    .map_err(|error| format!("crm lifecycle: {error}"))?;
   let mut tx = conn.begin().await.map_err(|error| format!("delete begin failed: {error}"))?;
   sqlx::query("PRAGMA defer_foreign_keys = ON")
     .execute(&mut *tx)
@@ -254,6 +254,8 @@ pub async fn persist_occurred_follow_up_atomic(
   }
   let path = resolve_database_path(&app)?;
   let mut conn = open_connection(&path).await?;
+  desktop_profile::verify_active_database_path(&app, &path)
+    .map_err(|error| format!("crm lifecycle: {error}"))?;
   let mut tx = conn.begin().await.map_err(|error| format!("follow-up begin failed: {error}"))?;
   sqlx::query(
     "INSERT INTO follow_up_records (id, customer_id, title, contact_channel, contact_result, feedback_notes, intent_assessment, suggested_grade, next_action, next_follow_up_at, is_completed, created_at, updated_at) VALUES (?, ?, ?, NULL, NULL, ?, NULL, NULL, NULL, NULL, ?, ?, ?)",

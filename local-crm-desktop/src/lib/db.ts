@@ -5,6 +5,7 @@ import { ensureBattleCardSchema } from './battleCard/schema';
 import { ensureEvidenceSchema } from './evidence/schema';
 import { sortByInstantDesc } from './time/instantCompare';
 import { v4 as uuidv4 } from 'uuid';
+import { createSelectedProfileDatabase, getDesktopDataSource } from './desktopDataSource';
 import { invokeTauriAtomicCommand, isTauriRuntime } from './runtime/tauriRuntime';
 
 // 数据库抽象层 - 包装 @tauri-apps/plugin-sql
@@ -82,10 +83,16 @@ async function getDb(): Promise<DatabaseLike> {
 
   if (!dbInitialization) {
     dbInitialization = (async () => {
+      let selectedProfileDatabase = false;
       try {
         const loadedDb = databaseLoaderForTests
           ? await databaseLoaderForTests()
           : await (async () => {
+            const dataSource = await getDesktopDataSource();
+            if (dataSource.mode === 'PROFILE') {
+              selectedProfileDatabase = true;
+              return createSelectedProfileDatabase();
+            }
             const { default: Database } = await import('@tauri-apps/plugin-sql');
             return Database.load('sqlite:personal-crm.db') as Promise<DatabaseLike>;
           })();
@@ -96,8 +103,9 @@ async function getDb(): Promise<DatabaseLike> {
       } catch (e: unknown) {
         const errMsg = e instanceof Error ? e.message : String(e);
 
-        // 仅测试环境允许显式启用内存 DB
-        if (!databaseLoaderForTests && import.meta.env.VITE_ALLOW_MEMORY_DB === 'true') {
+        // 仅非 Tauri 测试环境允许显式启用内存 DB。Desktop 运行时（包括
+        // PROFILE selection/config 读取失败）必须保留原始错误并 fail closed。
+        if (!databaseLoaderForTests && !selectedProfileDatabase && !isTauriRuntime() && import.meta.env.VITE_ALLOW_MEMORY_DB === 'true') {
           console.warn('Tauri SQL 不可用，测试环境使用内存存储');
           dbInstance = createMemoryDb();
           return dbInstance;
@@ -309,26 +317,6 @@ export async function ensureCustomerSchema(db: DatabaseLike): Promise<void> {
 
 export function getDbError(): string | null {
   return dbInitError;
-}
-
-export async function getDbPath(): Promise<string> {
-  try {
-    await import('@tauri-apps/plugin-sql');
-    // Tauri SQL plugin 中 sqlite:xxx 对应 app data 目录
-    // 尝试获取实际路径
-    const { appDataDir } = await import('@tauri-apps/api/path');
-    const dir = await appDataDir();
-    return `${dir}personal-crm.db`;
-  } catch {
-    // 回退：Tauri app data 下
-    try {
-      const { appDataDir } = await import('@tauri-apps/api/path');
-      const dir = await appDataDir();
-      return `${dir}personal-crm.db`;
-    } catch {
-      return '%APPDATA%/com.localcrm.desktop/personal-crm.db';
-    }
-  }
 }
 
 function createMemoryDb(): DatabaseLike {

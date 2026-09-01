@@ -1,13 +1,14 @@
 {
   "name": "local-crm-desktop",
   "private": true,
-  "version": "0.2.1",
+  "version": "0.2.2",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "build:cli": "vite build --ssr src/cli/main.ts --outDir dist/cli --emptyOutDir false",
-    "crm": "npm run build:cli && node dist/cli/main.js",
+    "build:bundled-cli": "node scripts/build-bundled-cli.mjs",
+    "verify:bundled-cli": "node scripts/check-bundled-cli-install.mjs",
     "lint": "eslint .",
     "typecheck": "tsc -b",
     "preview": "vite preview",
@@ -15,7 +16,8 @@
     "tauri:e2e": "tauri dev --config src-tauri/tauri.e2e.conf.json --features e2e",
     "pretest": "npm run build",
     "test": "vitest run",
-    "test:cli": "vitest run --dir src/__tests__ cli."
+    "test:cli": "vitest run --dir src/__tests__ cli.",
+    "test:bundled-cli": "vitest run src/__tests__/bundledCliSurface.test.ts"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.11.0",
@@ -46,8 +48,5 @@
     "typescript-eslint": "^8.59.2",
     "vite": "^8.0.12",
     "vitest": "^4.1.7"
-  },
-  "bin": {
-    "crm": "./dist/cli/main.js"
   }
 }

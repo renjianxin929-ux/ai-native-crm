@@ -18,10 +18,6 @@
 
 AI Native CRM is for maintainers, builders, and sales teams exploring a safer interaction model for AI-operated business software: the Agent can reason and propose actions, but domain capabilities, validation, and human confirmation remain explicit boundaries.
 
-![AI Native CRM Agent daily focus](docs/images/agent-daily-focus-v0.2.1.png)
-
-_The Tauri desktop client’s Agent daily-focus workflow, captured from an isolated E2E workspace with seeded demo records (no real customer data)._
-
 ## Why this project exists
 
 Traditional CRM workflow:
@@ -48,9 +44,9 @@ CRM Action
 
 **The Agent is not a chatbot bolted onto the CRM. It is becoming the primary control surface of the CRM.**
 
-## What V0.2.1 can do
+## What v0.2.2 can do
 
-V0.2.1 is a local-first desktop CRM with a real Agent operating surface. The following exists in the product today:
+v0.2.2 is a local-first desktop CRM with a real Agent operating surface. The following exists in the desktop product today:
 
 - Customer management, search, and entity resolution (including candidate disambiguation)
 - Agent-driven customer analysis, interaction review, and next-action preparation
@@ -67,6 +63,32 @@ V0.2.1 is a local-first desktop CRM with a real Agent operating surface. The fol
 - Provider configuration with OS-level credential protection
 
 This is still experimental. Natural-language coverage is not complete, and not every sentence becomes a CRM action.
+
+### v0.2.2 CLI release truth
+
+The planner publishes 25 capabilities. The CLI transports 21 of them. These
+four Battle Card write capabilities are explicitly unsupported by the CLI:
+
+- `battle_card.draft.create`
+- `battle_card.confirm`
+- `battle_card.hypothesis.status.update`
+- `battle_card.intelligence_import.confirm`
+
+That is a per-capability transport boundary, not a statement that every
+`battle_card.*` capability is unsupported. The CLI still supports these three
+Battle Card reads: `battle_card.current.read`, `battle_card.history.read`, and
+`battle_card.context.read`. Conversely, the four writes above must not be
+described as supported.
+
+A supported CLI write stops at a pending confirmation; it never directly
+completes the business write. A human running `crm confirm` enters the existing
+confirmation execution path. Customer deletion requires strong confirmation.
+Agent integration must never call `confirm` or pass `--phrase`.
+
+The CLI and Agent working database is
+`~/.localcrm/profiles/<profile>/crm.sqlite`. `personal-crm.db` is only Desktop
+LEGACY compatibility: the CLI never targets that legacy production database and
+does not automatically migrate it.
 
 ## Agent-First Interaction
 
@@ -174,16 +196,17 @@ cd local-crm-desktop
 npx tauri dev
 ```
 
-## Verified Quality Gate
+## v0.2.2 release-surface checks
 
-The v0.2.1 release was verified with:
+From `local-crm-desktop/`, verify the version and TypeScript surfaces with:
 
-- ESLint: 0 errors, 0 warnings
-- Vitest: 241 files passed, 1 skipped; 3,433 tests passed, 16 skipped
-- Rust: 55 tests passed
-- TypeScript and Vite production build: passed
+```bash
+npx vitest run src/__tests__/version.test.ts
+npm run typecheck
+```
 
-CI runs lint, frontend tests/build, and Rust tests for pushes and pull requests that affect the desktop app.
+The bundled CLI installation contract is documented in
+[`local-crm-desktop/docs/bundled-executable-cli-v0.2.2.md`](local-crm-desktop/docs/bundled-executable-cli-v0.2.2.md).
 
 ## Contributing and Security
 
@@ -193,9 +216,10 @@ Please report vulnerabilities through GitHub’s private vulnerability reporting
 
 ## Current Status
 
-### V0.2.1 — Agent Control Surface quality release
+### v0.2.2 — Version + Release Truth
 
-V0.2 introduced the first real Agent operating surface. V0.2.1 makes that baseline easier to evaluate and maintain by restoring the full quality gate, clearing lint debt, and documenting contribution and security workflows.
+v0.2.2 aligns the desktop, Tauri, CLI, and shared app versions, and documents
+the catalog's actual CLI transport boundary.
 
 This is still an experimental open-source project.
 
@@ -245,5 +269,5 @@ See [LICENSE](LICENSE) for the full text.
 
 ## Maintainer Notes
 
-- [v0.2.1 release notes](RELEASE_NOTES_v0.2.1.md)
+- [v0.2.2 bundled executable CLI release surface](local-crm-desktop/docs/bundled-executable-cli-v0.2.2.md)
 - [OpenAI Codex for Open Source application draft](OPENAI_OSS_APPLICATION.md)

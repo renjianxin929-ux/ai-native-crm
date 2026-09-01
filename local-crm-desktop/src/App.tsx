@@ -48,9 +48,8 @@ function AppShell() {
       setDbError(null);
     } catch (e) {
       const errMsg = e instanceof Error ? e.message : String(e);
-      if (errMsg.includes('数据库初始化失败')) {
-        setDbError(errMsg);
-      }
+      setCustomers([]);
+      setDbError(errMsg);
       console.error('数据加载失败:', errMsg);
     }
   }, []);
@@ -157,7 +156,7 @@ function AppShell() {
       <main className="main-content">
         {dbError && (
           <div className="app-db-error" role="alert">
-            数据库初始化失败，请勿录入真实数据。错误: {dbError}
+            数据库打开失败，未展示其他数据源内容。请修复当前数据源后重试。错误: {dbError}
           </div>
         )}
         <Routes>

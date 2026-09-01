@@ -51,9 +51,9 @@ describe('v0.2.2 C1 capability catalog', () => {
     expect(catalogIds).toEqual(plannerIds);
   });
 
-  it('has 25 entries for the v0.2.1 baseline, not as a permanent magic number', () => {
+  it('has 25 entries for the v0.2.2 baseline, not as a permanent magic number', () => {
     // The equality assertion above is the drift guard. This count documents only
-    // the current v0.2.1 production baseline.
+    // the current v0.2.2 production baseline.
     expect(buildCapabilityCatalog()).toHaveLength(25);
   });
 

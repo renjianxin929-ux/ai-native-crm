@@ -38,3 +38,7 @@ NEXT_TASK_*.md
 
 # Local UI QA dumps (never commit)
 tmp-v02-ui-visual/
+
+# Generated only by the Tauri bundled-CLI build. They are package inputs, not source.
+src-tauri/binaries/
+src-tauri/resources/crm-runtime/

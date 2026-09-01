@@ -2,7 +2,7 @@
 name = "app"
 default-run = "app"
 autobins = false
-version = "0.2.1"
+version = "0.2.2"
 description = "A local-first, Agent-first CRM desktop application"
 authors = ["renjianxin929-ux"]
 license = "MIT"
@@ -27,6 +27,10 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [[bin]]
 name = "app"
 path = "src/main.rs"
+
+[[bin]]
+name = "crm"
+path = "src/bin/crm.rs"
 
 [[bin]]
 name = "migrate_plaintext_credentials"
