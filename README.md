@@ -4,7 +4,27 @@
 [![Quality Gate](https://github.com/renjianxin929-ux/ai-native-crm/actions/workflows/lint.yml/badge.svg)](https://github.com/renjianxin929-ux/ai-native-crm/actions/workflows/lint.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-**An experimental Agent-First CRM where you work by intent, not by clicking through CRM screens.**
+**A local-first CRM designed to be operated by AI agents through a capability-driven CLI — with humans retaining final write authority.**
+
+[Download the latest desktop release](https://github.com/renjianxin929-ux/ai-native-crm/releases/latest) · [View the CLI contract](local-crm-desktop/docs/bundled-executable-cli-v0.2.2.md) · [Read the MIT License](LICENSE)
+
+```text
+You
+ ↓
+Codex / Cursor / Local Agent
+ ↓
+crm CLI
+ ↓
+Capability Catalog
+ ↓
+Local CRM
+ ↓
+Human confirmation for writes
+```
+
+**The CLI is the Agent API.**
+
+Local Agents with shell access do not need a dedicated integration for every Agent, and they do not require MCP just to operate the CRM locally. Remote Agents may still use MCP or a local bridge in the future.
 
 > Most CRMs make humans operate software.
 > AI Native CRM explores the opposite:
@@ -14,9 +34,72 @@
 > AI Native CRM 想反过来：
 > 让 Agent 成为主要操作入口，人负责判断、确认与关系。
 
-**Agent-First CRM · Local-First · Human-Controlled · Built for AI-native sales workflows**
+**Agent-callable CLI · Capability Catalog · Local-first · Human-in-the-loop · macOS + Windows**
 
-AI Native CRM is for maintainers, builders, and sales teams exploring a safer interaction model for AI-operated business software: the Agent can reason and propose actions, but domain capabilities, validation, and human confirmation remain explicit boundaries.
+AI Native CRM is a desktop CRM for maintainers, builders, and sales teams exploring a safer interaction model for AI-operated business software. It is not a chatbot bolted onto a CRM: the Agent uses an installed capability CLI, while domain validation and human confirmation remain explicit boundaries.
+
+## Try it with an Agent
+
+With the macOS app installed, ask a local Agent to use the bundled CLI:
+
+```bash
+/Applications/local-crm.app/Contents/MacOS/crm --profile demo catalog
+```
+
+Tell Codex, Cursor, or another local Agent:
+
+> Read `skills/ai-native-crm/SKILL.md`, then use my installed CRM CLI to find XingheTech, read its customer record, timeline and follow-ups, and tell me what I should do next. Read only.
+
+The Agent can discover and sequence the work itself:
+
+```text
+catalog → customer.search → select-customer → customer.get
+        → timeline.customer.read → follow_up.customer.read → analysis
+```
+
+Download: [Latest Release](https://github.com/renjianxin929-ux/ai-native-crm/releases/latest)
+
+- macOS Apple Silicon DMG
+- Windows x64 installer
+
+## Why this is different
+
+### 1. Agent is the control surface
+
+This is not a chatbot added to a CRM. The Agent operates the CRM through explicit capabilities and returns evidence or a proposed action.
+
+### 2. CLI is a stable Agent boundary
+
+The Agent reads the catalog first, then calls a named capability with a defined input and output contract.
+
+### 3. Writes are not autonomous
+
+```text
+READ  → execute directly
+WRITE → proposal → CONFIRMATION_REQUIRED → human
+```
+
+The Agent cannot confirm its own write.
+
+### 4. Local-first
+
+The Agent and CLI use the profile database:
+
+`~/.localcrm/profiles/<profile>/crm.sqlite`
+
+The Agent is not allowed to operate SQLite directly; it goes through the CLI. The old Desktop `personal-crm.db` location is retained only for **legacy compatibility** and is not the CLI / Agent database.
+
+### 5. Agent-agnostic
+
+Codex, Cursor, and other Agents with local shell access can reuse the same installed CLI. This does not imply that remote or cloud Agents can directly call a local CLI.
+
+| Capability surface | v0.2.2 truth |
+| --- | --- |
+| Planner catalog | 25 capabilities |
+| CLI transport | 21 supported |
+| CLI Battle Card writes | 4 explicitly unsupported |
+
+If this project’s model of a local Agent control plane, explicit capabilities, and human-owned writes is useful to you, please [Star the repository](https://github.com/renjianxin929-ux/ai-native-crm) and share what you build with it.
 
 ## Why this project exists
 
@@ -62,7 +145,7 @@ v0.2.2 is a local-first desktop CRM with a real Agent operating surface. The fol
 - Local-first desktop experience (Tauri)
 - Provider configuration with OS-level credential protection
 
-This is still experimental. Natural-language coverage is not complete, and not every sentence becomes a CRM action.
+This is an experimental open-source reference implementation. Natural-language coverage is intentionally not complete, and not every sentence becomes a CRM action.
 
 ### v0.2.2 CLI release truth
 
@@ -214,31 +297,21 @@ Issues and focused pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING
 
 Please report vulnerabilities through GitHub’s private vulnerability reporting flow described in [SECURITY.md](SECURITY.md), rather than opening a public issue.
 
-## Current Status
+## Project Status
 
-### v0.2.2 — Version + Release Truth
+**v0.2.2 — Frozen / Maintenance**
 
-v0.2.2 aligns the desktop, Tauri, CLI, and shared app versions, and documents
-the catalog's actual CLI transport boundary.
+The core experiment is complete:
 
-This is still an experimental open-source project.
+Can a local AI Agent operate a real CRM through a controlled capability interface without receiving direct database authority?
 
-Natural-language coverage is not complete.
+For v0.2.2, the answer is yes.
 
-The architecture and product semantics will continue to evolve.
+There is currently no planned feature-driven v0.3.
 
-## Roadmap
+Development resumes only when real usage reveals a repeated problem or validated user demand.
 
-### V0.3
-
-- simplify architecture
-- improve natural-language semantic coverage
-- reduce deterministic routing complexity
-- strengthen Agent-first workflows
-- continue internationalization
-- improve developer ergonomics
-
-V0.3 is a direction, not a promise to rewrite the project.
+Issues and focused PRs remain welcome.
 
 ## Engineering philosophy
 
