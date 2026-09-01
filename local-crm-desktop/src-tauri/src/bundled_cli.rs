@@ -115,7 +115,7 @@ mod tests {
 
     assert_eq!(
       resolve_installed_cli_path_for_platform(&app, BundledCliPlatform::Windows).expect("resolve Windows sidecar"),
-      fs::canonicalize(cli).expect("canonical Windows sidecar"),
+      fs::canonicalize(&cli).expect("canonical Windows sidecar"),
     );
     assert_eq!(
       resolve_bundled_runtime_dir_from_sidecar_for_platform(&cli, BundledRuntimePlatform::Windows)
@@ -137,7 +137,7 @@ mod tests {
 
     assert_eq!(
       resolve_installed_cli_path_for_platform(&app, BundledCliPlatform::Macos).expect("resolve macOS sidecar"),
-      fs::canonicalize(cli).expect("canonical macOS sidecar"),
+      fs::canonicalize(&cli).expect("canonical macOS sidecar"),
     );
     assert_eq!(
       resolve_bundled_runtime_dir_from_sidecar_for_platform(&cli, BundledRuntimePlatform::Macos)
